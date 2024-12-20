@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  bot_frontend:
+    build:
+      context: ./bot_frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    networks:
+      - bot_network
+    depends_on:
+      - bot_backend
+
+  bot_backend:
+    build:
+      context: ./bot_backend
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    networks:
+      - bot_network
+    depends_on:
+      - websocket_server
+
+  bot_lead:
+    build:
+      context: ./bot_lead
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    networks:
+      - bot_network
+    depends_on:
+      - bot_backend
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - bot_network
+
+  websocket_server:
+    build:
+      context: ./websocket_server
+      dockerfile: Dockerfile
+    ports:
+      - "5002:5002"
+    networks:
+      - bot_network
+
+  ngrok:
+    image: ngrok/ngrok
+    volumes:
+      - ./ngrok.yml:/etc/ngrok.yml
+    command: ["start", "--config", "/etc/ngrok.yml", "--all"]
+    ports:
+      - "4040:4040"
+    networks:
+      - bot_network
+    depends_on:
+      - bot_frontend
+      - bot_backend
+      - websocket_server
+      - bot_lead
+
+networks:
+  bot_network:
+    driver: bridge

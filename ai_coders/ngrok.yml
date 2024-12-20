@@ -1,0 +1,16 @@
+version: 2
+authtoken: 2pg1fl3g1wDInoW9OJkujqyv0Ro_4NBkBhsL3NSVbK249kRL7
+
+tunnels:
+  frontend:
+    addr: bot_frontend:80
+    proto: http
+    domain: visually-sterling-spider.ngrok-free.app  # Ensure the domain matches exactly
+
+  backend:
+    addr: bot_backend:5000
+    proto: http
+
+  websocket:
+    addr: websocket_server:5002
+    proto: http
