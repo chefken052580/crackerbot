@@ -1,8 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
 
+const commands = [
+  { command: "/list_bot_health", description: "List Bot Health" },
+  { command: "/show_bot_tasks", description: "Show Bot Tasks" },
+  { command: "/start_task", description: "Start New Task" },
+  { command: "/stop_bots", description: "Stop All Bots" },
+  { command: "/list_projects", description: "List All Projects" },
+];
+
 const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [showCommands, setShowCommands] = useState(false);
   const websocket = useRef(null);
 
   useEffect(() => {
@@ -28,6 +37,23 @@ const ChatRoom = () => {
     }
   };
 
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setInput(value);
+
+    // Show command dropdown if input starts with `/`
+    if (value.startsWith("/")) {
+      setShowCommands(true);
+    } else {
+      setShowCommands(false);
+    }
+  };
+
+  const handleCommandSelect = (command) => {
+    setInput(command);
+    setShowCommands(false);
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-900 border border-gray-700 rounded-lg shadow-lg p-4 text-gray-300">
       <h2 className="text-2xl font-bold text-neon-yellow mb-4">Bot Chat Room</h2>
@@ -39,12 +65,25 @@ const ChatRoom = () => {
           </div>
         ))}
       </div>
+      {showCommands && (
+        <div className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-md p-2 mt-2">
+          {commands.map((cmd) => (
+            <div
+              key={cmd.command}
+              onClick={() => handleCommandSelect(cmd.command)}
+              className="cursor-pointer p-2 hover:bg-gray-700 rounded-md"
+            >
+              <span className="text-neon-yellow font-bold">{cmd.command}</span> - {cmd.description}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex mt-4">
         <input
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
+          onChange={handleInputChange}
+          placeholder="Type your message or command..."
           className="flex-1 p-2 rounded-l-md bg-gray-800 border border-gray-600 text-gray-100 focus:outline-none focus:ring-2 focus:ring-neon-yellow"
         />
         <button

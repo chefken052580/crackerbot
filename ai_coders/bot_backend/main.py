@@ -1,25 +1,56 @@
-from flask import Flask, jsonify
-from flask_cors import CORS  # To handle CORS (Cross-Origin Resource Sharing)
+import asyncio
+import websockets
+import json
 
-# Initialize Flask app
-app = Flask(__name__)
+BOT_NAME = "bot_backend"
+WEBSOCKET_SERVER_URL = "ws://websocket_server:5002"
 
-# Enable CORS for all routes
-CORS(app)
+async def handle_websocket():
+    async with websockets.connect(WEBSOCKET_SERVER_URL) as ws:
+        # Register the bot
+        await ws.send(json.dumps({"type": "register", "name": BOT_NAME, "role": "backend"}))
+        print(f"{BOT_NAME} connected and registered.")
 
-@app.route('/')
-def home():
-    return "Backend Bot is running!"
+        while True:
+            try:
+                message = await ws.recv()
+                data = json.loads(message)
+                print(f"Received message: {data}")
 
-@app.route('/api/data', methods=['GET'])
-def get_data():
-    # Return some sample data as a JSON response
-    return jsonify({
-        "status": "success",
-        "message": "Hello from the backend!",
-        "data": [1, 2, 3, 4, 5]
-    })
+                if data["type"] == "command":
+                    await handle_command(ws, data)
 
-if __name__ == '__main__':
-    # Run the app, binding to all IP addresses (0.0.0.0) to allow external access
-    app.run(host='0.0.0.0', port=5000)
+            except websockets.exceptions.ConnectionClosed:
+                print("WebSocket connection closed. Reconnecting...")
+                break
+            except Exception as e:
+                print(f"Error: {e}")
+
+async def handle_command(ws, command_data):
+    command = command_data.get("command")
+    user = command_data.get("user")
+
+    if command == "/list_bot_health":
+        response = {
+            "type": "response",
+            "user": BOT_NAME,
+            "text": f"{BOT_NAME} is healthy and operational.",
+        }
+        await ws.send(json.dumps(response))
+    elif command == "/start_task":
+        response = {
+            "type": "response",
+            "user": BOT_NAME,
+            "text": "Starting task... What is the task?",
+        }
+        await ws.send(json.dumps(response))
+    else:
+        response = {
+            "type": "response",
+            "user": BOT_NAME,
+            "text": f"Unknown command: {command}",
+        }
+        await ws.send(json.dumps(response))
+
+if __name__ == "__main__":
+    asyncio.get_event_loop().run_until_complete(handle_websocket())

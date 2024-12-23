@@ -1,19 +1,18 @@
-# Use Node.js 18 for compatibility
-FROM node:18-alpine
+# Use Python 3.9 for the backend bot
+FROM python:3.9-slim
 
-# Set the working directory inside the container
+# Set the working directory
 WORKDIR /usr/src/app
 
-# Copy package files and install dependencies
-COPY package*.json ./
-RUN npm install
+# Copy requirements and install dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all source code
+# Copy the rest of the application code
 COPY . .
 
-# Expose the port for the bot backend
+# Expose the port
 EXPOSE 5000
 
-# Start the bot backend server
-CMD ["node", "server.js"]
-
+# Run the backend bot
+CMD ["python", "main.py"]

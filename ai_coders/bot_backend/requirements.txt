@@ -2,3 +2,4 @@ fastapi
 uvicorn
 flask
 flask-cors
+websockets
