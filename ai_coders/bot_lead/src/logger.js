@@ -1,9 +1,27 @@
 const fs = require('fs');
-const path = require('path');
+const util = require('util');
 
-function log(message) {
-  const logPath = path.join(__dirname, '../logs/bot_lead.log');
-  fs.appendFileSync(logPath, `${new Date().toISOString()} - ${message}\n`);
+const logFile = 'bot_lead.log';
+const appendFile = util.promisify(fs.appendFile);
+
+class Logger {
+  constructor() {
+    this.logFile = logFile;
+  }
+
+  async log(message) {
+    const logMessage = `[${new Date().toISOString()}] ${message}\n`;
+    try {
+      await appendFile(this.logFile, logMessage);
+      console.log(logMessage); // Also log to console for immediate feedback
+    } catch (err) {
+      console.error('Error writing to log:', err);
+    }
+  }
+
+  async error(message) {
+    await this.log(`ERROR: ${message}`);
+  }
 }
 
-module.exports = { log };
+module.exports = new Logger();

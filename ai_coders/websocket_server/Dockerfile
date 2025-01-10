@@ -8,11 +8,14 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 RUN npm install
 
-# Copy all source code
+# Install PM2 globally
+RUN npm install pm2 -g
+
+# Copy all source code including ecosystem.config.js
 COPY . .
 
 # Expose the port for the WebSocket server
 EXPOSE 5002
 
-# Start the WebSocket server
-CMD ["node", "server.js"]
+# Start the WebSocket server with PM2
+CMD ["pm2-runtime", "start", "ecosystem.config.cjs"]

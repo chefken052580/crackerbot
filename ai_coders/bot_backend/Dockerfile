@@ -1,12 +1,14 @@
-# Use Python 3.9 for the backend bot
-FROM python:3.9-slim
+# Use Node.js 18 for the backend bot
+FROM node:18-alpine
 
 # Set the working directory
 WORKDIR /usr/src/app
 
-# Copy requirements and install dependencies
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
 
 # Copy the rest of the application code
 COPY . .
@@ -14,5 +16,5 @@ COPY . .
 # Expose the port
 EXPOSE 5000
 
-# Run the backend bot
-CMD ["python", "main.py"]
+# Since we're adding a WebSocket client, we need to run both server.js and socket.js
+CMD ["sh", "-c", "node server.js & node socket.js"]

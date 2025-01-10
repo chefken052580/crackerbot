@@ -1,31 +1,30 @@
-const WebSocket = require("ws");
+const { io } = require("socket.io-client");
 
-const ws = new WebSocket("ws://websocket_server:5002");
+const WEBSOCKET_SERVER_URL = "http://websocket_server:5002"; // Note: HTTP for Socket.IO
 
-ws.on("open", () => {
+const socket = io(WEBSOCKET_SERVER_URL);
+
+socket.on("connect", () => {
   console.log("Bot Frontend connected to WebSocket!");
-  ws.send(
-    JSON.stringify({
-      type: "register",
-      name: "bot_frontend",
-      role: "frontend",
-    })
-  );
+  socket.emit("register", {
+    name: "bot_frontend",
+    role: "frontend",
+  });
 });
 
-ws.on("message", (message) => {
+socket.on("message", (message) => {
   console.log("Message received by Bot Frontend:", message);
+  // Here you might want to handle or broadcast the message to the UI
 });
 
-ws.on("error", (error) => {
+socket.on("connect_error", (error) => {
   console.error("WebSocket error in Bot Frontend:", error);
 });
 
-ws.on("close", () => {
-  console.log("Bot Frontend WebSocket connection closed. Reconnecting...");
-  setTimeout(() => {
-    require("./socket");
-  }, 5000);
+socket.on("disconnect", (reason) => {
+  console.log("Bot Frontend WebSocket disconnected. Reason: ", reason);
+  console.log("Attempting to reconnect in 5 seconds...");
+  // Note: Reconnection is handled by Socket.IO automatically, but we log it
 });
 
-module.exports = ws;
+module.exports = socket;

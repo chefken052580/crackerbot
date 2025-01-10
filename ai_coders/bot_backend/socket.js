@@ -1,36 +1,60 @@
-const WebSocket = require("ws");
+const { io } = require("socket.io-client");
 
-// Connect to WebSocket server using the Docker service name
-const ws = new WebSocket("ws://websocket_server:5002");
+const BOT_NAME = "bot_backend";
+const WEBSOCKET_SERVER_URL = "http://websocket_server:5002";
 
-// When the connection is open
-ws.on("open", () => {
-  console.log("Bot Backend connected to WebSocket!");
-  ws.send(
-    JSON.stringify({
-      type: "register",
-      name: "bot_backend",
+let retryCount = 0;
+const maxRetries = Infinity;
+const maxDelay = 60000;
+
+function connectToWebSocket() {
+  const socket = io(WEBSOCKET_SERVER_URL, {
+    reconnection: true,
+    reconnectionAttempts: maxRetries,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: maxDelay,
+    timeout: 20000,
+    transports: ['websocket'],
+  });
+
+  socket.on("connect", () => {
+    console.log(`${BOT_NAME} connected to WebSocket!`);
+    socket.emit("register", {
+      name: BOT_NAME,
       role: "backend",
-    })
-  );
-});
+    });
+    retryCount = 0;
+  });
 
-// When a message is received
-ws.on("message", (message) => {
-  console.log("Message received by Bot Backend:", message);
-});
+  socket.on("message", (data) => {
+    console.log("Message or command received by Bot Backend:", data);
+    
+    if (data.type === 'command') {
+      console.log("Command received:", data.command);
+      // Handle your commands here
+      // Example:
+      if(data.command === "some_backend_command") {
+        // Process command
+        socket.emit('response', { type: "response", user: BOT_NAME, text: "Command processed" });
+      }
+    } else if (data.type === 'message') {
+      console.log("General message received:", data.text);
+      // Respond to general messages if needed
+    }
+  });
 
-// Handle errors
-ws.on("error", (error) => {
-  console.error("WebSocket error in Bot Backend:", error);
-});
+  socket.on("connect_error", (error) => {
+    console.error("WebSocket error in Bot Backend:", error);
+  });
 
-// Handle connection closure
-ws.on("close", () => {
-  console.log("Bot Backend WebSocket connection closed. Reconnecting...");
-  setTimeout(() => {
-    require("./socket"); // Reconnect
-  }, 5000);
-});
+  socket.on("disconnect", (reason) => {
+    console.log(`${BOT_NAME} WebSocket disconnected. Reason: `, reason);
+    console.log("Attempting to reconnect...");
+    retryCount++;
+    let delay = Math.min(1000 * Math.pow(2, retryCount), maxDelay);
+    console.log(`Retry attempt ${retryCount}, will retry in ${delay / 1000} seconds`);
+    setTimeout(connectToWebSocket, delay);
+  });
+}
 
-module.exports = ws;
+connectToWebSocket();

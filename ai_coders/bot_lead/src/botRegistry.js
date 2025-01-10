@@ -19,4 +19,10 @@ function getAvailableBot(type) {
   return Object.values(bots).find((bot) => bot.type === type && bot.status === 'idle');
 }
 
+console.log('Attempting to connect to WebSocket server...');
+// After connection:
+console.log('Connected to WebSocket server');
+// After sending registration:
+console.log('Registration message sent:', JSON.stringify({ type: 'register', name: 'bot_lead', role: 'lead' }));
+
 module.exports = { registerBot, updateBotStatus, getAvailableBot };

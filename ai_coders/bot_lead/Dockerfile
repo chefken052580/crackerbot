@@ -14,8 +14,11 @@ COPY . .
 # Copy the .env file explicitly (ensure it's in the same directory as Dockerfile)
 COPY .env .env
 
-# Expose the port for the bot lead
+# Expose the port for the bot lead server
 EXPOSE 5001
 
-# Start the bot lead server
-CMD ["node", "src/server.js"]
+# Install PM2 globally for process management
+RUN npm install pm2 -g
+
+# Start command using PM2 to manage both processes
+CMD ["pm2-runtime", "start", "ecosystem.config.js"]

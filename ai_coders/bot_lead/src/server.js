@@ -1,35 +1,29 @@
-const express = require('express');
-const Redis = require('ioredis');
+import { WebSocket } from 'ws';
 
-const app = express();
-const port = 5001;
+let wsClient;
 
-// Connect to Redis
-const redis = new Redis({
-    host: process.env.REDIS_HOST || "redis",
-    port: process.env.REDIS_PORT || 6379,
-    showFriendlyErrorStack: true, // Debug mode
-});
+function connectToWebSocket() {
+  wsClient = new WebSocket('ws://websocket_server:5002'); // Use service name for Docker network
 
-redis.on("connect", () => {
-    console.log("Connected to Redis successfully!");
-});
+  wsClient.on('open', () => {
+    console.log('Connected to WebSocket server');
+    wsClient.send(JSON.stringify({ type: 'register', name: 'bot_lead', role: 'lead' }));
+  });
 
-redis.on("error", (err) => {
-    console.error("Redis connection error:", err);
-});
+  wsClient.on('message', (data) => {
+    const message = JSON.parse(data);
+    console.log('Received:', message);
+    // Handle messages here
+  });
 
-// Example route
-app.get('/api/data', async (req, res) => {
-    try {
-        const value = await redis.get('some-key') || 'No data in Redis';
-        res.json({ message: value });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
+  wsClient.on('close', () => {
+    console.log('Connection closed, attempting reconnect...');
+    setTimeout(connectToWebSocket, 5000);
+  });
 
-app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
-});
+  wsClient.on('error', (error) => {
+    console.error('WebSocket error:', error);
+  });
+}
+
+connectToWebSocket();

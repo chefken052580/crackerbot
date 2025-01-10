@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
+import useChatSocket from "./useChatSocket";
+import ChatMessage from "./ChatMessage";
 
 const commands = [
   { command: "/list_bot_health", description: "List Bot Health" },
@@ -12,27 +14,44 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [showCommands, setShowCommands] = useState(false);
-  const websocket = useRef(null);
+  const socket = useChatSocket("wss://visually-sterling-spider.ngrok-free.app");
 
   useEffect(() => {
-    websocket.current = new WebSocket("wss://strong-shark-climbing.ngrok-free.app");
+    if (socket) {
+      // Listen for 'message' event for all incoming messages
+      socket.on('message', (data) => {
+        // Assuming data structure includes at least 'user' and 'text' or similar fields
+        setMessages(prev => [...prev, data]);
+      });
+      
+      // Error handling for connection issues
+      socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
+      });
+      socket.on('disconnect', (reason) => {
+        console.log('Socket disconnected:', reason);
+      });
 
-    websocket.current.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      setMessages((prev) => [...prev, message]);
-    };
-
-    websocket.current.onopen = () => console.log("Connected to WebSocket");
-    websocket.current.onclose = () => console.log("Disconnected from WebSocket");
-
-    return () => websocket.current.close();
-  }, []);
+      // Clean up listeners on component unmount
+      return () => {
+        socket.off('message');
+        socket.off('connect_error');
+        socket.off('disconnect');
+      };
+    }
+  }, [socket]);
 
   const sendMessage = () => {
-    if (websocket.current && input.trim()) {
-      const message = { user: "Admin", text: input };
-      websocket.current.send(JSON.stringify(message));
-      setMessages((prev) => [...prev, message]);
+    if (socket && input.trim()) {
+      let message;
+      if (input.startsWith("/")) {
+        message = { type: "command", command: input, user: "Admin", target: "bot_lead" };
+      } else {
+        message = { type: "message", text: input, user: "Admin" };
+      }
+      socket.emit('message', message);
+      // Add the sent message to the chat immediately
+      setMessages(prev => [...prev, { user: "Admin", text: input }]);
       setInput("");
     }
   };
@@ -41,7 +60,6 @@ const ChatRoom = () => {
     const value = e.target.value;
     setInput(value);
 
-    // Show command dropdown if input starts with `/`
     if (value.startsWith("/")) {
       setShowCommands(true);
     } else {
@@ -59,10 +77,7 @@ const ChatRoom = () => {
       <h2 className="text-2xl font-bold text-neon-yellow mb-4">Bot Chat Room</h2>
       <div className="flex-1 overflow-y-auto border border-gray-700 rounded-lg p-4 bg-gray-800">
         {messages.map((msg, index) => (
-          <div key={index} className="mb-3">
-            <span className="text-neon-green font-semibold">{msg.user}:</span>
-            <span className="ml-2">{msg.text}</span>
-          </div>
+          <ChatMessage key={index} message={msg} />
         ))}
       </div>
       {showCommands && (

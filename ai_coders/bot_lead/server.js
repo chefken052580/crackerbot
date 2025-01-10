@@ -1,12 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { createClient } from 'redis';
-import { Queue } from 'bull';
 import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
 import http from 'http';
-import ws from 'ws';
 
 dotenv.config();
 
@@ -23,63 +20,90 @@ const PORT = process.env.PORT || 5001;
 
 app.use(cors());
 
-// Redis Client
-const redisClient = createClient();
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
-redisClient.connect().then(() => console.log('Connected to Redis'));
-
-// Bull Queue
-const workQueue = new Queue('work', {
-  redis: {
-    host: 'redis', // Assuming 'redis' is the service name in Docker Compose
-    port: 6379
-  }
-});
-
 // OpenAI Initialization
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 // WebSocket setup
-const wss = new ws.Server({ server });
+io.on('connection', (socket) => {
+  console.log('A client connected');
+  socket.emit('status', 'Connected to bot_lead');
 
-wss.on('connection', (ws) => {
-  console.log('New client connected');
+  // Register the bot
+  socket.emit('register', { name: "bot_lead", role: "lead" });
 
-  ws.on('message', async (message) => {
+  socket.on('message', async (data) => {
     try {
-      const data = JSON.parse(message);
       if (data.type === 'command') {
-        const response = await openai.chat.completions.create({
-          model: "gpt-4",
-          messages: [
-            { role: "system", content: "You are the lead bot." },
-            { role: "user", content: data.command }
-          ],
-          max_tokens: 150,
-        });
-        ws.send(JSON.stringify({
-          type: "response",
-          user: "bot_lead",
-          text: response.choices[0].message.content.trim()
-        }));
+        await handleCommand(socket, data);
+      } else {
+        await handleMessage(socket, data);
       }
     } catch (error) {
       console.error('WebSocket Error:', error);
-      ws.send(JSON.stringify({
+      socket.emit('response', {
         type: "response",
         user: "bot_lead",
         text: "I couldn't process that request."
-      }));
+      });
     }
   });
 
-  ws.on('close', () => {
+  socket.on('disconnect', () => {
     console.log('Client disconnected');
   });
 });
 
+async function handleCommand(socket, commandData) {
+  const { command } = commandData; // Removed 'user' since it wasn't used
+  let responseText = "";
+
+  switch (command) {
+    case "/list_bot_health":
+      responseText = "All bots are healthy and operational.";
+      break;
+    case "/start_task":
+      responseText = "What task would you like to start?";
+      break;
+    default:
+      responseText = await askOpenAI(`The admin asked: ${command}`);
+  }
+
+  socket.emit('response', {
+    type: "response",
+    user: "bot_lead",
+    text: responseText
+  });
+}
+
+async function handleMessage(socket, messageData) {
+  const { text } = messageData; // Removed 'user' since it wasn't used
+  const response = await askOpenAI(text);
+  socket.emit('response', {
+    type: "response",
+    user: "bot_lead",
+    text: response
+  });
+}
+
+async function askOpenAI(prompt) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: "You are the lead bot." },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 150,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    console.error("OpenAI API error:", error.message);
+    return "Sorry, I couldn't process your request.";
+  }
+}
+
 server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Bot Lead server running on http://0.0.0.0:${PORT}`);
 });

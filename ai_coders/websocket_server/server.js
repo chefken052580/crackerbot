@@ -1,79 +1,76 @@
-const WebSocket = require("ws");
-const express = require("express");
-const http = require("http");
-const cors = require("cors");
+import express from 'express';
+import cors from 'cors';
+import { Server } from 'socket.io';
+import http from 'http';
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  pingInterval: 25000,
+  pingTimeout: 60000,
+});
+
+const PORT = process.env.PORT || 5002;
+
 app.use(cors());
 
-// Health check endpoint
-app.get("/", (req, res) => res.send("WebSocket Server is running!"));
+// Simple health check endpoint
+app.get('/', (req, res) => {
+  res.send('WebSocket Server is running!');
+});
 
-// Create HTTP server and WebSocket server
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
-// Store registered clients
 const clients = {};
 
-wss.on("connection", (ws) => {
-  console.log("New client connected!");
+io.on('connection', (socket) => {
+  console.log(`New client connected with ID: ${socket.id}`);
+  socket.on('register', ({ name, role }) => {
+    if (!name || !role) {
+      console.error("Invalid registration data for:", { name, role });
+      return;
+    }
+    clients[name] = { socket, role };
+    console.log(`${name} (${role}) registered successfully.`);
+  });
 
-  ws.on("message", (message) => {
-    try {
-      const data = JSON.parse(message);
-      console.log("Message received:", data);
-
-      switch (data.type) {
-        case "register":
-          registerClient(ws, data);
-          break;
-        case "command":
-          forwardCommand(data);
-          break;
-        default:
-          console.warn(`Unknown message type: ${data.type}`);
+  socket.on('message', (data) => {
+    console.log(`Message received from ${socket.id}:`, data);
+    
+    if (data.type === 'command') {
+      const { target } = data;
+      if (clients[target]) {
+        clients[target].socket.emit('command', data);
+        console.log(`Command sent to target ${target}`);
+      } else {
+        console.error(`Target bot "${target}" not found.`);
       }
-    } catch (error) {
-      console.error("Error parsing message:", error.message);
+    } else {
+      // General broadcast or specific routing can go here
+      io.emit('message', data);
+      console.log('Message broadcasted:', data);
     }
   });
 
-  ws.on("close", () => handleDisconnect(ws));
-  ws.on("error", (error) => console.error("WebSocket error:", error.message));
+  socket.on('disconnect', (reason) => {
+    console.log(`Client ${socket.id} disconnected with reason: ${reason}`);
+    for (const [name, client] of Object.entries(clients)) {
+      if (client.socket === socket) {
+        delete clients[name];
+        console.log(`${name} disconnected and removed.`);
+        break;
+      }
+    }
+  });
 });
 
-function registerClient(ws, { name, role }) {
-  if (!name || !role) {
-    console.error("Invalid registration data.");
-    return;
-  }
-  clients[name] = ws;
-  console.log(`${name} (${role}) registered.`);
-}
+// Log WebSocket handshake headers for debugging
+io.engine.on('initial_headers', (headers, req) => {
+  console.log('WebSocket handshake headers:', headers);
+});
 
-function forwardCommand({ target, command, args }) {
-  const targetClient = clients[target];
-  if (targetClient) {
-    targetClient.send(JSON.stringify({ type: "command", command, args }));
-    console.log(`Command "${command}" forwarded to ${target}.`);
-  } else {
-    console.error(`Target bot "${target}" not found.`);
-  }
-}
-
-function handleDisconnect(ws) {
-  for (const [name, client] of Object.entries(clients)) {
-    if (client === ws) {
-      delete clients[name];
-      console.log(`${name} disconnected and removed.`);
-      break;
-    }
-  }
-}
-
-// Start the server
-const PORT = process.env.PORT || 5002;
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, () => {
   console.log(`WebSocket server is running on port ${PORT}`);
 });
