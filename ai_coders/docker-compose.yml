@@ -11,7 +11,7 @@ services:
       - websocket_server
       - bot_lead
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -27,9 +27,9 @@ services:
     depends_on:
       - websocket_server
       - redis
-    command: sh -c "node server.js & node src/wsClient.js"
+    command: node src/server.js
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -44,11 +44,10 @@ services:
       - bot_network
     depends_on:
       - websocket_server
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    command: sh -c "node server.js & node src/wsClient.js"
+    environment: {}
+    command: pm2-runtime start src/ecosystem.config.cjs
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,8 +78,7 @@ services:
       timeout: 5s
       retries: 3
     restart: always
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    environment: {}
 
   ngrok:
     image: ngrok/ngrok

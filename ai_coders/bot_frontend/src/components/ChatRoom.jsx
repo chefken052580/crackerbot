@@ -14,16 +14,20 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [showCommands, setShowCommands] = useState(false);
-  const socket = useChatSocket("wss://visually-sterling-spider.ngrok-free.app");
+  const socket = useChatSocket("http://websocket_server:5002"); // Ensure this matches your Docker Compose service name
 
   useEffect(() => {
     if (socket) {
       // Listen for 'message' event for all incoming messages
       socket.on('message', (data) => {
-        // Assuming data structure includes at least 'user' and 'text' or similar fields
         setMessages(prev => [...prev, data]);
       });
       
+      // Listen for command responses
+      socket.on('commandResponse', (response) => {
+        setMessages(prev => [...prev, { user: "System", text: response.success ? response.response : `Error: ${response.error}` }]);
+      });
+
       // Error handling for connection issues
       socket.on('connect_error', (error) => {
         console.error('Socket connection error:', error);
@@ -35,6 +39,7 @@ const ChatRoom = () => {
       // Clean up listeners on component unmount
       return () => {
         socket.off('message');
+        socket.off('commandResponse');
         socket.off('connect_error');
         socket.off('disconnect');
       };
@@ -43,13 +48,11 @@ const ChatRoom = () => {
 
   const sendMessage = () => {
     if (socket && input.trim()) {
-      let message;
       if (input.startsWith("/")) {
-        message = { type: "command", command: input, user: "Admin", target: "bot_lead" };
+        socket.emit('command', { command: input, user: "Admin", target: "bot_lead" });
       } else {
-        message = { type: "message", text: input, user: "Admin" };
+        socket.emit('message', { type: "message", text: input, user: "Admin" });
       }
-      socket.emit('message', message);
       // Add the sent message to the chat immediately
       setMessages(prev => [...prev, { user: "Admin", text: input }]);
       setInput("");

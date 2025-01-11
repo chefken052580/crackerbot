@@ -104,6 +104,10 @@ function connectToWebSocket() {
     console.log(`Retry attempt ${retryCount}, will retry in ${delay / 1000} seconds`);
     setTimeout(connectToWebSocket, delay);
   });
+
+  console.log('Current working directory:', process.cwd());
+  console.log('Attempting to load script from:', __dirname);
+
 }
 
 connectToWebSocket();

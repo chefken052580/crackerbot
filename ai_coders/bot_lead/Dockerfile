@@ -2,23 +2,20 @@
 FROM node:18-alpine
 
 # Set the working directory inside the container
-WORKDIR /usr/src/app
+WORKDIR /bot_lead
 
 # Copy package files and install dependencies
 COPY package*.json ./
 RUN npm install
 
-# Copy all source code
-COPY . .
-
-# Copy the .env file explicitly (ensure it's in the same directory as Dockerfile)
-COPY .env .env
-
-# Expose the port for the bot lead server
-EXPOSE 5001
-
-# Install PM2 globally for process management
+# Install PM2 globally
 RUN npm install pm2 -g
 
-# Start command using PM2 to manage both processes
-CMD ["pm2-runtime", "start", "ecosystem.config.js"]
+# Copy all source code including ecosystem.config.cjs
+COPY src/ ./src/
+
+# Expose the port for the bot_lead server
+EXPOSE 5001
+
+# Start the server with PM2
+CMD ["pm2-runtime", "start", "src/ecosystem.config.cjs"]

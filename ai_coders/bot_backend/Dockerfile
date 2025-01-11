@@ -1,20 +1,18 @@
-# Use Node.js 18 for the backend bot
+# Use Node.js 18 for compatibility
 FROM node:18-alpine
 
-# Set the working directory
+# Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# Copy package.json and package-lock.json
+# Copy package files and install dependencies
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy the rest of the application code
-COPY . .
+# Copy all source code
+COPY src/ ./src/
 
-# Expose the port
+# Expose the port for the bot_backend server
 EXPOSE 5000
 
-# Since we're adding a WebSocket client, we need to run both server.js and socket.js
-CMD ["sh", "-c", "node server.js & node socket.js"]
+# Run the server.js file directly with Node
+CMD ["node", "src/server.js"]
