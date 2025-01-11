@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: "bot_lead_server",
-      script: "./server.js",
+      script: "/bot_lead/src/server.js",
       instances: 1,
       autorestart: true,
       watch: false,
@@ -16,7 +16,7 @@ module.exports = {
     },
     {
       name: "bot_lead_client",
-      script: "./socket.js",
+      script: "/bot_lead/src/socket.js",
       instances: 1,
       autorestart: true,
       watch: false,

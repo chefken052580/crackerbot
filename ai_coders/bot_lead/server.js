@@ -1,11 +1,8 @@
+// Add your server logic here
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
 import http from 'http';
-
-dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -20,90 +17,68 @@ const PORT = process.env.PORT || 5001;
 
 app.use(cors());
 
-// OpenAI Initialization
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.send('Bot Lead is healthy!');
 });
 
-// WebSocket setup
 io.on('connection', (socket) => {
-  console.log('A client connected');
-  socket.emit('status', 'Connected to bot_lead');
+  console.log(`New client connected with ID: ${socket.id}`);
 
-  // Register the bot
-  socket.emit('register', { name: "bot_lead", role: "lead" });
-
-  socket.on('message', async (data) => {
+  socket.on('command', async (data) => {
+    console.log(`Command received:`, data);
     try {
-      if (data.type === 'command') {
-        await handleCommand(socket, data);
-      } else {
-        await handleMessage(socket, data);
-      }
+      const response = await processCommand(data.command, data.user);
+      socket.emit('commandResponse', { success: true, response });
     } catch (error) {
-      console.error('WebSocket Error:', error);
-      socket.emit('response', {
-        type: "response",
-        user: "bot_lead",
-        text: "I couldn't process that request."
-      });
+      console.error('Error processing command:', error);
+      socket.emit('commandResponse', { success: false, error: error.message });
     }
   });
 
+  socket.on('message', (data) => {
+    console.log(`Message received from ${socket.id}:`, data);
+    io.emit('message', data); // Broadcast message to all clients
+  });
+
   socket.on('disconnect', () => {
-    console.log('Client disconnected');
+    console.log('Client disconnected:', socket.id);
+  });
+
+  socket.on('error', (error) => {
+    console.error('Socket error:', error);
   });
 });
-
-async function handleCommand(socket, commandData) {
-  const { command } = commandData; // Removed 'user' since it wasn't used
-  let responseText = "";
-
-  switch (command) {
-    case "/list_bot_health":
-      responseText = "All bots are healthy and operational.";
-      break;
-    case "/start_task":
-      responseText = "What task would you like to start?";
-      break;
-    default:
-      responseText = await askOpenAI(`The admin asked: ${command}`);
-  }
-
-  socket.emit('response', {
-    type: "response",
-    user: "bot_lead",
-    text: responseText
-  });
-}
-
-async function handleMessage(socket, messageData) {
-  const { text } = messageData; // Removed 'user' since it wasn't used
-  const response = await askOpenAI(text);
-  socket.emit('response', {
-    type: "response",
-    user: "bot_lead",
-    text: response
-  });
-}
-
-async function askOpenAI(prompt) {
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "You are the lead bot." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 150,
-    });
-    return completion.choices[0].message.content.trim();
-  } catch (error) {
-    console.error("OpenAI API error:", error.message);
-    return "Sorry, I couldn't process your request.";
-  }
-}
 
 server.listen(PORT, () => {
-  console.log(`Bot Lead server running on http://0.0.0.0:${PORT}`);
+  console.log(`Bot Lead server running on port ${PORT}`);
 });
+
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+console.log('Current working directory:', process.cwd());
+console.log('Attempting to load script from:', __dirname);
+
+// Placeholder for command processing
+async function processCommand(command, user) {
+  switch(command) {
+    case '/list_bot_health':
+      return "All bots are healthy.";
+    case '/show_bot_tasks':
+      return "Bot tasks: Task1, Task2.";
+    case '/start_task':
+      return `Task started by ${user}.`;
+    case '/stop_bots':
+      return "All bots stopped.";
+    case '/list_projects':
+      return "Projects: Project A, Project B.";
+    default:
+      if(command.startsWith('/')) {
+        return "Unknown command: " + command;
+      }
+      throw new Error("Command must start with '/'");
+  }
+}

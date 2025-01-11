@@ -54,6 +54,11 @@ server.listen(PORT, () => {
   console.log(`Bot Lead server running on port ${PORT}`);
 });
 
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 console.log('Current working directory:', process.cwd());
 console.log('Attempting to load script from:', __dirname);
 

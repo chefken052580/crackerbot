@@ -44,7 +44,8 @@ services:
       - bot_network
     depends_on:
       - websocket_server
-    environment: {}
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     command: pm2-runtime start src/ecosystem.config.cjs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
