@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
-const { createClient } = require("redis"); // If you're using Redis for state management
+const { createClient } = require("redis");
 
 const app = express();
 const httpServer = createServer(app);
@@ -14,9 +14,23 @@ const io = new Server(httpServer, {
 });
 
 // Redis client for state management or pub/sub across services
-const redisClient = createClient();
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
-redisClient.connect().then(() => console.log('Connected to Redis'));
+const redisClient = createClient({
+  url: 'redis://redis:6379' // Use the service name instead of localhost
+});
+
+redisClient.on('connect', () => {
+  console.log('Redis client connected');
+});
+
+redisClient.on('error', (err) => {
+  console.error('Redis Client Error', err);
+});
+
+redisClient.connect().then(() => {
+  console.log('Successfully connected to Redis');
+}).catch(err => {
+  console.error('Failed to connect to Redis:', err);
+});
 
 app.use(express.json());
 app.use(cors());
@@ -25,31 +39,40 @@ app.get("/", (req, res) => {
   res.send("Bot Frontend is running.");
 });
 
+app.get("/health", (req, res) => {
+  res.status(200).send("Healthy");
+});
+
 io.on('connection', (socket) => {
   console.log('A user connected');
 
-  // Forward messages to all clients, including other bots if they're connected here
   socket.on('message', async (data) => {
-    // Check if the message is a command or regular message
     if (data.type === 'command') {
-      // Forward command to bot_lead or wherever commands are processed
-      io.to('bot_lead').emit('command', data); // Assuming bot_lead is in a room named 'bot_lead'
+      io.to('bot_lead').emit('command', data);
+      console.log('Command sent to bot_lead:', data.command);
     } else {
-      io.emit('message', data); // Broadcast the message to all connected clients
+      io.emit('message', data); // Broadcast regular messages
     }
     
-    // Optionally, store or log messages in Redis for state management
     if (redisClient.isReady) {
-      await redisClient.lPush('chatMessages', JSON.stringify(data));
+      try {
+        await redisClient.lPush('chatMessages', JSON.stringify(data));
+      } catch (error) {
+        console.error('Error saving to Redis:', error);
+      }
     }
   });
 
-  // Handle responses from bots or OpenAI
-  socket.on('response', (data) => {
-    io.emit('message', data); // Broadcast the response to all clients
+  socket.on('commandResponse', (data) => {
+    console.log('Command response received:', data);
+    socket.emit('commandResponse', data); // Send back to the sender
   });
 
-  // Join rooms for better message routing if needed
+  socket.on('message', (data) => {
+    console.log('Message response received:', data);
+    io.emit('message', data); // Broadcast to everyone
+  });
+
   socket.on('join', (room) => {
     socket.join(room);
     console.log('User joined room:', room);
@@ -60,7 +83,11 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;  // Changed to 8080 or another port not in use by Nginx
 httpServer.listen(PORT, () => {
-  console.log(`Bot Frontend server running on http://0.0.0.0:${PORT}`);
+  console.log(`Bot Frontend server running on port ${PORT}`);
 });
+
+// Import and initialize the socket client for communication with websocket_server
+const socketClient = require('./socket');
+socketClient.connectSocket();

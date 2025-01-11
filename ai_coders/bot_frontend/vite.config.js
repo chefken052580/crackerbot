@@ -5,7 +5,7 @@ import autoprefixer from "autoprefixer";
 import path from "path";
 
 export default defineConfig({
-  root: ".", // Root directory
+  root: ".", 
   plugins: [react()],
   css: {
     postcss: {
@@ -18,23 +18,24 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    outDir: path.resolve(__dirname, "dist"), // Build output directory
+    outDir: 'build', // Ensure this matches where your build output goes
     sourcemap: true,
     target: "es2020",
     rollupOptions: {
-      input: path.resolve(__dirname, "index.html"), // Ensure it references `index.html`
+      input: path.resolve(__dirname, "index.html"),
       output: {
         manualChunks: (id) => {
           if (id.includes("node_modules")) return "vendor";
         },
       },
+      external: ["structured-clone"], // Treat structured-clone as external if dynamically imported
     },
   },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src"), // Alias for `src/`
-      "@components": path.resolve(__dirname, "src/components"), // Alias for components
+      "@": path.resolve(__dirname, "src"),
+      "@components": path.resolve(__dirname, "src/components"),
     },
   },
-  publicDir: path.resolve(__dirname, "public"), // Static assets
+  publicDir: path.resolve(__dirname, "public"),
 });

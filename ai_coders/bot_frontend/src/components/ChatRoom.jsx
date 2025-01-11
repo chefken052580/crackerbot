@@ -10,52 +10,86 @@ const commands = [
   { command: "/list_projects", description: "List All Projects" },
 ];
 
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [showCommands, setShowCommands] = useState(false);
-  const socket = useChatSocket("http://websocket_server:5002"); // Ensure this matches your Docker Compose service name
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const { socket, reconnect, isSocketConnected } = useChatSocket("ws://websocket_server:5002");
 
   useEffect(() => {
     if (socket) {
-      // Listen for 'message' event for all incoming messages
+      let reconnectTimer;
+      const handleReconnect = () => {
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          console.error('Socket disconnected. Attempting to reconnect...');
+          reconnect();
+          setMessages(prev => [...prev, { user: "System", text: "Attempting to reconnect...", type: 'system' }]);
+          setReconnectAttempts(prev => prev + 1);
+          reconnectTimer = setTimeout(handleReconnect, 5000); // Try reconnecting every 5 seconds
+        } else {
+          console.error("Failed to reconnect after multiple attempts.");
+          setMessages(prev => [...prev, { user: "System", text: "Failed to reconnect after multiple attempts. Please refresh.", type: 'system' }]);
+        }
+      };
+
+      socket.on('connect', () => {
+        console.log('Socket connected successfully');
+        setReconnectAttempts(0); // Reset attempts on successful connect
+      });
+
       socket.on('message', (data) => {
-        setMessages(prev => [...prev, data]);
+        console.log('Received message:', data);
+        setMessages(prev => [...prev, { ...data, type: 'bot' }]);
       });
       
-      // Listen for command responses
       socket.on('commandResponse', (response) => {
-        setMessages(prev => [...prev, { user: "System", text: response.success ? response.response : `Error: ${response.error}` }]);
+        console.log('Command response:', response);
+        setMessages(prev => [...prev, { 
+          user: "System", 
+          text: response.success ? response.response : `Error: ${response.error}`,
+          type: 'system'
+        }]);
       });
 
-      // Error handling for connection issues
       socket.on('connect_error', (error) => {
         console.error('Socket connection error:', error);
-      });
-      socket.on('disconnect', (reason) => {
-        console.log('Socket disconnected:', reason);
+        setMessages(prev => [...prev, { user: "System", text: `Connection Error: ${error.message}`, type: 'system' }]);
       });
 
-      // Clean up listeners on component unmount
+      socket.on('disconnect', (reason) => {
+        console.log('Socket disconnected:', reason);
+        setMessages(prev => [...prev, { user: "System", text: `Disconnected: ${reason}`, type: 'system' }]);
+        handleReconnect();
+      });
+
       return () => {
+        clearTimeout(reconnectTimer);
+        socket.off('connect');
         socket.off('message');
         socket.off('commandResponse');
         socket.off('connect_error');
         socket.off('disconnect');
       };
     }
-  }, [socket]);
+  }, [socket, reconnect, reconnectAttempts]);
 
   const sendMessage = () => {
     if (socket && input.trim()) {
-      if (input.startsWith("/")) {
-        socket.emit('command', { command: input, user: "Admin", target: "bot_lead" });
+      if (isSocketConnected()) {
+        if (input.startsWith("/")) {
+          socket.emit('command', { command: input, user: "Admin", target: "bot_lead" });
+        } else {
+          socket.emit('message', { type: "message", text: input, user: "Admin" });
+        }
+        setMessages(prev => [...prev, { user: "Admin", text: input, type: 'user' }]);
+        setInput("");
       } else {
-        socket.emit('message', { type: "message", text: input, user: "Admin" });
+        console.error('Socket is not connected.');
+        setMessages(prev => [...prev, { user: "System", text: "Socket is not connected. Please try again later.", type: 'system' }]);
       }
-      // Add the sent message to the chat immediately
-      setMessages(prev => [...prev, { user: "Admin", text: input }]);
-      setInput("");
     }
   };
 
@@ -84,7 +118,7 @@ const ChatRoom = () => {
         ))}
       </div>
       {showCommands && (
-        <div className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-md p-2 mt-2">
+        <div className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10">
           {commands.map((cmd) => (
             <div
               key={cmd.command}
@@ -96,13 +130,14 @@ const ChatRoom = () => {
           ))}
         </div>
       )}
-      <div className="flex mt-4">
+      <div className="flex mt-4 relative">
         <input
           type="text"
           value={input}
           onChange={handleInputChange}
           placeholder="Type your message or command..."
           className="flex-1 p-2 rounded-l-md bg-gray-800 border border-gray-600 text-gray-100 focus:outline-none focus:ring-2 focus:ring-neon-yellow"
+          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
         />
         <button
           onClick={sendMessage}
@@ -111,6 +146,12 @@ const ChatRoom = () => {
           Send
         </button>
       </div>
+      <button 
+        onClick={reconnect} 
+        className="mt-2 bg-neon-blue text-gray-900 px-4 py-2 rounded hover:bg-neon-yellow transition"
+      >
+        Manual Reconnect
+      </button>
     </div>
   );
 };

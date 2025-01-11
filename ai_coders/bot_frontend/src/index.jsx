@@ -1,3 +1,5 @@
+import 'structured-clone'; // Import the main module
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { Provider } from "react-redux";
@@ -6,9 +8,12 @@ import "./index.css"; // Tailwind CSS and global styles
 import App from "./App";
 
 async function main() {
+  // Ensure structuredClone is available, polyfill if not
   if (!globalThis.structuredClone) {
     console.warn("structuredClone is not supported. Loading polyfill...");
-    await import("structured-clone");
+    await import("structured-clone").then(({ structuredClone }) => {
+      globalThis.structuredClone = structuredClone;
+    });
   }
 
   const rootElement = document.getElementById("root");
@@ -29,4 +34,4 @@ async function main() {
   );
 }
 
-main();
+main().catch(e => console.error("Error in main:", e));
