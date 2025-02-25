@@ -1,8 +1,8 @@
-// Add your server logic here
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import http from 'http';
+import ioClient from 'socket.io-client';
 
 const app = express();
 const server = http.createServer(app);
@@ -14,6 +14,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 5001;
+const WEBSOCKET_SERVER_URL = "http://websocket_server:5002";
 
 app.use(cors());
 
@@ -22,32 +23,27 @@ app.get('/health', (req, res) => {
   res.send('Bot Lead is healthy!');
 });
 
-io.on('connection', (socket) => {
-  console.log(`New client connected with ID: ${socket.id}`);
+// Connect bot_lead to the WebSocket server
+const botSocket = ioClient(WEBSOCKET_SERVER_URL);
 
-  socket.on('command', async (data) => {
-    console.log(`Command received:`, data);
-    try {
-      const response = await processCommand(data.command, data.user);
-      socket.emit('commandResponse', { success: true, response });
-    } catch (error) {
-      console.error('Error processing command:', error);
-      socket.emit('commandResponse', { success: false, error: error.message });
-    }
-  });
+botSocket.on('connect', () => {
+  console.log('Bot Lead connected to WebSocket!');
+  botSocket.emit('register', { name: "bot_lead", role: "lead" });
+});
 
-  socket.on('message', (data) => {
-    console.log(`Message received from ${socket.id}:`, data);
-    io.emit('message', data); // Broadcast message to all clients
-  });
+botSocket.on('command', async (data) => {
+  console.log(`Command received by Bot Lead:`, data);
+  try {
+    const response = await processCommand(data.command, data.user);
+    botSocket.emit('response', { success: true, response, target: 'frontend' });
+  } catch (error) {
+    console.error('Error processing command:', error);
+    botSocket.emit('response', { success: false, error: error.message, target: 'frontend' });
+  }
+});
 
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id);
-  });
-
-  socket.on('error', (error) => {
-    console.error('Socket error:', error);
-  });
+botSocket.on('disconnect', (reason) => {
+  console.log('Bot Lead WebSocket disconnected:', reason);
 });
 
 server.listen(PORT, () => {
@@ -62,7 +58,6 @@ const __dirname = dirname(__filename);
 console.log('Current working directory:', process.cwd());
 console.log('Attempting to load script from:', __dirname);
 
-// Placeholder for command processing
 async function processCommand(command, user) {
   switch(command) {
     case '/list_bot_health':

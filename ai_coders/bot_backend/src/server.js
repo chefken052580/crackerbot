@@ -1,9 +1,10 @@
-// Your existing server.js code goes here, no changes needed in content
+// Your existing server.js code with AI integration updated for OpenAI v4
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import http from 'http';
 import redis from 'redis';
+import OpenAI from 'openai';  // Updated import for AI capabilities
 
 const app = express();
 const server = http.createServer(app);
@@ -18,12 +19,17 @@ const BOT_NAME = "bot_backend";
 const PORT = process.env.PORT || 5000;
 
 // Initialize Redis client
-const client = redis.createClient({
+const redisClient = redis.createClient({
   url: 'redis://redis:6379' // Assuming 'redis' is your service name in Docker Compose
 });
 
-client.on('error', (err) => console.log('Redis Client Error', err));
-client.connect().then(() => console.log('Connected to Redis'));
+redisClient.on('error', (err) => console.log('Redis Client Error', err));
+redisClient.connect().then(() => console.log('Connected to Redis'));
+
+// New: Setup OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Middleware
 app.use(express.json());
@@ -34,12 +40,29 @@ app.get("/", (req, res) => {
   res.send("Bot Backend is running.");
 });
 
+// New endpoint for AI-driven database schema creation or similar tasks
+app.post("/api/generate_schema", async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    const response = await openai.completions.create({
+      model: "text-davinci-003", // or the latest model available
+      prompt: `Create a database schema for: ${prompt}`,
+      max_tokens: 1000,
+    });
+    const schema = response.choices[0].text.trim();
+    res.json({ schema });
+  } catch (error) {
+    console.error('Error in AI generation:', error);
+    res.status(500).json({ error: 'Failed to generate schema' });
+  }
+});
+
 // Example API endpoint for managing data - using Redis
 app.post("/api/task", async (req, res) => {
   try {
     const { title, description } = req.body;
     const task = JSON.stringify({ title, description });
-    await client.lPush('tasks', task); // Store tasks in a Redis list
+    await redisClient.lPush('tasks', task); // Store tasks in a Redis list
     res.status(201).json({ message: "Task added to Redis", title, description });
   } catch (error) {
     console.error('Error adding task to Redis:', error);
@@ -62,7 +85,7 @@ io.on('connection', (socket) => {
         console.log(`Received message: ${JSON.stringify(data)}`);
         // Handle regular messages here if needed, e.g., for database operations
         if (data.type === 'task') {
-          const tasks = await client.lRange('tasks', 0, -1); // Fetch all tasks from Redis list
+          const tasks = await redisClient.lRange('tasks', 0, -1); // Fetch all tasks from Redis list
           const parsedTasks = tasks.map(task => JSON.parse(task));
           socket.emit('tasks', parsedTasks);
         }
@@ -83,7 +106,7 @@ io.on('connection', (socket) => {
 });
 
 async function handleCommand(socket, commandData) {
-  const { command } = commandData; // Removed 'user' since it wasn't used
+  const { command } = commandData; 
   let responseText = "";
 
   switch (command) {

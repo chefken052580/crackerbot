@@ -18,7 +18,8 @@
     "react-redux": "^9.2.0",
     "socket.io-client": "^4.8.1",
     "structured-clone": "^0.2.2",
-    "web-vitals": "^4.2.4"
+    "web-vitals": "^4.2.4",
+    "openai": "^3.0.0"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.26.0",

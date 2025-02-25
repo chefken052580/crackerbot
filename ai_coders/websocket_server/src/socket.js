@@ -4,7 +4,13 @@ class WebSocketHandler {
   constructor(httpServer) {
     this.io = new Server(httpServer, {
       pingInterval: 25000,  // Send a ping packet every 25 seconds
-      pingTimeout: 60000,   // Disconnect after 60 seconds of no ping response
+      pingTimeout: 60000,   // Disconnect after 60 seconds of no ping response,
+      cors: {
+        origin: "https://visually-sterling-spider.ngrok-free.app",
+        credentials: true,
+        methods: ["GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+        allowedHeaders: ["Content-Type"]
+      }
     });
     this.clients = {};
     this.initializeHandlers();

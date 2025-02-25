@@ -1,6 +1,6 @@
 const { io } = require("socket.io-client");
 
-const WEBSOCKET_SERVER_URL = "ws://websocket_server:5002";
+const WEBSOCKET_SERVER_URL = "ws://websocket_server:5002"; // Changed to ws protocol
 
 console.log("Attempting to connect to WebSocket at:", WEBSOCKET_SERVER_URL);
 

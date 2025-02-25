@@ -5,23 +5,30 @@ import http from 'http';
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  },
-  pingInterval: 25000,
-  pingTimeout: 60000,
-});
 
-const PORT = process.env.PORT || 5002;
+// CORS configuration for both HTTP and WebSocket
+const corsOptions = {
+  origin: 'https://visually-sterling-spider.ngrok-free.app',
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type']
+};
 
-app.use(cors());
+// Apply CORS middleware for HTTP requests
+app.use(cors(corsOptions));
 
 // Simple health check endpoint
 app.get('/', (req, res) => {
   res.send('WebSocket Server is running!');
 });
+
+const io = new Server(server, {
+  cors: corsOptions, // Use the same CORS options for Socket.IO
+  pingInterval: 25000,
+  pingTimeout: 60000,
+});
+
+const PORT = process.env.PORT || 5002;
 
 const clients = {};
 
@@ -48,10 +55,15 @@ io.on('connection', (socket) => {
         console.error(`Target bot "${target}" not found.`);
       }
     } else {
-      // General broadcast or specific routing can go here
-      io.emit('message', data);
+      // Broadcast message to all clients except the sender
+      socket.broadcast.emit('message', data);
       console.log('Message broadcasted:', data);
     }
+  });
+
+  socket.on('response', (data) => {
+    // Forward response back to the client (frontend)
+    io.emit('commandResponse', data);
   });
 
   socket.on('disconnect', (reason) => {

@@ -16,13 +16,17 @@ const useChatSocket = (serverUrl) => {
     });
 
     newSocket.on("connect", () => {
-      console.log("WebSocket Connected");
+      console.log("WebSocket Connected, ID:", newSocket.id);
       setIsConnected(true);
     });
 
     newSocket.on("connect_error", (error) => {
       console.error("WebSocket connection error:", error);
       setIsConnected(false);
+    });
+
+    newSocket.on("connect_timeout", () => {
+      console.error("WebSocket connection timeout");
     });
 
     newSocket.on("disconnect", (reason) => {
@@ -52,9 +56,9 @@ const useChatSocket = (serverUrl) => {
     }
   }, [socket, connectSocket]);
 
-  const isSocketConnected = () => {
+  const isSocketConnected = useCallback(() => {
     return isConnected && socket && socket.connected;
-  };
+  }, [isConnected, socket]);
 
   return { socket, reconnect, isSocketConnected };
 };
