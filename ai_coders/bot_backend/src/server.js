@@ -1,4 +1,4 @@
-// Your existing server.js code with AI integration updated for OpenAI v4
+import 'dotenv/config'; // Load environment variables from .env file
 import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
