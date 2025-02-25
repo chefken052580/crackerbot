@@ -1,1 +1,10 @@
+*.pyc
+__pycache__
+*.log
+.DS_Store
+.vscode
+node_modules
+.env
+.env
+>>>>>>> shmai
 .env
