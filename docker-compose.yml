@@ -1,12 +1,10 @@
-version: '3.8'
 services:
   bot_frontend:
     build:
-      context: ./bot_frontend
+      context: ./ai_coders/bot_frontend
       dockerfile: Dockerfile
     ports:
       - "3000:80"
-      - "8080:8080"
     networks:
       - bot_network
     depends_on:
@@ -21,7 +19,7 @@ services:
 
   bot_backend:
     build:
-      context: ./bot_backend
+      context: ./ai_coders/bot_backend
       dockerfile: Dockerfile
     ports:
       - "5000:5000"
@@ -31,6 +29,8 @@ services:
       - websocket_server
       - redis
     command: node src/server.js
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
@@ -39,7 +39,7 @@ services:
 
   bot_lead:
     build:
-      context: ./bot_lead
+      context: ./ai_coders/bot_lead
       dockerfile: Dockerfile
     ports:
       - "5001:5001"
@@ -70,7 +70,7 @@ services:
 
   websocket_server:
     build:
-      context: ./websocket_server
+      context: ./ai_coders/websocket_server
       dockerfile: Dockerfile
     ports:
       - "5002:5002"
@@ -82,7 +82,6 @@ services:
       timeout: 5s
       retries: 3
     restart: always
-    environment: {}
 
   ngrok:
     image: ngrok/ngrok:latest

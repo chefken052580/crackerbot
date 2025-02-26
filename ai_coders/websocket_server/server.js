@@ -21,7 +21,7 @@ app.get('/', (req, res) => {
 
 const io = new Server(server, {
   cors: corsOptions,
-  pingInterval: 10000, // Faster pings to detect issues
+  pingInterval: 10000,
   pingTimeout: 5000,
 });
 
@@ -48,6 +48,7 @@ io.on('connection', (socket) => {
         console.log(`Command sent to ${target}`);
       } else {
         console.error(`Target "${target}" not found. Clients:`, Object.keys(clients));
+        io.emit('commandResponse', { success: false, error: `Target "${target}" not found`, target: 'frontend' });
       }
     } else {
       socket.broadcast.emit('message', data);

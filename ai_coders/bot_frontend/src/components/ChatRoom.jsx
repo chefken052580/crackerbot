@@ -53,18 +53,28 @@ const ChatRoom = () => {
       setMessages(prev => [...prev, { user: "System", text: "Connected to WebSocket", type: 'system' }]);
       setIsConnected(true);
       setReconnectAttempts(0);
+      newSocket.emit('register', { name: "bot_frontend", role: "frontend" });
     });
 
     newSocket.on('message', (data) => {
       console.log('Received message:', data);
-      setMessages(prev => [...prev, { ...data, type: 'bot' }]);
+      setMessages(prev => [...prev, { user: data.user || "Bot", text: data.text, type: 'bot' }]);
     });
 
     newSocket.on('commandResponse', (response) => {
       console.log('Command response:', response);
       setMessages(prev => [...prev, {
-        user: "System",
+        user: response.user || "System",
         text: response.success ? response.response : `Error: ${response.error || "Unknown error"}`,
+        type: 'system'
+      }]);
+    });
+
+    newSocket.on('response', (data) => { // Added to handle bot responses
+      console.log('Response from bot:', data);
+      setMessages(prev => [...prev, {
+        user: data.user || "Bot",
+        text: data.success ? data.response : `Error: ${data.error || "Unknown error"}`,
         type: 'system'
       }]);
     });
@@ -94,6 +104,7 @@ const ChatRoom = () => {
       newSocket.off('connect');
       newSocket.off('message');
       newSocket.off('commandResponse');
+      newSocket.off('response');
       newSocket.off('connect_error');
       newSocket.off('disconnect');
       newSocket.off('error');
