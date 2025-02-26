@@ -50,22 +50,10 @@ app.post("/api/generate_schema", async (req, res) => {
   }
 });
 
-app.post("/api/task", async (req, res) => {
-  try {
-    const { title, description } = req.body;
-    const task = JSON.stringify({ title, description });
-    await redisClient.lPush('tasks', task);
-    res.status(201).json({ message: "Task added to Redis", title, description });
-  } catch (error) {
-    console.error('Error adding task to Redis:', error);
-    res.status(500).json({ message: "Error adding task to Redis." });
-  }
-});
-
 const botSocket = ioClient(WEBSOCKET_SERVER_URL, {
   transports: ['websocket'],
   reconnection: true,
-  reconnectionAttempts: Infinity,
+  reconnectionAttempts: 10, // Limit retries
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000
 });
@@ -77,49 +65,20 @@ botSocket.on('connect', () => {
 
 botSocket.on('command', async (data) => {
   console.log(`${BOT_NAME} received command:`, data);
-  let responseText = "";
-  switch (data.command) {
-    case '/list_bot_health':
-      responseText = `${BOT_NAME} is healthy and operational.`;
-      break;
-    case '/start_task':
-      responseText = "Starting task... What is the task?";
-      break;
-    default:
-      if (data.command.startsWith('/')) {
-        responseText = `Unknown command: ${data.command}`;
-      } else {
-        try {
-          const aiResponse = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [{ role: "user", content: data.command }],
-            max_tokens: 500,
-          });
-          responseText = aiResponse.choices[0].message.content.trim();
-        } catch (error) {
-          console.error('OpenAI error:', error);
-          responseText = "Error processing message with OpenAI.";
-        }
-      }
+  try {
+    const response = await processCommand(data.command);
+    botSocket.emit('response', { success: true, response, target: 'frontend' });
+  } catch (error) {
+    console.error('Error processing command:', error);
+    botSocket.emit('response', { success: false, error: error.message, target: 'frontend' });
   }
-  botSocket.emit('response', { success: true, response: responseText, target: 'frontend' });
 });
 
 botSocket.on('message', async (data) => {
   console.log(`${BOT_NAME} received message:`, data);
-  try {
-    const aiResponse = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: data.text }],
-      max_tokens: 500,
-    });
-    const response = aiResponse.choices[0].message.content.trim();
-    await redisClient.set(`message:${Date.now()}`, response);
-    botSocket.emit('response', { success: true, response, target: 'frontend' });
-  } catch (error) {
-    console.error('OpenAI error:', error);
-    botSocket.emit('response', { success: false, error: 'OpenAI processing failed', target: 'frontend' });
-  }
+  const response = `${BOT_NAME} received: ${data.text}`;
+  await redisClient.set(`message:${Date.now()}`, response);
+  botSocket.emit('response', { success: true, response, target: 'frontend' });
 });
 
 botSocket.on('connect_error', (error) => {
@@ -133,3 +92,16 @@ botSocket.on('disconnect', (reason) => {
 server.listen(PORT, () => {
   console.log(`${BOT_NAME} server running on http://0.0.0.0:${PORT}`);
 });
+
+async function processCommand(command) {
+  if (command.startsWith('Create Node.js API for')) {
+    const task = command.replace('Create Node.js API for ', '');
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: `Generate a Node.js API for ${task}, including endpoints and basic logic.` }],
+      max_tokens: 1000,
+    });
+    return `Backend API for ${task}:\n${response.choices[0].message.content.trim()}`;
+  }
+  return `${BOT_NAME} awaiting backend-specific task. Use 'Create Node.js API for <task>' to proceed.`;
+}

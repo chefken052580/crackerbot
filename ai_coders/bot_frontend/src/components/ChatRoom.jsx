@@ -8,6 +8,7 @@ const commands = [
   { command: "/start_task", description: "Start New Task" },
   { command: "/stop_bots", description: "Stop All Bots" },
   { command: "/list_projects", description: "List All Projects" },
+  { command: "/build <task>", description: "Delegate a software build task" },
 ];
 
 const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
@@ -25,7 +26,7 @@ const ChatRoom = () => {
     console.log("Initializing WebSocket connection to:", WEBSOCKET_SERVER_URL);
     const newSocket = io(WEBSOCKET_SERVER_URL, {
       reconnection: true,
-      reconnectionAttempts: Infinity,
+      reconnectionAttempts: 10, // Limit retries to prevent thrashing
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       transports: ['websocket'],
@@ -70,7 +71,7 @@ const ChatRoom = () => {
       }]);
     });
 
-    newSocket.on('response', (data) => { // Added to handle bot responses
+    newSocket.on('response', (data) => {
       console.log('Response from bot:', data);
       setMessages(prev => [...prev, {
         user: data.user || "Bot",

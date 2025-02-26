@@ -48,7 +48,7 @@ io.on('connection', (socket) => {
         console.log(`Command sent to ${target}`);
       } else {
         console.error(`Target "${target}" not found. Clients:`, Object.keys(clients));
-        io.emit('commandResponse', { success: false, error: `Target "${target}" not found`, target: 'frontend' });
+        io.emit('commandResponse', { success: false, error: `Target "${target}" not found`, target: data.user });
       }
     } else {
       socket.broadcast.emit('message', data);
