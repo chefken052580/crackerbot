@@ -5,16 +5,11 @@ tunnels:
   frontend:
     addr: bot_frontend:80
     proto: http
-    domain: visually-sterling-spider.ngrok-free.app  # Ensure this matches your setup
-
+    hostname: visually-sterling-spider.ngrok-free.app
   backend:
     addr: bot_backend:5000
     proto: http
-
-  websocket_http:
+  websocket:
     addr: websocket_server:5002
-    proto: http
-
- # websocket_tcp:
- #   addr: websocket_server:5002
- #   proto: tcp
+    proto: http  # Switch to HTTP for socket.io
+    hostname: websocket-visually-sterling-spider.ngrok-free.app  # New subdomain

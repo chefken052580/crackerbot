@@ -1,49 +1,57 @@
 import { useState, useEffect, useCallback } from "react";
 import io from "socket.io-client";
 
-const useChatSocket = (serverUrl) => {
+const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
+
+const useChatSocket = () => {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
 
   const connectSocket = useCallback(() => {
-    console.log("Attempting to connect to WebSocket server at:", serverUrl);
-    let newSocket = io(serverUrl, {
+    console.log("Attempting to connect to:", WEBSOCKET_SERVER_URL);
+    const newSocket = io(WEBSOCKET_SERVER_URL, {
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      transports: ['websocket']
+      transports: ['websocket'],
+      path: '/socket.io'
     });
 
     newSocket.on("connect", () => {
-      console.log("WebSocket Connected, ID:", newSocket.id);
+      console.log("Connected, ID:", newSocket.id);
       setIsConnected(true);
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("WebSocket connection error:", error);
+      console.error("Connect error:", error.message);
       setIsConnected(false);
     });
 
     newSocket.on("connect_timeout", () => {
-      console.error("WebSocket connection timeout");
+      console.error("Connect timeout");
+      setIsConnected(false);
     });
 
     newSocket.on("disconnect", (reason) => {
-      console.log("WebSocket Disconnected:", reason);
+      console.log("Disconnected:", reason);
       setIsConnected(false);
+    });
+
+    newSocket.on("error", (error) => {
+      console.error("Error:", error.message);
     });
 
     setSocket(newSocket);
     return newSocket;
-  }, [serverUrl]);
+  }, []);
 
   useEffect(() => {
-    let currentSocket = connectSocket();
-
+    const currentSocket = connectSocket();
     return () => {
       if (currentSocket) {
         currentSocket.disconnect();
+        console.log("Disconnected on cleanup");
       }
     };
   }, [connectSocket]);
@@ -51,7 +59,7 @@ const useChatSocket = (serverUrl) => {
   const reconnect = useCallback(() => {
     if (socket) {
       socket.disconnect();
-      console.log('Manually triggering reconnection');
+      console.log('Manual reconnect triggered');
       setSocket(connectSocket());
     }
   }, [socket, connectSocket]);

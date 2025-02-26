@@ -8,15 +8,18 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "https://visually-sterling-spider.ngrok-free.app", // Match frontend origin
     methods: ["GET", "POST"]
   }
 });
 
 const PORT = process.env.PORT || 5001;
-const WEBSOCKET_SERVER_URL = "http://websocket_server:5002";
+const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app"; // External tunnel
 
-app.use(cors());
+app.use(cors({
+  origin: "https://visually-sterling-spider.ngrok-free.app",
+  methods: ["GET", "POST"]
+}));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -24,7 +27,13 @@ app.get('/health', (req, res) => {
 });
 
 // Connect bot_lead to the WebSocket server
-const botSocket = ioClient(WEBSOCKET_SERVER_URL);
+const botSocket = ioClient(WEBSOCKET_SERVER_URL, {
+  transports: ['websocket'],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000
+});
 
 botSocket.on('connect', () => {
   console.log('Bot Lead connected to WebSocket!');
@@ -37,9 +46,13 @@ botSocket.on('command', async (data) => {
     const response = await processCommand(data.command, data.user);
     botSocket.emit('response', { success: true, response, target: 'frontend' });
   } catch (error) {
-    console.error('Error processing command:', error);
+    console.error('Error processing command:', error.message);
     botSocket.emit('response', { success: false, error: error.message, target: 'frontend' });
   }
+});
+
+botSocket.on('connect_error', (error) => {
+  console.error('Bot Lead WebSocket connection error:', error.message);
 });
 
 botSocket.on('disconnect', (reason) => {

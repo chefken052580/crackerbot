@@ -1,3 +1,4 @@
+version: '3.8'
 services:
   bot_frontend:
     build:
@@ -5,13 +6,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:80"
-      - "8080:8080"  # Expose Node.js server port if needed
+      - "8080:8080"
     networks:
       - bot_network
     depends_on:
       - websocket_server
       - bot_lead
-      - redis  # Add Redis as a dependency
+      - redis
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
@@ -58,7 +59,7 @@ services:
   redis:
     image: redis:alpine
     ports:
-      - "6379:6379"  # Keep this if you want to access Redis externally for debugging, remove for production if not needed
+      - "6379:6379"
     networks:
       - bot_network
     healthcheck:
@@ -84,10 +85,12 @@ services:
     environment: {}
 
   ngrok:
-    image: ngrok/ngrok
+    image: ngrok/ngrok:latest
+    environment:
+      - NGROK_AUTHTOKEN=2pg1fl3g1wDInoW9OJkujqyv0Ro_4NBkBhsL3NSVbK249kRL7
+    command: ["start", "--all", "--config", "/etc/ngrok.yml", "--log=stdout"]
     volumes:
-      - ./ngrok.yml:/etc/ngrok.yml
-    command: ["start", "--config", "/etc/ngrok.yml", "--all"]
+      - ./ngrok.yml:/etc/ngrok.yml:ro
     ports:
       - "4040:4040"
     networks:
@@ -97,6 +100,11 @@ services:
       - bot_backend
       - websocket_server
       - bot_lead
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   bot_network:

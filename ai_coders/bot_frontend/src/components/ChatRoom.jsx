@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import useChatSocket from "./useChatSocket";
+import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
 
 const commands = [
@@ -10,6 +10,7 @@ const commands = [
   { command: "/list_projects", description: "List All Projects" },
 ];
 
+const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 const ChatRoom = () => {
@@ -17,68 +18,91 @@ const ChatRoom = () => {
   const [input, setInput] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const { socket, reconnect, isSocketConnected } = useChatSocket("ws://websocket_server:5002");
+  const [socket, setSocket] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    if (socket) {
-      let reconnectTimer;
-      const handleReconnect = () => {
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          console.error('Socket disconnected. Attempting to reconnect...');
-          reconnect();
-          setMessages(prev => [...prev, { user: "System", text: "Attempting to reconnect...", type: 'system' }]);
-          setReconnectAttempts(prev => prev + 1);
-          reconnectTimer = setTimeout(handleReconnect, 5000); // Try reconnecting every 5 seconds
-        } else {
-          console.error("Failed to reconnect after multiple attempts.");
-          setMessages(prev => [...prev, { user: "System", text: "Failed to reconnect after multiple attempts. Please refresh.", type: 'system' }]);
-        }
-      };
+    console.log("Initializing WebSocket connection to:", WEBSOCKET_SERVER_URL);
+    const newSocket = io(WEBSOCKET_SERVER_URL, {
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      transports: ['websocket'],
+      path: '/socket.io'
+    });
 
-      socket.on('connect', () => {
-        console.log('Socket connected successfully');
-        setReconnectAttempts(0); // Reset attempts on successful connect
-      });
+    setSocket(newSocket);
 
-      socket.on('message', (data) => {
-        console.log('Received message:', data);
-        setMessages(prev => [...prev, { ...data, type: 'bot' }]);
-      });
-      
-      socket.on('commandResponse', (response) => {
-        console.log('Command response:', response);
-        setMessages(prev => [...prev, { 
-          user: "System", 
-          text: response.success ? response.response : `Error: ${response.error}`,
-          type: 'system'
-        }]);
-      });
+    let reconnectTimer;
+    const handleReconnect = () => {
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        console.error('Socket disconnected. Attempting to reconnect...');
+        newSocket.connect();
+        setMessages(prev => [...prev, { user: "System", text: "Attempting to reconnect...", type: 'system' }]);
+        setReconnectAttempts(prev => prev + 1);
+        reconnectTimer = setTimeout(handleReconnect, 5000);
+      } else {
+        console.error("Max reconnect attempts reached.");
+        setMessages(prev => [...prev, { user: "System", text: "Failed to reconnect after max attempts. Please refresh.", type: 'system' }]);
+      }
+    };
 
-      socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
-        setMessages(prev => [...prev, { user: "System", text: `Connection Error: ${error.message}`, type: 'system' }]);
-      });
+    newSocket.on('connect', () => {
+      console.log('Socket connected successfully, ID:', newSocket.id);
+      setMessages(prev => [...prev, { user: "System", text: "Connected to WebSocket", type: 'system' }]);
+      setIsConnected(true);
+      setReconnectAttempts(0);
+    });
 
-      socket.on('disconnect', (reason) => {
-        console.log('Socket disconnected:', reason);
-        setMessages(prev => [...prev, { user: "System", text: `Disconnected: ${reason}`, type: 'system' }]);
-        handleReconnect();
-      });
+    newSocket.on('message', (data) => {
+      console.log('Received message:', data);
+      setMessages(prev => [...prev, { ...data, type: 'bot' }]);
+    });
 
-      return () => {
-        clearTimeout(reconnectTimer);
-        socket.off('connect');
-        socket.off('message');
-        socket.off('commandResponse');
-        socket.off('connect_error');
-        socket.off('disconnect');
-      };
-    }
-  }, [socket, reconnect, reconnectAttempts]);
+    newSocket.on('commandResponse', (response) => {
+      console.log('Command response:', response);
+      setMessages(prev => [...prev, {
+        user: "System",
+        text: response.success ? response.response : `Error: ${response.error || "Unknown error"}`,
+        type: 'system'
+      }]);
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Raw connect error:', error);
+      setMessages(prev => [...prev, { user: "System", text: `Connection Error: ${error.message || error}`, type: 'system' }]);
+      setIsConnected(false);
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      setMessages(prev => [...prev, { user: "System", text: `Disconnected: ${reason}`, type: 'system' }]);
+      setIsConnected(false);
+      handleReconnect();
+    });
+
+    newSocket.on('error', (error) => {
+      console.error('Raw WebSocket error:', error);
+      setMessages(prev => [...prev, { user: "System", text: `WebSocket Error: ${error.message || error}`, type: 'system' }]);
+    });
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      newSocket.disconnect();
+      console.log("WebSocket disconnected on cleanup");
+      newSocket.off('connect');
+      newSocket.off('message');
+      newSocket.off('commandResponse');
+      newSocket.off('connect_error');
+      newSocket.off('disconnect');
+      newSocket.off('error');
+    };
+  }, [reconnectAttempts]); // Only rerun on reconnect attempts
 
   const sendMessage = () => {
     if (socket && input.trim()) {
-      if (isSocketConnected()) {
+      if (isConnected) {
         if (input.startsWith("/")) {
           socket.emit('command', { command: input, user: "Admin", target: "bot_lead" });
         } else {
@@ -96,17 +120,20 @@ const ChatRoom = () => {
   const handleInputChange = (e) => {
     const value = e.target.value;
     setInput(value);
-
-    if (value.startsWith("/")) {
-      setShowCommands(true);
-    } else {
-      setShowCommands(false);
-    }
+    setShowCommands(value.startsWith("/"));
   };
 
   const handleCommandSelect = (command) => {
     setInput(command);
     setShowCommands(false);
+  };
+
+  const manualReconnect = () => {
+    if (socket) {
+      console.log('Manual reconnect triggered');
+      socket.disconnect();
+      socket.connect();
+    }
   };
 
   return (
@@ -146,8 +173,8 @@ const ChatRoom = () => {
           Send
         </button>
       </div>
-      <button 
-        onClick={reconnect} 
+      <button
+        onClick={manualReconnect}
         className="mt-2 bg-neon-blue text-gray-900 px-4 py-2 rounded hover:bg-neon-yellow transition"
       >
         Manual Reconnect
