@@ -98,7 +98,7 @@ const ChatRoom = () => {
       newSocket.off('disconnect');
       newSocket.off('error');
     };
-  }, [reconnectAttempts]); // Only rerun on reconnect attempts
+  }, [reconnectAttempts]);
 
   const sendMessage = () => {
     if (socket && input.trim()) {
