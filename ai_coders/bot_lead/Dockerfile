@@ -11,11 +11,11 @@ RUN npm install
 # Install PM2 globally
 RUN npm install pm2 -g
 
-# Copy all source code including ecosystem.config.cjs
+# Copy all source code
 COPY src/ ./src/
 
 # Expose the port for the bot_lead server
 EXPOSE 5001
 
-# Start the server with PM2
-CMD ["pm2-runtime", "start", "src/ecosystem.config.cjs"]
+# Start the server directly with PM2 (no ecosystem file for simplicity)
+CMD ["pm2-runtime", "/bot_lead/src/server.js"]
