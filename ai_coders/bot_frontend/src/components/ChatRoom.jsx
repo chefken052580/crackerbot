@@ -18,7 +18,7 @@ const ChatRoom = () => {
   const [showCommands, setShowCommands] = useState(false);
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [taskPending, setTaskPending] = useState(null); // Track task questions from bot_lead
+  const [taskPending, setTaskPending] = useState(null);
 
   useEffect(() => {
     const newSocket = io(WEBSOCKET_SERVER_URL, {
@@ -90,16 +90,13 @@ const ChatRoom = () => {
     if (!socket || !input.trim() || !isConnected) return;
 
     if (taskPending) {
-      // Answer a task question
       socket.emit("taskResponse", { taskId: taskPending.taskId, answer: input });
       setMessages((prev) => [...prev, { user: "Admin", text: input, type: "user" }]);
       setTaskPending(null);
     } else if (input.startsWith("/")) {
-      // Send a command
       socket.emit("command", { command: input, user: "Admin", target: "bot_lead" });
       setMessages((prev) => [...prev, { user: "Admin", text: input, type: "command" }]);
     } else {
-      // Send a manual message
       socket.emit("message", { text: input, user: "Admin" });
       setMessages((prev) => [...prev, { user: "Admin", text: input, type: "user" }]);
     }
@@ -141,7 +138,8 @@ const ChatRoom = () => {
               msg.type === "bot" ? "text-neon-purple" : "text-white"
             }`}
           >
-            <span className="font-semibold">{msg.user}: </span>{msg.text}
+            <span className="font-semibold">{msg.user}: </span>
+            {msg.text}
           </div>
         ))}
       </div>
@@ -176,4 +174,12 @@ const ChatRoom = () => {
       </div>
       <button
         onClick={manualReconnect}
-        className="mt-2 bg-neon-blue text-gray
+        className="mt-2 bg-neon-blue text-gray-900 px-4 py-2 rounded hover:bg-neon-yellow transition"
+      >
+        Manual Reconnect
+      </button>
+    </div>
+  );
+};
+
+export default ChatRoom;
