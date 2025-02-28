@@ -23,6 +23,7 @@
     "react-redux": "^9.2.0",
     "socket.io-client": "^4.8.1",
     "structured-clone": "^0.2.2",
+    "tough-cookie": "^5.1.1",
     "web-vitals": "^4.2.4"
   },
   "devDependencies": {
