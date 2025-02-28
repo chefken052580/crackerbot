@@ -16,6 +16,7 @@
     "express": "^4.17.1",
     "http": "0.0.1-security",
     "openai": "^4.78.0",
+    "redis": "^4.6.5",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "ws": "^8.18.0"

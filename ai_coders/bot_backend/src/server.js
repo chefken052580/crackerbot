@@ -19,9 +19,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.get('/health', (req, res) => {
-  res.send(`${BOT_NAME} is healthy!`);
-});
+app.get('/health', (req, res) => res.send(`${BOT_NAME} is healthy!`));
 
 const redisClient = createClient({
   url: 'redis://redis:6379'
@@ -31,7 +29,7 @@ redisClient.on('error', (err) => console.error('Redis Client Error', err));
 redisClient.connect().then(() => console.log('Connected to Redis'));
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-api-key" // Fallback if not set
+  apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-api-key"
 });
 
 app.post("/api/generate_schema", async (req, res) => {
@@ -53,7 +51,7 @@ app.post("/api/generate_schema", async (req, res) => {
 const botSocket = ioClient(WEBSOCKET_SERVER_URL, {
   transports: ['websocket'],
   reconnection: true,
-  reconnectionAttempts: 10, // Limit retries
+  reconnectionAttempts: 10,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000
 });
@@ -67,41 +65,28 @@ botSocket.on('command', async (data) => {
   console.log(`${BOT_NAME} received command:`, data);
   try {
     const response = await processCommand(data.command);
-    botSocket.emit('response', { success: true, response, target: 'frontend' });
+    botSocket.emit('commandResponse', { success: true, response, target: 'frontend' });
   } catch (error) {
     console.error('Error processing command:', error);
-    botSocket.emit('response', { success: false, error: error.message, target: 'frontend' });
+    botSocket.emit('commandResponse', { success: false, error: error.message, target: 'frontend' });
   }
 });
 
-botSocket.on('message', async (data) => {
-  console.log(`${BOT_NAME} received message:`, data);
-  const response = `${BOT_NAME} received: ${data.text}`;
-  await redisClient.set(`message:${Date.now()}`, response);
-  botSocket.emit('response', { success: true, response, target: 'frontend' });
-});
-
-botSocket.on('connect_error', (error) => {
-  console.error(`${BOT_NAME} WebSocket connection error:`, error.message);
-});
-
-botSocket.on('disconnect', (reason) => {
-  console.log(`${BOT_NAME} WebSocket disconnected:`, reason);
-});
-
-server.listen(PORT, () => {
-  console.log(`${BOT_NAME} server running on http://0.0.0.0:${PORT}`);
-});
+botSocket.on('connect_error', (error) => console.error(`${BOT_NAME} WebSocket connection error:`, error.message));
+botSocket.on('disconnect', (reason) => console.log(`${BOT_NAME} WebSocket disconnected:`, reason));
 
 async function processCommand(command) {
   if (command.startsWith('Create Node.js API for')) {
     const task = command.replace('Create Node.js API for ', '');
+    const [name, features] = task.split(': ').map(s => s.trim());
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: `Generate a Node.js API for ${task}, including endpoints and basic logic.` }],
+      messages: [{ role: "user", content: `Generate a Node.js API for ${name} with features: ${features || 'basic functionality'}, including endpoints and basic logic.` }],
       max_tokens: 1000,
     });
-    return `Backend API for ${task}:\n${response.choices[0].message.content.trim()}`;
+    return `Backend API for ${name} generated:\n${response.choices[0].message.content.trim()}`;
   }
   return `${BOT_NAME} awaiting backend-specific task. Use 'Create Node.js API for <task>' to proceed.`;
 }
+
+server.listen(PORT, () => console.log(`${BOT_NAME} server running on http://0.0.0.0:${PORT}`));

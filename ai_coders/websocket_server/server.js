@@ -1,86 +1,80 @@
-import express from 'express';
+import 'dotenv/config';
 import cors from 'cors';
 import { Server } from 'socket.io';
-import http from 'http';
-
-const app = express();
-const server = http.createServer(app);
-
-const corsOptions = {
-  origin: 'https://visually-sterling-spider.ngrok-free.app',
-  credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type']
-};
-
-app.use(cors(corsOptions));
-
-app.get('/', (req, res) => {
-  res.send('WebSocket Server is running!');
-});
-
-const io = new Server(server, {
-  cors: corsOptions,
-  pingInterval: 10000,
-  pingTimeout: 5000,
-});
 
 const PORT = process.env.PORT || 5002;
-const clients = {};
+const io = new Server(PORT, {
+  cors: {
+    origin: "https://visually-sterling-spider.ngrok-free.app",
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+console.log(`WebSocket server running on port ${PORT}`);
+
+const bots = [];
 
 io.on('connection', (socket) => {
-  console.log(`New client connected with ID: ${socket.id}, IP: ${socket.handshake.address}`);
-  socket.on('register', ({ name, role }) => {
-    if (!name || !role) {
-      console.error("Invalid registration:", { name, role });
-      return;
-    }
-    clients[name] = { socket, role };
-    console.log(`${name} (${role}) registered successfully. Clients:`, Object.keys(clients));
+  console.log('Handshake headers:', socket.handshake.headers);
+  console.log('New client connected with ID:', socket.id, 'IP:', socket.handshake.address);
+
+  socket.on('register', (data) => {
+    const bot = { name: data.name, role: data.role, socketId: socket.id };
+    bots.push(bot);
+    console.log(`${data.name} (${data.role}) registered successfully. Clients:`, bots.map(b => b.name));
   });
 
   socket.on('message', (data) => {
-    console.log(`Message from ${socket.id}:`, data);
-    if (data.type === 'command') {
-      const { target } = data;
-      if (clients[target]) {
-        clients[target].socket.emit('command', data);
-        console.log(`Command sent to ${target}`);
-      } else {
-        console.error(`Target "${target}" not found. Clients:`, Object.keys(clients));
-        io.emit('commandResponse', { success: false, error: `Target "${target}" not found`, target: data.user });
-      }
+    console.log('Message from', socket.id, ':', JSON.stringify(data));
+    const targetBot = bots.find(bot => bot.name === (data.target || 'bot_lead')); // Default to bot_lead if no target
+    if (targetBot) {
+      io.to(targetBot.socketId).emit('message', data);
+      console.log('Message sent to', targetBot.name, ':', JSON.stringify(data));
     } else {
-      socket.broadcast.emit('message', data);
-      console.log('Message broadcasted:', data);
+      console.log('Target bot not found, defaulting to bot_lead not available:', data.target);
     }
   });
 
-  socket.on('response', (data) => {
-    console.log(`Response from ${socket.id}:`, data);
-    io.emit('commandResponse', data);
+  socket.on('command', (data) => {
+    console.log('Command from', socket.id, ':', JSON.stringify(data));
+    const targetBot = bots.find(bot => bot.name === data.target);
+    if (targetBot) {
+      io.to(targetBot.socketId).emit('command', data);
+      console.log('Command sent to', targetBot.name, ':', JSON.stringify(data));
+    } else {
+      console.log('Target bot not found:', data.target);
+    }
+  });
+
+  socket.on('commandResponse', (data) => {
+    console.log('CommandResponse from', socket.id, ':', JSON.stringify(data));
+    const targetBot = bots.find(bot => bot.name === data.target);
+    if (targetBot) {
+      io.to(targetBot.socketId).emit('commandResponse', data);
+      console.log('CommandResponse sent to', targetBot.name, ':', JSON.stringify(data));
+    } else {
+      console.log('Target bot not found for commandResponse:', data.target);
+    }
+  });
+
+  socket.on('taskResponse', (data) => {
+    console.log('TaskResponse from', socket.id, ':', JSON.stringify(data));
+    const targetBot = bots.find(bot => bot.name === 'bot_lead');
+    if (targetBot) {
+      io.to(targetBot.socketId).emit('taskResponse', data);
+      console.log('TaskResponse routed to bot_lead:', JSON.stringify(data));
+    } else {
+      console.log('bot_lead not found for taskResponse');
+    }
   });
 
   socket.on('disconnect', (reason) => {
-    console.log(`Client ${socket.id} disconnected: ${reason}`);
-    for (const [name, client] of Object.entries(clients)) {
-      if (client.socket === socket) {
-        delete clients[name];
-        console.log(`${name} removed. Remaining clients:`, Object.keys(clients));
-        break;
-      }
+    const index = bots.findIndex(bot => bot.socketId === socket.id);
+    if (index !== -1) {
+      const bot = bots.splice(index, 1)[0];
+      console.log(`${bot.name} removed. Remaining clients:`, bots.map(b => b.name));
     }
+    console.log('Client', socket.id, 'disconnected:', reason);
   });
-
-  socket.on('error', (error) => {
-    console.error(`Socket error from ${socket.id}:`, error.message);
-  });
-});
-
-io.engine.on('initial_headers', (headers, req) => {
-  console.log('Handshake headers:', headers);
-});
-
-server.listen(PORT, () => {
-  console.log(`WebSocket server running on port ${PORT}`);
 });
