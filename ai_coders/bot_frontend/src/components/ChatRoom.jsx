@@ -18,7 +18,9 @@ const ChatRoom = () => {
   const [showCommands, setShowCommands] = useState(false);
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const [taskPending, setTaskPending] = useState(null);
+  const [currentTask, setCurrentTask] = useState(null); // Added for task tracking
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -41,21 +43,27 @@ const ChatRoom = () => {
 
     newSocket.on("message", (data) => {
       console.log("Received message:", data);
+      setIsTyping(false);
       if (data.type === "progress") {
         setMessages((prev) => {
           const updated = prev.filter(msg => msg.type !== "progress" || msg.taskId !== data.taskId);
           return [...updated, { user: data.user, text: data.text, type: data.type, taskId: data.taskId }];
         });
       } else {
-        setMessages((prev) => [...prev, { user: data.user || "Bot", text: data.text, type: data.type || "bot" }]);
+        setMessages((prev) => [...prev, { user: data.user || "Cracker Bot", text: data.text, type: data.type || "bot" }]);
       }
       if (data.type === "question" && data.taskId) {
         setTaskPending({ taskId: data.taskId, question: data.text });
+        setCurrentTask((prev) => ({
+          ...prev,
+          [data.taskId]: { ...(prev?.[data.taskId] || {}), step: data.text.includes("type") ? "type" : data.text.includes("features") ? "features" : "name" },
+        }));
       }
     });
 
     newSocket.on("commandResponse", (data) => {
       console.log("Command response:", data);
+      setIsTyping(false);
       if (data.type === "download") {
         setMessages((prev) => [...prev, { user: "Cracker Bot", text: data.response, type: "download", fileName: data.fileName, fileContent: data.content }]);
       } else {
@@ -65,6 +73,8 @@ const ChatRoom = () => {
         ]);
       }
     });
+
+    newSocket.on("typing", () => setIsTyping(true));
 
     newSocket.on("connect_error", (error) => {
       console.error("Connect error:", error);
@@ -86,7 +96,7 @@ const ChatRoom = () => {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, isTyping]);
 
   const sendMessage = () => {
     if (!socket || !input.trim() || !isConnected) return;
@@ -95,13 +105,27 @@ const ChatRoom = () => {
       console.log("Sending task response:", { taskId: taskPending.taskId, answer: input });
       socket.emit("taskResponse", { taskId: taskPending.taskId, answer: input, user: "Admin" });
       setMessages((prev) => [...prev, { user: "Admin", text: input, type: "user" }]);
+      setCurrentTask((prev) => ({
+        ...prev,
+        [taskPending.taskId]: {
+          ...prev[taskPending.taskId],
+          [taskPending.question.includes("type") ? "type" : taskPending.question.includes("features") ? "features" : "name"]: input,
+        },
+      }));
       setTaskPending(null);
     } else if (input.startsWith("/")) {
       socket.emit("command", { command: input, user: "Admin", target: "bot_lead" });
       setMessages((prev) => [...prev, { user: "Admin", text: input, type: "command" }]);
     } else {
       socket.emit("message", { text: input, user: "Admin" });
+      socket.emit("typing");
       setMessages((prev) => [...prev, { user: "Admin", text: input, type: "user" }]);
+      const recentMessages = messages.slice(-2).concat({ text: input });
+      if (!recentMessages.some(msg => msg.text.toLowerCase().includes("task") || msg.text.toLowerCase().includes("build"))) {
+        setTimeout(() => {
+          setMessages((prev) => [...prev, { user: "Cracker Bot", text: "Ready to create something? Try '/start_task' or name a task!", type: "bot" }]);
+        }, 1000);
+      }
     }
     setInput("");
     setShowCommands(false);
@@ -125,16 +149,15 @@ const ChatRoom = () => {
     }
   };
 
-  const handleDownload = (fileName, fileContent) => {
-    const blob = new Blob([fileContent], { type: 'text/html' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+  const handlePreview = (fileContent) => {
+    try {
+      const decoded = atob(fileContent);
+      const lines = decoded.split('\n').slice(0, 5).join('\n');
+      setMessages((prev) => [...prev, { user: "System", text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, type: "system" }]);
+    } catch (e) {
+      console.error("Preview error:", e);
+      setMessages((prev) => [...prev, { user: "System", text: "Preview failed—likely a zip file!", type: "error" }]);
+    }
   };
 
   return (
@@ -145,11 +168,18 @@ const ChatRoom = () => {
           <ChatMessage
             key={index}
             message={msg}
-            onDownload={msg.type === "download" || (msg.type === "success" && msg.fileContent) ? () => handleDownload(msg.fileName || `${msg.taskId || 'file'}.html`, msg.fileContent) : null}
+            onDownload={msg.type === "download" || (msg.type === "success" && msg.fileContent) ? () => handleDownload(msg.fileName, msg.fileContent) : null}
+            onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
           />
         ))}
+        {isTyping && <div className="text-gray-500 italic">Crackerbot is typing...</div>}
         <div ref={chatEndRef} />
       </div>
+      {currentTask && taskPending && (
+        <div className="text-gray-400 mb-2">
+          Task: {currentTask[taskPending.taskId]?.name || "Unnamed"} | Type: {currentTask[taskPending.taskId]?.type || "Pending"} | Features: {currentTask[taskPending.taskId]?.features || "Pending"}
+        </div>
+      )}
       {showCommands && (
         <div className="absolute bg-gray-800 border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10">
           {commands.map((cmd) => (
@@ -168,7 +198,7 @@ const ChatRoom = () => {
           type="text"
           value={input}
           onChange={handleInputChange}
-          placeholder={taskPending ? `Answer: ${taskPending.question}` : "Type your message or command..."}
+          placeholder={taskPending ? `Answer: ${taskPending.question}` : "Type your message, task name, or /command..."}
           className="flex-1 p-2 rounded-l-md bg-gray-800 border border-gray-600 text-gray-100 focus:outline-none focus:ring-2 focus:ring-neon-yellow"
           onKeyPress={(e) => e.key === "Enter" && sendMessage()}
         />
@@ -189,4 +219,5 @@ const ChatRoom = () => {
   );
 };
 
+// Updated handleDownload moved to ChatMessage for consistency
 export default ChatRoom;
