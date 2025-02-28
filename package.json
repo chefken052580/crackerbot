@@ -14,7 +14,6 @@
     "@reduxjs/toolkit": "^2.5.0",
     "axios": "^1.7.9",
     "express": "^4.21.2",
-    "latest": "^0.2.0",
     "minimist": "^1.2.8",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
