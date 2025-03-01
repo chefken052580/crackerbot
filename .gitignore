@@ -8,3 +8,7 @@ node_modules
 .env
 >>>>>>> shmai
 .env
+dist/
+node_modules/
+dist/
+node_modules/
