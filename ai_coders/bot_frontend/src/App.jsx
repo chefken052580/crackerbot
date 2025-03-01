@@ -21,7 +21,7 @@ const App = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-300">
+    <div className="flex h-screen bg-gray-900 text-gray-300 overflow-hidden">
       <aside className="w-64 bg-gray-800 flex flex-col shadow-lg">
         <div className="p-6 border-b border-gray-700">
           <h1 className="text-3xl font-bold text-neon-yellow text-center">
@@ -66,8 +66,8 @@ const App = () => {
         </nav>
       </aside>
 
-      <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-4xl bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-6">
+      <main className="flex-1 flex items-center justify-center p-4 overflow-hidden">
+        <div className="w-full max-w-4xl h-full max-h-full bg-gray-800 border border-gray-700 rounded-lg shadow-2xl p-6 overflow-hidden">
           {renderContent()}
         </div>
       </main>
