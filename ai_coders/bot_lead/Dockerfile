@@ -2,9 +2,9 @@ FROM node:18-alpine
 
 WORKDIR /bot_lead
 
-# Install necessary dependencies (including `curl`)
 RUN apk add --no-cache \
     ffmpeg \
+    imagemagick \
     python3 \
     make \
     g++ \
@@ -17,18 +17,13 @@ RUN apk add --no-cache \
     libpng-dev \
     fontconfig \
     ttf-dejavu \
-    curl  # ✅ Fix: Add curl for healthcheck
+    curl
 
-# Copy package files and install dependencies
 COPY package*.json ./
 RUN npm install
 
-# Install PM2 globally
-RUN npm install pm2 -g
+RUN npm install -g pm2
 
-# Copy all source code
 COPY src/ ./src/
 
-EXPOSE 5001
-
-CMD ["pm2-runtime", "/bot_lead/src/server.js"]
+CMD ["sh", "-c", "echo Starting PM2 && pm2-runtime src/server.js"]

@@ -25,33 +25,30 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // ✅ FIX: Prevent duplicate registrations and log every attempt
-    const existingBot = bots.find(bot => bot.name === data.name);
-    if (existingBot) {
-      console.warn(`⚠️ Bot '${data.name}' is already registered.`);
-      socket.emit("register_failed", "Bot already registered.");
-      return;
+    // Prevent duplicate registrations by updating existing bot if it exists
+    const existingBotIndex = bots.findIndex(bot => bot.name === data.name);
+    if (existingBotIndex !== -1) {
+      bots[existingBotIndex] = { name: data.name, role: data.role, socketId: socket.id };
+      console.log(`✅ Updated existing bot '${data.name}' (${data.role}) with new socket ID.`);
+    } else {
+      const bot = { name: data.name, role: data.role, socketId: socket.id };
+      bots.push(bot);
+      console.log(`✅ ${data.name} (${data.role}) registered successfully.`);
     }
-
-    const bot = { name: data.name, role: data.role, socketId: socket.id };
-    bots.push(bot);
-    console.log(`✅ ${data.name} (${data.role}) registered successfully.`);
-    console.log(`Current bots:`, bots.map(b => b.name));
-
+    console.log(`🚨 Debug: Registered bots:`, bots.map(b => b.name));
     socket.emit("register_success");
   });
 
   socket.on('message', (data) => {
     console.log(`📩 Message received: ${JSON.stringify(data)}`);
-
-    // ✅ FIX: Default to `bot_lead` if no target is specified
-    const targetBot = bots.find(bot => bot.name === (data.target || 'bot_lead'));
+    const targetBotName = data.target || 'bot_lead'; // Default to bot_lead if no target
+    const targetBot = bots.find(bot => bot.name === targetBotName);
 
     if (targetBot) {
       io.to(targetBot.socketId).emit('message', data);
       console.log(`📤 Message sent to ${targetBot.name}:`, JSON.stringify(data));
     } else {
-      console.warn(`⚠️ Target bot '${data.target || "bot_lead"}' not found. Message not delivered.`);
+      console.warn(`⚠️ Target bot '${targetBotName}' not found. Message not delivered.`);
       console.log(`🚨 Debug: Registered bots:`, bots.map(b => b.name));
     }
   });
@@ -72,7 +69,7 @@ io.on('connection', (socket) => {
     const targetBot = bots.find(bot => bot.name === data.target);
     if (targetBot) {
       io.to(targetBot.socketId).emit('commandResponse', data);
-      console.log(`📤 CommandResponse forwarded to ${targetBot.name}.`);
+      console.log(`📤 CommandResponse forwarded to ${targetBot.name}:`, JSON.stringify(data));
     } else {
       console.warn(`⚠️ Target bot '${data.target}' not found for commandResponse.`);
     }
@@ -83,7 +80,7 @@ io.on('connection', (socket) => {
     const targetBot = bots.find(bot => bot.name === 'bot_lead');
     if (targetBot) {
       io.to(targetBot.socketId).emit('taskResponse', data);
-      console.log(`📤 TaskResponse routed to bot_lead.`);
+      console.log(`📤 TaskResponse routed to bot_lead:`, JSON.stringify(data));
     } else {
       console.warn(`⚠️ bot_lead not found for taskResponse.`);
     }

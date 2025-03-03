@@ -32,7 +32,7 @@ services:
       - redis
     command: node src/server.js
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY} # Kept as variable for bot_backend
     healthcheck:
       test: ["CMD", "curl", "-sSf", "http://localhost:5000/health"]
       interval: 30s
@@ -43,22 +43,14 @@ services:
     build:
       context: ./ai_coders/bot_lead
       dockerfile: Dockerfile
-    ports:
-      - "5001:5001"
     networks:
       - bot_network
     depends_on:
       - websocket_server
       - redis
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=
       - NODE_ENV=production
-    command: pm2-runtime /bot_lead/src/server.js
-    healthcheck:
-      test: ["CMD", "curl", "-sSf", "http://localhost:5001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   redis:
     image: redis:alpine

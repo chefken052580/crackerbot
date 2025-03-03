@@ -1,29 +1,38 @@
-import { getSocketInstance } from './wsClient.js';
+import { io } from 'socket.io-client';
 import { handleMessage } from './taskManager.js';
-import { handleCommand } from './commandHandler.js';
 
-export function initializeWebSocket(io) {
-    const botSocket = getSocketInstance();
+const WEBSOCKET_SERVER_URL = 'wss://websocket-visually-sterling-spider.ngrok-free.app';
 
-    botSocket.on('connect', () => {
-        console.log("✅ WebSocket connected. Registering bot_lead...");
-        botSocket.emit('register', { name: "bot_lead", role: "lead" });
+export function initializeWebSocket() {
+  const botSocket = io(WEBSOCKET_SERVER_URL, {
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionAttempts: 10,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000
+  });
 
-        // ✅ FIX: Confirm registration success
-        botSocket.on("register_success", () => {
-            console.log("🎯 bot_lead successfully registered in WebSocket server.");
-        });
+  botSocket.on('connect', () => {
+    console.log('✅ Connected to WebSocket server');
+    botSocket.emit('register', { name: 'bot_lead', role: 'lead' });
+  });
 
-        botSocket.on("register_failed", (error) => {
-            console.error(`❌ bot_lead registration failed: ${error}`);
-        });
-    });
+  botSocket.on('bot_registered', (data) => {
+    if (data.name === 'bot_frontend') {
+      console.log('Frontend registered, sending intro');
+      botSocket.emit('message', {
+        text: "Hey there, I’m Cracker Bot—your witty wingman for all things creative! I’m here to whip up genius faster than you can say 'bad pun.' What’s your name, chief?",
+        type: "question",
+        from: 'Cracker Bot',
+        target: 'bot_frontend',
+        userId: botSocket.id
+      });
+    }
+  });
 
-    botSocket.on('message', (data) => handleMessage(botSocket, data));
-    botSocket.on('command', (data) => handleCommand(botSocket, data));
+  botSocket.on('message', (data) => handleMessage(botSocket, data));
+  botSocket.on('command', (data) => handleMessage(botSocket, data));
+  botSocket.on('taskResponse', (data) => handleMessage(botSocket, { ...data, type: 'task_response' }));
 
-    botSocket.on('disconnect', (reason) => {
-        console.log(`❌ WebSocket disconnected: ${reason}. Reconnecting in 5s...`);
-        setTimeout(() => botSocket.connect(), 5000);
-    });
+  return botSocket;
 }

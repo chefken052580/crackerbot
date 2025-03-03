@@ -14,7 +14,6 @@ const ChatMessage = ({ message, onDownload, onPreview, colorScheme }) => {
     const extension = fileName.split('.').pop().toLowerCase();
     let blob;
 
-    // Check if content is an error message rather than base64
     if (typeof fileContent === 'string' && !fileContent.match(/^[A-Za-z0-9+/=]+$/)) {
       alert(`Cannot download ${fileName}: ${fileContent}`);
       return;
@@ -75,10 +74,13 @@ const ChatMessage = ({ message, onDownload, onPreview, colorScheme }) => {
     window.URL.revokeObjectURL(url);
   };
 
+  // Use message.user if provided, otherwise fall back to message.userId or "Admin"
+  const displayUser = message.user || message.userId || "Admin";
+
   return (
     <div className={`p-2 mb-2 rounded-md ${getMessageStyle(message.type)} break-words whitespace-pre-wrap flex justify-between items-start`}>
       <div>
-        <strong>{message.user}: </strong>
+        <strong>{displayUser}: </strong>
         {message.type === "progress" ? (
           <>
             {message.text}

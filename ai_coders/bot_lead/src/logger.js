@@ -1,48 +1,40 @@
-const fs = require('fs');
-const util = require('util');
-const path = require('path');
+import fs from 'fs/promises'; // Use ES module fs.promises for async operations
+import path from 'path';
+import { mkdirSync, existsSync } from 'fs'; // Keep sync methods from fs
 
-const logDir = process.env.LOG_DIR || './logs'; // Allow configurable log directory
+const logDir = process.env.LOG_DIR || './logs';
 const logFile = path.join(logDir, 'bot_lead.log');
-const appendFile = util.promisify(fs.appendFile);
 
-class Logger {
-  constructor() {
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-    this.logFile = logFile;
-  }
+if (!existsSync(logDir)) {
+  mkdirSync(logDir, { recursive: true });
+}
 
-  async log(message) {
-    const logMessage = `[${new Date().toISOString()}] INFO: ${message}\n`;
-    try {
-      await appendFile(this.logFile, logMessage);
-      console.log(logMessage); // Also log to console for immediate feedback
-    } catch (err) {
-      console.error('Error writing to log:', err);
-    }
-  }
-
-  async error(message) {
-    const logMessage = `[${new Date().toISOString()}] ERROR: ${message}\n`;
-    try {
-      await appendFile(this.logFile, logMessage);
-      console.error(logMessage); // Log errors to console
-    } catch (err) {
-      console.error('Critical error writing to log:', err);
-    }
-  }
-
-  async warn(message) {
-    const logMessage = `[${new Date().toISOString()}] WARN: ${message}\n`;
-    try {
-      await appendFile(this.logFile, logMessage);
-      console.warn(logMessage); // Log warnings to console
-    } catch (err) {
-      console.error('Error writing warning to log:', err);
-    }
+export async function log(message) {
+  const logMessage = `[${new Date().toISOString()}] INFO: ${message}\n`;
+  try {
+    await fs.appendFile(logFile, logMessage);
+    console.log(logMessage);
+  } catch (err) {
+    console.error('Error writing to log:', err);
   }
 }
 
-module.exports = new Logger();
+export async function error(message) {
+  const logMessage = `[${new Date().toISOString()}] ERROR: ${message}\n`;
+  try {
+    await fs.appendFile(logFile, logMessage);
+    console.error(logMessage);
+  } catch (err) {
+    console.error('Critical error writing to log:', err);
+  }
+}
+
+export async function warn(message) {
+  const logMessage = `[${new Date().toISOString()}] WARN: ${message}\n`;
+  try {
+    await fs.appendFile(logFile, logMessage);
+    console.warn(logMessage);
+  } catch (err) {
+    console.error('Error writing warning to log:', err);
+  }
+}
