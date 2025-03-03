@@ -2,9 +2,12 @@ const WebSocket = require('ws');
 const logger = require('./logger');
 
 let wsClient;
+const WEBSOCKET_SERVER_URL = 'ws://localhost:5002'; // Adjust URL if needed
+const RECONNECT_DELAY = 5000;
+const tasks = new Map();
 
 function connectToWebSocket() {
-  wsClient = new WebSocket('ws://localhost:5002'); // Adjust URL as needed
+  wsClient = new WebSocket(WEBSOCKET_SERVER_URL);
 
   wsClient.on('open', () => {
     logger.log('Task Manager connected to WebSocket server');
@@ -12,9 +15,8 @@ function connectToWebSocket() {
   });
 
   wsClient.on('message', (data) => {
-    let message;
     try {
-      message = JSON.parse(data);
+      const message = JSON.parse(data);
       logger.log('Task Manager received:', message);
       handleTask(message);
     } catch (err) {
@@ -22,9 +24,9 @@ function connectToWebSocket() {
     }
   });
 
-  wsClient.on('close', () => {
-    logger.log('Task Manager WebSocket connection closed, attempting to reconnect...');
-    setTimeout(connectToWebSocket, 5000); // Retry after 5 seconds
+  wsClient.on('close', (code, reason) => {
+    logger.log(`Task Manager WebSocket connection closed (${code} - ${reason}), reconnecting in ${RECONNECT_DELAY / 1000} seconds...`);
+    setTimeout(connectToWebSocket, RECONNECT_DELAY);
   });
 
   wsClient.on('error', (error) => {
@@ -33,25 +35,55 @@ function connectToWebSocket() {
 }
 
 function handleTask(task) {
-  if (task.type === 'command') {
-    switch (task.command) {
-      case '/start_task':
-        delegateTask('bot_frontend', 'startNewTask', { taskDetails: 'Example Task' });
-        break;
-      case '/stop_bots':
-        delegateTask('bot_backend', 'stopAllTasks', {});
-        break;
-      // Add more cases for different commands
-      default:
-        logger.log(`Unhandled command: ${task.command}`);
-    }
-  } else if (task.type === 'general_message') {
-    // Handle general messages
-    if (task.text.includes('project')) {
-      delegateTask('bot_frontend', 'handleProject', { projectName: 'New Project' });
-    } else if (task.text.includes('task')) {
-      delegateTask('bot_backend', 'executeTask', { taskName: 'Some Task' });
-    }
+  switch (task.type) {
+    case 'command':
+      processCommand(task.command);
+      break;
+    case 'general_message':
+      processGeneralMessage(task.text);
+      break;
+    case 'task_update':
+      updateTaskStatus(task.taskId, task.status);
+      break;
+    default:
+      logger.log(`Unhandled task type: ${task.type}`);
+  }
+}
+
+function processCommand(command) {
+  switch (command) {
+    case '/start_task':
+      createNewTask('Example Task');
+      break;
+    case '/stop_bots':
+      delegateTask('bot_backend', 'stopAllTasks', {});
+      break;
+    default:
+      logger.log(`Unhandled command: ${command}`);
+  }
+}
+
+function processGeneralMessage(text) {
+  if (text.includes('project')) {
+    delegateTask('bot_frontend', 'handleProject', { projectName: 'New Project' });
+  } else if (text.includes('task')) {
+    delegateTask('bot_backend', 'executeTask', { taskName: 'Some Task' });
+  }
+}
+
+function createNewTask(taskDetails) {
+  const taskId = Date.now().toString();
+  tasks.set(taskId, { taskId, details: taskDetails, status: 'pending' });
+  logger.log(`Created new task: ${taskId} - ${taskDetails}`);
+  delegateTask('bot_frontend', 'startNewTask', { taskId, taskDetails });
+}
+
+function updateTaskStatus(taskId, status) {
+  if (tasks.has(taskId)) {
+    tasks.get(taskId).status = status;
+    logger.log(`Task ${taskId} updated to status: ${status}`);
+  } else {
+    logger.error(`Task ${taskId} not found for status update.`);
   }
 }
 

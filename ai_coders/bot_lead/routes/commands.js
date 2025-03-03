@@ -1,10 +1,10 @@
-const express = require('express');
+const express = require('express'); 
 const router = express.Router();
 
 router.post('/', (req, res) => {
   const { command, user, text, type } = req.body;
   let responseText = "";
-  
+
   switch (type) {
     case 'command':
       switch (command) {
@@ -28,7 +28,6 @@ router.post('/', (req, res) => {
       }
       break;
     case 'general_message':
-      // For general messages, you might want to parse the content to determine action
       if (text && text.toLowerCase().includes('project')) {
         responseText = "Delegating project-related tasks...";
       } else if (text && text.toLowerCase().includes('task')) {
@@ -40,7 +39,7 @@ router.post('/', (req, res) => {
     default:
       responseText = "Received an unrecognized message type.";
   }
-  
+
   res.json({ type: "response", user: "bot_lead", text: responseText });
 });
 
