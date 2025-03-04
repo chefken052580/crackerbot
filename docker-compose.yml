@@ -49,7 +49,7 @@ services:
       - websocket_server
       - redis
     environment:
-      - OPENAI_API_KEY=
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - NODE_ENV=production
 
   redis:

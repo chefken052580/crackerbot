@@ -11,6 +11,7 @@ const commands = [
   { command: "/list_projects", description: "List Active Projects" },
   { command: "/download", description: "Download Last Task File" },
   { command: "/templates", description: "List Project Templates" },
+  { command: "/tone", description: "Switch Bot Tone (e.g., /tone blunt)" },
 ];
 
 const colorSchemes = {
@@ -78,21 +79,75 @@ const colorSchemes = {
     buttonText: "text-white",
     accent: "text-yellow-300",
   },
+  solarized: {
+    bg: "bg-[#002b36]",
+    chatBg: "bg-[#073642]",
+    text: "text-[#839496]",
+    user: "text-[#b58900] bg-[#073642]",
+    bot: "text-[#2aa198] bg-[#073642]",
+    system: "text-[#6c71c4] bg-[#002b36] italic",
+    command: "text-[#d33682] bg-[#073642]",
+    success: "text-[#859900] bg-[#073642]",
+    error: "text-[#cb4b16] bg-[#073642]",
+    question: "text-[#268bd2] bg-[#073642]",
+    progress: "bg-[#073642]",
+    button: "bg-[#2aa198] hover:bg-[#859900]",
+    buttonText: "text-[#002b36]",
+    accent: "text-[#b58900]",
+  },
+  cyberpunk: {
+    bg: "bg-[#0d0c1d]",
+    chatBg: "bg-[#1a1a3d]",
+    text: "text-[#a0a0ff]",
+    user: "text-[#ff00ff] bg-[#1a1a3d]",
+    bot: "text-[#00ffff] bg-[#1a1a3d]",
+    system: "text-[#ffaa00] bg-[#0d0c1d] italic",
+    command: "text-[#ff007f] bg-[#1a1a3d]",
+    success: "text-[#00ffaa] bg-[#1a1a3d]",
+    error: "text-[#ff3333] bg-[#1a1a3d]",
+    question: "text-[#00ccff] bg-[#1a1a3d]",
+    progress: "bg-[#1a1a3d]",
+    button: "bg-[#ff00ff] hover:bg-[#00ffff]",
+    buttonText: "text-[#0d0c1d]",
+    accent: "text-[#ffaa00]",
+  },
+  forest: {
+    bg: "bg-[#1a2f27]",
+    chatBg: "bg-[#2f4538]",
+    text: "text-[#d9e0c7]",
+    user: "text-[#e0c589] bg-[#2f4538]",
+    bot: "text-[#8ab573] bg-[#2f4538]",
+    system: "text-[#b58973] bg-[#1a2f27] italic",
+    command: "text-[#d9a773] bg-[#2f4538]",
+    success: "text-[#73d9a7] bg-[#2f4538]",
+    error: "text-[#d97373] bg-[#2f4538]",
+    question: "text-[#a7d973] bg-[#2f4538]",
+    progress: "bg-[#2f4538]",
+    button: "bg-[#8ab573] hover:bg-[#73d9a7]",
+    buttonText: "text-[#1a2f27]",
+    accent: "text-[#e0c589]",
+  },
 };
 
 const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [showCommands, setShowCommands] = useState(false);
+  const [filteredCommands, setFilteredCommands] = useState(commands);
+  const [commandIndex, setCommandIndex] = useState(-1);
   const [isConnected, setIsConnected] = useState(false);
   const [isTyping, setIsTyping] = useState({});
   const [taskPending, setTaskPending] = useState(null);
   const [currentTask, setCurrentTask] = useState(null);
+  const [progress, setProgress] = useState({});
   const [colorScheme, setColorScheme] = useState(localStorage.getItem('colorScheme') || "neon");
   const [playSound, setPlaySound] = useState(true);
+  const [useTTS, setUseTTS] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const chatEndRef = useRef(null);
   const audioRef = useRef(new Audio('/ping.wav'));
   const socketRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     console.log("ChatRoom mounted, setting up WebSocket");
@@ -117,21 +172,22 @@ const ChatRoom = () => {
       console.log("Message received:", data);
       setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
       const newMessage = {
-        user: data.user || "Admin",
+        user: data.user || data.from || "Admin",
         text: data.text,
         type: data.type || "bot",
         fileName: data.fileName,
         fileContent: data.content,
         taskId: data.taskId,
-        timestamp: new Date().toLocaleTimeString()
+        timestamp: new Date().toLocaleTimeString(),
       };
-      if (data.type === "progress") {
-        setMessages((prev) => {
-          const updated = prev.filter((msg) => msg.type !== "progress" || msg.taskId !== data.taskId);
-          return [...updated, newMessage];
-        });
+      if (data.type === "progress" && data.progress) {
+        setProgress((prev) => ({ ...prev, [data.taskId]: data.progress }));
       } else {
         setMessages((prev) => [...prev, newMessage]);
+        if (useTTS && data.from === "Cracker Bot") {
+          const utterance = new SpeechSynthesisUtterance(data.text);
+          window.speechSynthesis.speak(utterance);
+        }
       }
       if (data.type === "question" && data.taskId) {
         setTaskPending({ taskId: data.taskId, question: data.text });
@@ -139,14 +195,16 @@ const ChatRoom = () => {
           ...prev,
           [data.taskId]: {
             ...(prev?.[data.taskId] || {}),
-            step: data.text.includes("task name") ? "name" : data.text.includes("type") ? "type" : "features"
+            step: data.text.includes("task name") ? "name" : data.text.includes("type") ? "type" : "features",
           },
         }));
       }
       if (data.type === "question" && data.text.includes("What’s your name")) {
-        localStorage.removeItem('userName'); // Ensure fresh name prompt
+        localStorage.removeItem('userName');
       } else if (data.user && data.user !== "Cracker Bot" && data.user !== "System") {
         localStorage.setItem('userName', data.user);
+      } else if (data.from && data.from !== "Cracker Bot" && data.from !== "System") {
+        localStorage.setItem('userName', data.from);
       }
       if (playSound) audioRef.current.play().catch(() => console.log("Audio play failed"));
     });
@@ -181,7 +239,7 @@ const ChatRoom = () => {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping]);
+  }, [messages, isTyping, progress]);
 
   const sendMessage = () => {
     if (!socketRef.current || !input.trim() || !isConnected) return;
@@ -191,7 +249,7 @@ const ChatRoom = () => {
     const messageData = {
       text: input.trim(),
       user: userName,
-      userId: socketRef.current.id
+      userId: socketRef.current.id,
     };
 
     if (taskPending) {
@@ -212,17 +270,57 @@ const ChatRoom = () => {
     setMessages((prev) => [...prev, { ...messageData, timestamp: new Date().toLocaleTimeString() }]);
     setInput("");
     setShowCommands(false);
+    setCommandIndex(-1);
   };
 
   const handleInputChange = (e) => {
     const value = e.target.value;
     setInput(value);
-    setShowCommands(value.startsWith("/") && !taskPending);
+    if (value.startsWith("/") && !taskPending) {
+      const filtered = commands.filter(cmd => cmd.command.startsWith(value));
+      setFilteredCommands(filtered);
+      setShowCommands(filtered.length > 0);
+      setCommandIndex(-1);
+    } else {
+      setShowCommands(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (!showCommands || filteredCommands.length === 0) return;
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCommandIndex((prev) => (prev <= 0 ? filteredCommands.length - 1 : prev - 1));
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCommandIndex((prev) => (prev >= filteredCommands.length - 1 ? 0 : prev + 1));
+    } else if (e.key === "Enter" && commandIndex >= 0) {
+      e.preventDefault();
+      setInput(filteredCommands[commandIndex].command);
+      sendMessage();
+    }
   };
 
   const handleCommandSelect = (command) => {
     setInput(command);
     setShowCommands(false);
+    setCommandIndex(-1);
+    inputRef.current.focus();
+  };
+
+  const startRecording = () => {
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.onresult = (event) => {
+      setInput(event.results[0][0].transcript);
+      setIsRecording(false);
+    };
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      setIsRecording(false);
+    };
+    recognition.start();
+    setIsRecording(true);
   };
 
   const manualReconnect = () => {
@@ -249,6 +347,7 @@ const ChatRoom = () => {
   };
 
   const toggleSound = () => setPlaySound((prev) => !prev);
+  const toggleTTS = () => setUseTTS((prev) => !prev);
 
   const currentScheme = colorSchemes[colorScheme];
 
@@ -266,12 +365,28 @@ const ChatRoom = () => {
             <option value="pastel">Pastel</option>
             <option value="darkMetal">Dark Metal</option>
             <option value="retro">Retro</option>
+            <option value="solarized">Solarized</option>
+            <option value="cyberpunk">Cyberpunk</option>
+            <option value="forest">Forest</option>
           </select>
           <button
             onClick={toggleSound}
             className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText}`}
           >
             {playSound ? "Mute" : "Unmute"}
+          </button>
+          <button
+            onClick={toggleTTS}
+            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText}`}
+          >
+            {useTTS ? "🔊 Off" : "🔊 On"}
+          </button>
+          <button
+            onClick={startRecording}
+            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText}`}
+            disabled={isRecording}
+          >
+            {isRecording ? "🎙️" : "Mic"}
           </button>
           <button
             onClick={manualReconnect}
@@ -303,12 +418,23 @@ const ChatRoom = () => {
         <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4`}>
           <div className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}>
             {messages.map((msg, index) => (
-              <ChatMessage
-                key={index}
-                message={msg}
-                onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
-                colorScheme={currentScheme}
-              />
+              <div key={index}>
+                <ChatMessage
+                  message={msg}
+                  onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
+                  colorScheme={currentScheme}
+                />
+                {msg.type === "progress" && progress[msg.taskId] && (
+                  <div className="w-full my-2">
+                    <div className={`h-3 ${currentScheme.progress} rounded overflow-hidden`}>
+                      <div
+                        className={`${currentScheme.accent} h-full transition-all duration-500 ease-in-out`}
+                        style={{ width: `${progress[msg.taskId]}%`, backgroundImage: 'linear-gradient(45deg, rgba(255,255,255,0.2) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.2) 75%, transparent 75%, transparent)' }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
             {Object.entries(isTyping).map(([user, typing]) => typing && (
               <div key={user} className={`text-gray-500 italic`}>{`${user} is typing...`}</div>
@@ -323,12 +449,12 @@ const ChatRoom = () => {
           )}
 
           {showCommands && (
-            <div className={`relative ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10`}>
-              {commands.map((cmd) => (
+            <div className={`relative ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10 max-h-40 overflow-y-auto`}>
+              {filteredCommands.map((cmd, idx) => (
                 <div
                   key={cmd.command}
                   onClick={() => handleCommandSelect(cmd.command)}
-                  className={`cursor-pointer p-2 hover:bg-gray-700 rounded-md`}
+                  className={`cursor-pointer p-2 rounded-md ${idx === commandIndex ? 'bg-gray-600' : 'hover:bg-gray-700'}`}
                 >
                   <span className={`${currentScheme.accent} font-bold`}>{cmd.command}</span> - {cmd.description}
                 </div>
@@ -338,12 +464,13 @@ const ChatRoom = () => {
 
           <div className="flex mt-2 relative">
             <input
+              ref={inputRef}
               type="text"
               value={input}
               onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
               placeholder={taskPending ? `Answer: ${taskPending.question}` : "Type your message, task name, or /command..."}
               className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-gray-600 ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-${currentScheme.accent.split('-')[1]}`}
-              onKeyPress={(e) => e.key === "Enter" && sendMessage()}
             />
             <button
               onClick={sendMessage}

@@ -1,9 +1,10 @@
 import { log } from './logger.js';
-import { redisClient } from './taskManager.js';
+import { redisClient, lastGeneratedTask } from './taskManager.js';
 import { generateResponse } from './aiHelper.js';
+import { botSocket } from './wsClient.js';
 
 export async function handleCommand(botSocket, command, userName) {
-  log('Processing command:', command);
+  await log(`Processing command: ${command}`);
   botSocket.emit('typing', { target: 'bot_frontend' });
 
   let response;
@@ -15,12 +16,18 @@ export async function handleCommand(botSocket, command, userName) {
       response = { text: "Bot shutdown not implemented yet—stay tuned!", type: "success" };
       break;
     case '/list_projects':
-      const tasksList = await redisClient.hKeys('tasks');
-      response = { text: `Active projects for ${userName}: ${tasksList.length ? tasksList.join(', ') : 'None'}`, type: "success" };
+      const tasksList = await redisClient.hGetAll('tasks');
+      const tasksFormatted = Object.entries(tasksList)
+        .map(([id, taskData]) => {
+          const task = JSON.parse(taskData);
+          return `${task.name} (${task.status})`;
+        })
+        .join(', ') || 'None';
+      response = { text: `Active projects for ${userName}: ${tasksFormatted}`, type: "success" };
       break;
     case '/start_task':
       const taskId = Date.now().toString();
-      await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName }));
+      await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, status: 'in_progress' }));
       response = { text: `Hi ${userName}! Let’s create something—please enter only the task name:`, type: "question", taskId };
       break;
     case '/templates':
@@ -37,10 +44,13 @@ export async function handleCommand(botSocket, command, userName) {
       response = { text: `Available templates for ${userName}:\n${templates.map((t, i) => `${i + 1}. ${t}`).join('\n')}\nType "/start_template <number>"`, type: "success" };
       break;
     case '/download':
-      const lastTask = await redisClient.hGet('lastGenerated', userName);
-      if (lastTask) {
-        const { content, fileName } = JSON.parse(lastTask);
-        response = { text: `Here’s your last file, ${userName}: ${fileName}! Click to download:`, type: "download", content, fileName };
+      if (lastGeneratedTask && lastGeneratedTask.content) {
+        response = {
+          text: `Here’s your last file, ${userName}: ${lastGeneratedTask.fileName}! Click to download:`,
+          type: "download",
+          content: lastGeneratedTask.content,
+          fileName: lastGeneratedTask.fileName,
+        };
       } else {
         response = { text: `No recent task found to download, ${userName}! Build something first.`, type: "error" };
       }
@@ -61,7 +71,7 @@ export async function handleCommand(botSocket, command, userName) {
         if (templateNum >= 0 && templateNum < templatesList.length) {
           const taskId = Date.now().toString();
           const template = templatesList[templateNum];
-          await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'features', user: userName, ...template }));
+          await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'features', user: userName, ...template, status: 'in_progress' }));
           response = { text: `Starting "${template.name}" for ${userName}! Confirm or tweak features (or "go"):`, type: "question", taskId };
         } else {
           response = { text: `Invalid template number, ${userName}! Use '/templates' to see options.`, type: "error" };
@@ -69,7 +79,7 @@ export async function handleCommand(botSocket, command, userName) {
       } else if (command.startsWith('/build') || command.startsWith('/create')) {
         const task = command.replace(/^\/(build|create)/, '').trim();
         const taskId = Date.now().toString();
-        await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, initialTask: task || null }));
+        await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, initialTask: task || null, status: 'in_progress' }));
         response = { text: `Hi ${userName}! Starting "${task || 'something'}". What’s the task name?`, type: "question", taskId };
       } else {
         const aiResponse = await generateResponse(`I’m Cracker Bot, helping ${userName}. They said: "${command}". Respond appropriately.`);
@@ -78,6 +88,11 @@ export async function handleCommand(botSocket, command, userName) {
   }
 
   if (response) {
-    botSocket.emit('message', { ...response, from: 'Cracker Bot', target: 'bot_frontend' });
+    botSocket.emit('message', { 
+      ...response, 
+      from: 'Cracker Bot', 
+      target: 'bot_frontend', 
+      user: userName 
+    });
   }
 }

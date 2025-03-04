@@ -25,7 +25,6 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Prevent duplicate registrations by updating existing bot if it exists
     const existingBotIndex = bots.findIndex(bot => bot.name === data.name);
     if (existingBotIndex !== -1) {
       bots[existingBotIndex] = { name: data.name, role: data.role, socketId: socket.id };
@@ -34,6 +33,15 @@ io.on('connection', (socket) => {
       const bot = { name: data.name, role: data.role, socketId: socket.id };
       bots.push(bot);
       console.log(`✅ ${data.name} (${data.role}) registered successfully.`);
+
+      // Notify bot_lead when bot_frontend registers
+      if (data.name === 'bot_frontend') {
+        const leadBot = bots.find(bot => bot.name === 'bot_lead');
+        if (leadBot) {
+          io.to(leadBot.socketId).emit('frontend_connected', { frontendId: socket.id });
+          console.log(`📤 Notified bot_lead of bot_frontend connection`);
+        }
+      }
     }
     console.log(`🚨 Debug: Registered bots:`, bots.map(b => b.name));
     socket.emit("register_success");
@@ -41,7 +49,7 @@ io.on('connection', (socket) => {
 
   socket.on('message', (data) => {
     console.log(`📩 Message received: ${JSON.stringify(data)}`);
-    const targetBotName = data.target || 'bot_lead'; // Default to bot_lead if no target
+    const targetBotName = data.target || 'bot_lead';
     const targetBot = bots.find(bot => bot.name === targetBotName);
 
     if (targetBot) {
