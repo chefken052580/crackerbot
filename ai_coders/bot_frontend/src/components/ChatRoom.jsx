@@ -1,3 +1,4 @@
+// ai_coders/bot_frontend/src/components/ChatRoom.jsx
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
@@ -5,13 +6,15 @@ import ChatMessage from "./ChatMessage";
 const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
 
 const commands = [
-  { command: "/check_bot_health", description: "Check Bot Health" },
-  { command: "/start_task", description: "Start New Task" },
-  { command: "/stop_bots", description: "Stop All Bots" },
-  { command: "/list_projects", description: "List Active Projects" },
-  { command: "/download", description: "Download Last Task File" },
-  { command: "/templates", description: "List Project Templates" },
-  { command: "/tone", description: "Switch Bot Tone (e.g., /tone blunt)" },
+  { command: "/help", description: "See all commands and templates" },
+  { command: "/start_task", description: "Start a new project" },
+  { command: "/start_template", description: "Pick a template (e.g., /start_template 1)" },
+  { command: "/list_projects", description: "List active projects" },
+  { command: "/check_bot_health", description: "Check bot status" },
+  { command: "/stop_bots", description: "Try to stop bots (not yet!)" },
+  { command: "/download", description: "Download your latest file" },
+  { command: "/reset_name", description: "Change your name with a fresh start" },
+  { command: "/tone", description: "Set my vibe (e.g., /tone unhinged)" },
 ];
 
 const colorSchemes = {
@@ -138,7 +141,7 @@ const ChatRoom = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isTyping, setIsTyping] = useState({});
   const [taskPending, setTaskPending] = useState(null);
-  const [currentTask, setCurrentTask] = useState(null);
+  const [currentTask, setCurrentTask] = useState({});
   const [progress, setProgress] = useState({});
   const [colorScheme, setColorScheme] = useState(localStorage.getItem('colorScheme') || "neon");
   const [playSound, setPlaySound] = useState(true);
@@ -148,6 +151,7 @@ const ChatRoom = () => {
   const audioRef = useRef(new Audio('/ping.wav'));
   const socketRef = useRef(null);
   const inputRef = useRef(null);
+  const commandsRef = useRef(null);
 
   useEffect(() => {
     console.log("ChatRoom mounted, setting up WebSocket");
@@ -163,7 +167,7 @@ const ChatRoom = () => {
 
     socketRef.current.on("connect", () => {
       console.log("WebSocket connected, ID:", socketRef.current.id);
-      setMessages((prev) => [...prev, { user: "System", text: "Connected to WebSocket", type: "system", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { from: "System", text: "Connected to WebSocket", type: "system", timestamp: new Date().toLocaleTimeString() }]);
       setIsConnected(true);
       socketRef.current.emit("register", { name: "bot_frontend", role: "frontend" });
     });
@@ -172,39 +176,64 @@ const ChatRoom = () => {
       console.log("Message received:", data);
       setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
       const newMessage = {
-        user: data.user || data.from || "Admin",
+        from: data.from,
+        user: data.user || data.userId || "Admin",
         text: data.text,
         type: data.type || "bot",
         fileName: data.fileName,
         fileContent: data.content,
         taskId: data.taskId,
+        ip: data.ip,
         timestamp: new Date().toLocaleTimeString(),
       };
+      setMessages((prev) => [...prev, newMessage]);
       if (data.type === "progress" && data.progress) {
         setProgress((prev) => ({ ...prev, [data.taskId]: data.progress }));
-      } else {
-        setMessages((prev) => [...prev, newMessage]);
-        if (useTTS && data.from === "Cracker Bot") {
-          const utterance = new SpeechSynthesisUtterance(data.text);
-          window.speechSynthesis.speak(utterance);
-        }
       }
       if (data.type === "question" && data.taskId) {
         setTaskPending({ taskId: data.taskId, question: data.text });
-        setCurrentTask((prev) => ({
-          ...prev,
-          [data.taskId]: {
-            ...(prev?.[data.taskId] || {}),
-            step: data.text.includes("task name") ? "name" : data.text.includes("type") ? "type" : "features",
-          },
-        }));
+        setCurrentTask((prev) => {
+          const current = prev[data.taskId] || {};
+          if (data.text.includes("task name") || data.text.includes("thing called")) {
+            return { ...prev, [data.taskId]: { ...current, step: "name" } };
+          } else if (data.text.includes("type") || data.text.includes("gonna be")) {
+            return { ...prev, [data.taskId]: { ...current, step: "type" } };
+          } else if (data.text.includes("features") || data.text.includes("ya want")) {
+            return { ...prev, [data.taskId]: { ...current, step: "features" } };
+          } else if (data.text.includes("network")) {
+            return { ...prev, [data.taskId]: { ...current, step: "network-or-features" } };
+          } else if (data.text.includes("edit") || data.text.includes("spin")) {
+            return { ...prev, [data.taskId]: { ...current, step: "edit" } };
+          }
+          return prev;
+        });
+      } else if (data.type === "task_response" && data.taskId) {
+        // Update currentTask based on response
+        setCurrentTask((prev) => {
+          const current = prev[data.taskId] || {};
+          if (current.step === "name") {
+            return { ...prev, [data.taskId]: { ...current, name: data.text, step: "type" } };
+          } else if (current.step === "type") {
+            return { ...prev, [data.taskId]: { ...current, type: data.text, step: data.text.toLowerCase() === 'full-stack' ? "network-or-features" : "features" } };
+          } else if (current.step === "network-or-features") {
+            const choice = data.text.toLowerCase();
+            if (choice === 'network') {
+              return { ...prev, [data.taskId]: { ...current, step: "network" } };
+            } else {
+              return { ...prev, [data.taskId]: { ...current, step: "features" } };
+            }
+          } else if (current.step === "network") {
+            return { ...prev, [data.taskId]: { ...current, network: data.text, step: "features" } };
+          } else if (current.step === "features") {
+            return { ...prev, [data.taskId]: { ...current, features: data.text, step: "building" } };
+          } else if (current.step === "edit") {
+            return { ...prev, [data.taskId]: { ...current, editRequest: data.text, step: "building" } };
+          }
+          return prev;
+        });
       }
-      if (data.type === "question" && data.text.includes("What’s your name")) {
-        localStorage.removeItem('userName');
-      } else if (data.user && data.user !== "Cracker Bot" && data.user !== "System") {
+      if (data.user && data.user !== "Cracker Bot" && data.user !== "System") {
         localStorage.setItem('userName', data.user);
-      } else if (data.from && data.from !== "Cracker Bot" && data.from !== "System") {
-        localStorage.setItem('userName', data.from);
       }
       if (playSound) audioRef.current.play().catch(() => console.log("Audio play failed"));
     });
@@ -216,13 +245,13 @@ const ChatRoom = () => {
 
     socketRef.current.on("connect_error", (error) => {
       console.error("WebSocket connect error:", error.message);
-      setMessages((prev) => [...prev, { user: "System", text: `Connection Error: ${error.message}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { from: "System", text: `Connection Error: ${error.message}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
       setIsConnected(false);
     });
 
     socketRef.current.on("disconnect", (reason) => {
       console.log("WebSocket disconnected:", reason);
-      setMessages((prev) => [...prev, { user: "System", text: `Disconnected: ${reason}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { from: "System", text: `Disconnected: ${reason}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
       setIsConnected(false);
     });
 
@@ -241,32 +270,48 @@ const ChatRoom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping, progress]);
 
-  const sendMessage = () => {
-    if (!socketRef.current || !input.trim() || !isConnected) return;
+  useEffect(() => {
+    if (showCommands && commandsRef.current) {
+      commandsRef.current.focus();
+    }
+  }, [showCommands, filteredCommands]);
 
-    console.log("Sending message:", input);
+  const sendMessage = (messageText) => {
+    if (!socketRef.current || !messageText.trim() || !isConnected) return;
+
+    console.log("Sending message:", messageText);
     const userName = localStorage.getItem('userName') || "Admin";
     const messageData = {
-      text: input.trim(),
+      text: messageText.trim(),
       user: userName,
       userId: socketRef.current.id,
+      ip: window.location.hostname,
     };
 
     if (taskPending) {
       messageData.type = "task_response";
       messageData.taskId = taskPending.taskId;
       if (taskPending.question.includes("What’s your name")) {
-        localStorage.setItem('userName', input.trim());
+        localStorage.setItem('userName', messageText.trim());
+        messageData.user = messageText.trim();
       }
       setTaskPending(null);
-    } else if (input.startsWith("/")) {
+    } else if (messageText.startsWith("/")) {
       messageData.type = "command";
       messageData.target = "bot_lead";
     } else {
       messageData.type = "general_message";
     }
 
-    socketRef.current.emit("message", messageData);
+    const messageKey = `frontend:${messageData.userId}:${messageText}:${Date.now()}`;
+    if (!sessionStorage.getItem(messageKey)) {
+      socketRef.current.emit('message', messageData);
+      sessionStorage.setItem(messageKey, 'sent');
+      setTimeout(() => sessionStorage.removeItem(messageKey), 5000);
+    } else {
+      console.log(`Skipping duplicate frontend message: ${messageText}`);
+    }
+
     setMessages((prev) => [...prev, { ...messageData, timestamp: new Date().toLocaleTimeString() }]);
     setInput("");
     setShowCommands(false);
@@ -278,27 +323,32 @@ const ChatRoom = () => {
     setInput(value);
     if (value.startsWith("/") && !taskPending) {
       const filtered = commands.filter(cmd => cmd.command.startsWith(value));
+      console.log("Filtered commands:", filtered.map(cmd => cmd.command));
       setFilteredCommands(filtered);
       setShowCommands(filtered.length > 0);
-      setCommandIndex(-1);
+      setCommandIndex(filtered.length > 0 ? 0 : -1);
     } else {
       setShowCommands(false);
     }
   };
 
   const handleKeyDown = (e) => {
-    if (!showCommands || filteredCommands.length === 0) return;
-
-    if (e.key === "ArrowUp") {
+    if (e.key === "Enter" && input.trim()) {
       e.preventDefault();
-      setCommandIndex((prev) => (prev <= 0 ? filteredCommands.length - 1 : prev - 1));
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setCommandIndex((prev) => (prev >= filteredCommands.length - 1 ? 0 : prev + 1));
-    } else if (e.key === "Enter" && commandIndex >= 0) {
-      e.preventDefault();
-      setInput(filteredCommands[commandIndex].command);
-      sendMessage();
+      if (showCommands && commandIndex >= 0) {
+        const selectedCommand = filteredCommands[commandIndex].command;
+        sendMessage(selectedCommand);
+      } else {
+        sendMessage(input);
+      }
+    } else if (showCommands && filteredCommands.length > 0) {
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setCommandIndex((prev) => (prev <= 0 ? filteredCommands.length - 1 : prev - 1));
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setCommandIndex((prev) => (prev >= filteredCommands.length - 1 ? 0 : prev + 1));
+      }
     }
   };
 
@@ -307,6 +357,7 @@ const ChatRoom = () => {
     setShowCommands(false);
     setCommandIndex(-1);
     inputRef.current.focus();
+    sendMessage(command);
   };
 
   const startRecording = () => {
@@ -335,9 +386,9 @@ const ChatRoom = () => {
     try {
       const decoded = atob(fileContent);
       const lines = decoded.split('\n').slice(0, 5).join('\n');
-      setMessages((prev) => [...prev, { user: "System", text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, type: "system", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { from: "System", text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, type: "system", timestamp: new Date().toLocaleTimeString() }]);
     } catch (e) {
-      setMessages((prev) => [...prev, { user: "System", text: "Preview failed—binary file!", type: "error", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { from: "System", text: "Preview failed—binary file!", type: "error", timestamp: new Date().toLocaleTimeString() }]);
     }
   };
 
@@ -396,7 +447,7 @@ const ChatRoom = () => {
           </button>
           <button
             onClick={() => {
-              const transcript = messages.map(msg => `${msg.timestamp} ${msg.user}: ${msg.text}`).join('\n');
+              const transcript = messages.map(msg => `${msg.timestamp} ${msg.from}: ${msg.text}`).join('\n');
               const blob = new Blob([transcript], { type: 'text/plain' });
               const url = window.URL.createObjectURL(blob);
               const link = document.createElement('a');
@@ -449,7 +500,12 @@ const ChatRoom = () => {
           )}
 
           {showCommands && (
-            <div className={`relative ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10 max-h-40 overflow-y-auto`}>
+            <div 
+              ref={commandsRef}
+              tabIndex={0}
+              onKeyDown={handleKeyDown}
+              className={`relative ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10 max-h-40 overflow-y-auto`}
+            >
               {filteredCommands.map((cmd, idx) => (
                 <div
                   key={cmd.command}
@@ -469,11 +525,11 @@ const ChatRoom = () => {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={taskPending ? `Answer: ${taskPending.question}` : "Type your message, task name, or /command..."}
+              placeholder={taskPending ? `Answer: ${taskPending.question}` : "Type your message or /command..."}
               className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-gray-600 ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-${currentScheme.accent.split('-')[1]}`}
             />
             <button
-              onClick={sendMessage}
+              onClick={() => sendMessage(input)}
               className={`${currentScheme.button} ${currentScheme.buttonText} px-4 py-2 rounded-r-md transition`}
             >
               Send

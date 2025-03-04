@@ -5,6 +5,8 @@ services:
     build:
       context: ./ai_coders/bot_frontend
       dockerfile: Dockerfile
+    volumes:
+      - ./ai_coders/bot_frontend/src:/bot_frontend/src
     ports:
       - "3000:80"
     networks:
@@ -32,7 +34,7 @@ services:
       - redis
     command: node src/server.js
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY} # Kept as variable for bot_backend
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     healthcheck:
       test: ["CMD", "curl", "-sSf", "http://localhost:5000/health"]
       interval: 30s
@@ -43,6 +45,8 @@ services:
     build:
       context: ./ai_coders/bot_lead
       dockerfile: Dockerfile
+    volumes:
+      - ./ai_coders/bot_lead/src:/bot_lead/src
     networks:
       - bot_network
     depends_on:

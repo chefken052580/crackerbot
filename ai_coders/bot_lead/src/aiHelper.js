@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { botSocket } from './wsClient.js';
+import { botSocket } from './socket.js';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import PDFDocument from 'pdfkit';
@@ -14,7 +14,7 @@ try {
   console.error('Failed to load jszip:', e.message);
   process.exit(1);
 }
-import { lastGeneratedTask } from './taskManager.js';
+import { lastGeneratedTask, setLastGeneratedTask } from './stateManager.js'; // Fixed import
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-api-key" });
 
@@ -143,11 +143,11 @@ export async function startBuildTask(task, userName) {
       max_tokens: 50,
     });
     if (content) {
-      lastGeneratedTask = {
+      setLastGeneratedTask({
         ...task,
         content,
         fileName: type === 'full-stack' || type === 'graph' ? `${name}-v${task.version || 1}.zip` : `${name}.${type === 'javascript' ? 'js' : type === 'python' ? 'py' : type === 'php' ? 'php' : type === 'ruby' ? 'rb' : type === 'java' ? 'java' : type === 'c++' ? 'cpp' : type === 'image' ? 'png' : type === 'jpeg' ? 'jpg' : type === 'gif' ? 'gif' : type === 'doc' ? 'txt' : type === 'pdf' ? 'pdf' : type === 'csv' ? 'csv' : type === 'json' ? 'json' : type === 'mp4' ? 'mp4' : 'html'}`
-      };
+      });
     }
     return { response: completionResponse.choices[0].message.content.trim(), content };
   } catch (error) {
@@ -238,11 +238,11 @@ export async function editTask(task) {
       max_tokens: 50,
     });
     if (content) {
-      lastGeneratedTask = {
+      setLastGeneratedTask({
         ...task,
         content,
         fileName: type === 'full-stack' || type === 'graph' ? `${name}-v${task.version || 1}.zip` : `${name}.${type === 'javascript' ? 'js' : type === 'python' ? 'py' : type === 'php' ? 'php' : type === 'ruby' ? 'rb' : type === 'java' ? 'java' : type === 'c++' ? 'cpp' : type === 'image' ? 'png' : type === 'jpeg' ? 'jpg' : type === 'gif' ? 'gif' : type === 'doc' ? 'txt' : type === 'pdf' ? 'pdf' : type === 'csv' ? 'csv' : type === 'json' ? 'json' : type === 'mp4' ? 'mp4' : 'html'}`
-      };
+      });
     }
     return { response: completionResponse.choices[0].message.content.trim(), content };
   } catch (error) {

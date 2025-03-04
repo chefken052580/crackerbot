@@ -34,12 +34,15 @@ io.on('connection', (socket) => {
       bots.push(bot);
       console.log(`✅ ${data.name} (${data.role}) registered successfully.`);
 
-      // Notify bot_lead when bot_frontend registers
+      // Notify bot_lead when bot_frontend registers, include IP
       if (data.name === 'bot_frontend') {
         const leadBot = bots.find(bot => bot.name === 'bot_lead');
         if (leadBot) {
-          io.to(leadBot.socketId).emit('frontend_connected', { frontendId: socket.id });
-          console.log(`📤 Notified bot_lead of bot_frontend connection`);
+          io.to(leadBot.socketId).emit('frontend_connected', { 
+            frontendId: socket.id, 
+            ip: socket.handshake.address 
+          });
+          console.log(`📤 Notified bot_lead of bot_frontend connection with IP ${socket.handshake.address}`);
         }
       }
     }
@@ -53,8 +56,12 @@ io.on('connection', (socket) => {
     const targetBot = bots.find(bot => bot.name === targetBotName);
 
     if (targetBot) {
-      io.to(targetBot.socketId).emit('message', data);
-      console.log(`📤 Message sent to ${targetBot.name}:`, JSON.stringify(data));
+      const messageWithIp = { 
+        ...data, 
+        ip: socket.handshake.address // Add IP to all messages
+      };
+      io.to(targetBot.socketId).emit('message', messageWithIp);
+      console.log(`📤 Message sent to ${targetBot.name}:`, JSON.stringify(messageWithIp));
     } else {
       console.warn(`⚠️ Target bot '${targetBotName}' not found. Message not delivered.`);
       console.log(`🚨 Debug: Registered bots:`, bots.map(b => b.name));
@@ -65,8 +72,9 @@ io.on('connection', (socket) => {
     console.log(`🚀 Command received: ${data.command}`);
     const targetBot = bots.find(bot => bot.name === data.target);
     if (targetBot) {
-      io.to(targetBot.socketId).emit('command', data);
-      console.log(`✅ Command sent to ${targetBot.name}:`, JSON.stringify(data));
+      const commandWithIp = { ...data, ip: socket.handshake.address };
+      io.to(targetBot.socketId).emit('command', commandWithIp);
+      console.log(`✅ Command sent to ${targetBot.name}:`, JSON.stringify(commandWithIp));
     } else {
       console.warn(`⚠️ Target bot '${data.target}' not found.`);
     }
@@ -76,8 +84,9 @@ io.on('connection', (socket) => {
     console.log(`✅ CommandResponse from ${socket.id}:`, JSON.stringify(data));
     const targetBot = bots.find(bot => bot.name === data.target);
     if (targetBot) {
-      io.to(targetBot.socketId).emit('commandResponse', data);
-      console.log(`📤 CommandResponse forwarded to ${targetBot.name}:`, JSON.stringify(data));
+      const responseWithIp = { ...data, ip: socket.handshake.address };
+      io.to(targetBot.socketId).emit('commandResponse', responseWithIp);
+      console.log(`📤 CommandResponse forwarded to ${targetBot.name}:`, JSON.stringify(responseWithIp));
     } else {
       console.warn(`⚠️ Target bot '${data.target}' not found for commandResponse.`);
     }
@@ -87,8 +96,9 @@ io.on('connection', (socket) => {
     console.log(`📩 TaskResponse received:`, JSON.stringify(data));
     const targetBot = bots.find(bot => bot.name === 'bot_lead');
     if (targetBot) {
-      io.to(targetBot.socketId).emit('taskResponse', data);
-      console.log(`📤 TaskResponse routed to bot_lead:`, JSON.stringify(data));
+      const taskResponseWithIp = { ...data, ip: socket.handshake.address };
+      io.to(targetBot.socketId).emit('taskResponse', taskResponseWithIp);
+      console.log(`📤 TaskResponse routed to bot_lead:`, JSON.stringify(taskResponseWithIp));
     } else {
       console.warn(`⚠️ bot_lead not found for taskResponse.`);
     }

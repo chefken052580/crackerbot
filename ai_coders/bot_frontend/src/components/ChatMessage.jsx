@@ -1,3 +1,4 @@
+// ai_coders/bot_frontend/src/components/ChatMessage.jsx
 import React from 'react';
 
 const ChatMessage = ({ message, onDownload, onPreview, colorScheme }) => {
@@ -74,8 +75,7 @@ const ChatMessage = ({ message, onDownload, onPreview, colorScheme }) => {
     window.URL.revokeObjectURL(url);
   };
 
-  // Use message.user if provided, otherwise fall back to message.userId or "Admin"
-  const displayUser = message.user || message.userId || "Admin";
+  const displayUser = message.from || message.user || message.userId || "Admin";
 
   return (
     <div className={`p-2 mb-2 rounded-md ${getMessageStyle(message.type)} break-words whitespace-pre-wrap flex justify-between items-start`}>

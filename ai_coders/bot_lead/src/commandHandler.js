@@ -1,20 +1,77 @@
+// ai_coders/bot_lead/src/commandHandler.js
 import { log } from './logger.js';
-import { redisClient, lastGeneratedTask } from './taskManager.js';
+import { redisClient } from './redisClient.js';
+import { lastGeneratedTask } from './stateManager.js';
 import { generateResponse } from './aiHelper.js';
-import { botSocket } from './wsClient.js';
+import { botSocket } from './socket.js'; // Import from socket.js
 
-export async function handleCommand(botSocket, command, userName) {
-  await log(`Processing command: ${command}`);
-  botSocket.emit('typing', { target: 'bot_frontend' });
+export async function handleCommand(socket, command, data) {
+  const ip = data.ip || 'unknown';
+  const userKey = `user:ip:${ip}:name`;
+  const toneKey = `user:ip:${ip}:tone`;
+  let userName = await redisClient.get(userKey) || 'stranger';
+  const tone = await redisClient.get(toneKey) || 'default';
+  await log(`Processing command: ${command} from IP ${ip} (${userName}) with tone ${tone}`);
+  botSocket.emit('typing', { target: 'bot_frontend', ip });
 
   let response;
   switch (command) {
+    case '/reset_name':
+      await redisClient.del(userKey);
+      await log(`Cleared name for IP ${ip}`);
+      response = {
+        text: await generateResponse(
+          `I’m Cracker Bot, resetting the name for ${userName} from IP ${ip}. Ask them, 'What would you like to be called this time?' in a playful, creative, ${tone} way.`
+        ),
+        type: "question",
+        ip,
+        taskId: `reset_name:${ip}:${Date.now()}`,
+      };
+      break;
+
+    case '/tone':
+      const toneArg = data.text?.split(' ')[1]?.toLowerCase();
+      if (toneArg) {
+        await redisClient.set(toneKey, toneArg);
+        await log(`Set tone to ${toneArg} for IP ${ip}`);
+        response = {
+          text: await generateResponse(
+            `I’m Cracker Bot, switching to a ${toneArg} tone for ${userName} from IP ${ip}. Confirm the change with some ${toneArg} flair!`
+          ),
+          type: "success",
+          ip,
+        };
+      } else {
+        response = {
+          text: await generateResponse(
+            `I’m Cracker Bot, with ${userName} from IP ${ip}. They said "/tone" but didn’t specify a vibe. Suggest some options like "blunt," "unhinged," or "polite" with a ${tone} twist!`
+          ),
+          type: "error",
+          ip,
+        };
+      }
+      break;
+
     case '/check_bot_health':
-      response = { text: "All bots are healthy and ready to rock!", type: "success" };
+      response = {
+        text: await generateResponse(
+          `I’m Cracker Bot, helping ${userName} from IP ${ip}. They asked to check bot health. Respond with a fun status update in a ${tone} tone.`
+        ),
+        type: "success",
+        ip,
+      };
       break;
+
     case '/stop_bots':
-      response = { text: "Bot shutdown not implemented yet—stay tuned!", type: "success" };
+      response = {
+        text: await generateResponse(
+          `I’m Cracker Bot, with ${userName} from IP ${ip}. They said "/stop_bots". Tell them it’s not implemented yet, in a ${tone} way.`
+        ),
+        type: "success",
+        ip,
+      };
       break;
+
     case '/list_projects':
       const tasksList = await redisClient.hGetAll('tasks');
       const tasksFormatted = Object.entries(tasksList)
@@ -23,38 +80,80 @@ export async function handleCommand(botSocket, command, userName) {
           return `${task.name} (${task.status})`;
         })
         .join(', ') || 'None';
-      response = { text: `Active projects for ${userName}: ${tasksFormatted}`, type: "success" };
+      response = {
+        text: await generateResponse(
+          `I’m Cracker Bot, assisting ${userName} from IP ${ip}. They want a project list. Here’s what’s active: "${tasksFormatted}". Respond creatively in a ${tone} tone.`
+        ),
+        type: "success",
+        ip,
+      };
       break;
+
     case '/start_task':
       const taskId = Date.now().toString();
-      await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, status: 'in_progress' }));
-      response = { text: `Hi ${userName}! Let’s create something—please enter only the task name:`, type: "question", taskId };
+      await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, status: 'in_progress' }));
+      response = {
+        text: await generateResponse(
+          `I’m Cracker Bot, kicking off a task for ${userName} from IP ${ip}. Ask them for a task name in a fun, engaging, ${tone} way.`
+        ),
+        type: "question",
+        taskId,
+        ip,
+      };
       break;
-    case '/templates':
-      const templates = [
-        "Solana Token Scanner: Input a CA and get detailed token info",
-        "Chat App: Real-time messaging with WebSocket",
-        "Graph Generator: Create dynamic charts",
-        "GIF Maker: Generate animated GIFs",
-        "PDF Report: Generate a detailed report",
-        "Image Creator: Create a static image",
-        "MP4 Video: Create a simple video animation",
-        "Full-Stack App: Complete web application"
+
+    case '/help':
+      const helpOptions = [
+        "/start_task - Kick off a new project from scratch!",
+        "/start_template <number> - Pick a cool template (1-8) to start quick!",
+        "/list_projects - See what you’ve got cooking!",
+        "/check_bot_health - Make sure I’m still ticking!",
+        "/stop_bots - Try to shut me down (spoiler: not yet!)",
+        "/download - Grab your latest creation!",
+        "/reset_name - Change your name with a fresh start!",
+        "/tone <style> - Set my vibe (e.g., blunt, unhinged, polite)"
       ];
-      response = { text: `Available templates for ${userName}:\n${templates.map((t, i) => `${i + 1}. ${t}`).join('\n')}\nType "/start_template <number>"`, type: "success" };
+      const templates = [
+        "1. Solana Token Scanner: Input a CA and get detailed token info",
+        "2. Chat App: Real-time messaging with WebSocket",
+        "3. Graph Generator: Create dynamic charts",
+        "4. GIF Maker: Generate animated GIFs",
+        "5. PDF Report: Generate a detailed report",
+        "6. Image Creator: Create a static image",
+        "7. MP4 Video: Create a simple video animation",
+        "8. Full-Stack App: Complete web application"
+      ];
+      response = {
+        text: await generateResponse(
+          `I’m Cracker Bot, helping ${userName} from IP ${ip}. They want help. Show them these commands: ${helpOptions.join(', ')}. Plus, templates: ${templates.join(', ')}. Respond with flair in a ${tone} tone and tell them to pick something fun!`
+        ),
+        type: "success",
+        ip,
+      };
       break;
+
     case '/download':
       if (lastGeneratedTask && lastGeneratedTask.content) {
         response = {
-          text: `Here’s your last file, ${userName}: ${lastGeneratedTask.fileName}! Click to download:`,
+          text: await generateResponse(
+            `I’m Cracker Bot, handing ${userName} from IP ${ip} their last file: ${lastGeneratedTask.fileName}. Tell them to click and download it, with some ${tone} flair!`
+          ),
           type: "download",
           content: lastGeneratedTask.content,
           fileName: lastGeneratedTask.fileName,
+          ip,
         };
       } else {
-        response = { text: `No recent task found to download, ${userName}! Build something first.`, type: "error" };
+        response = {
+          text: await generateResponse(
+            `I’m Cracker Bot, with ${userName} from IP ${ip}. They want to download, but there’s no task yet. Nudge them to build something first, in a ${tone} way!`
+          ),
+          type: "error",
+          ip,
+        };
       }
       break;
+
     default:
       if (command.startsWith('/start_template')) {
         const templateNum = parseInt(command.split(' ')[1]) - 1;
@@ -71,19 +170,52 @@ export async function handleCommand(botSocket, command, userName) {
         if (templateNum >= 0 && templateNum < templatesList.length) {
           const taskId = Date.now().toString();
           const template = templatesList[templateNum];
-          await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'features', user: userName, ...template, status: 'in_progress' }));
-          response = { text: `Starting "${template.name}" for ${userName}! Confirm or tweak features (or "go"):`, type: "question", taskId };
+          await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'features', user: userName, ip, ...template, status: 'in_progress' }));
+          response = {
+            text: await generateResponse(
+              `I’m Cracker Bot, starting "${template.name}" for ${userName} from IP ${ip}. Ask them to confirm or tweak features (or say "go") in a fun, ${tone} way!`
+            ),
+            type: "question",
+            taskId,
+            ip,
+          };
         } else {
-          response = { text: `Invalid template number, ${userName}! Use '/templates' to see options.`, type: "error" };
+          response = {
+            text: await generateResponse(
+              `I’m Cracker Bot, with ${userName} from IP ${ip}. They picked a bad template number. Tell them to check "/help" again, with some ${tone} sass!`
+            ),
+            type: "error",
+            ip,
+          };
         }
       } else if (command.startsWith('/build') || command.startsWith('/create')) {
         const task = command.replace(/^\/(build|create)/, '').trim();
         const taskId = Date.now().toString();
-        await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, initialTask: task || null, status: 'in_progress' }));
-        response = { text: `Hi ${userName}! Starting "${task || 'something'}". What’s the task name?`, type: "question", taskId };
+        await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, initialTask: task || null, status: 'in_progress' }));
+        response = {
+          text: await generateResponse(
+            `I’m Cracker Bot, starting "${task || 'something'}" for ${userName} from IP ${ip}. Ask for the task name in a quirky, excited, ${tone} way!`
+          ),
+          type: "question",
+          taskId,
+          ip,
+        };
+      } else if (command.startsWith('/')) {
+        response = {
+          text: await generateResponse(
+            `I’m Cracker Bot, with ${userName} from IP ${ip}. They tried "${command}", but I don’t get it. Tell them it’s not a thing—maybe check "/help"—with some playful, ${tone} confusion!`
+          ),
+          type: "error",
+          ip,
+        };
       } else {
-        const aiResponse = await generateResponse(`I’m Cracker Bot, helping ${userName}. They said: "${command}". Respond appropriately.`);
-        response = { text: aiResponse, type: "success" };
+        response = {
+          text: await generateResponse(
+            `I’m Cracker Bot, chatting with ${userName} from IP ${ip}. They said: "${command}". Respond creatively based on their input, in a ${tone} tone.`
+          ),
+          type: "success",
+          ip,
+        };
       }
   }
 
@@ -92,7 +224,8 @@ export async function handleCommand(botSocket, command, userName) {
       ...response, 
       from: 'Cracker Bot', 
       target: 'bot_frontend', 
-      user: userName 
+      user: userName,
+      ip,
     });
   }
 }
