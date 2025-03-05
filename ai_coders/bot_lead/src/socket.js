@@ -1,17 +1,18 @@
-// ai_coders/bot_lead/src/socket.js
 import io from 'socket.io-client';
 import { log, error } from './logger.js';
+import config from './config.js';
 
-const WEBSOCKET_SERVER_URL = 'ws://websocket_server:5002';
+const WEBSOCKET_SERVER_URL = process.env.WEBSOCKET_URL || `ws://${config.server.host}:${config.server.websocketPort}`;
+const BACKEND_URL = process.env.BACKEND_URL || 'http://bot_backend:5000';
 const maxRetries = 50;
 const maxDelay = 60000;
 
-let socket = null;
-let retryCount = 0;
+let botSocket = null;
 
 function initializeSocket() {
-  if (!socket || socket.disconnected) {
-    socket = io(WEBSOCKET_SERVER_URL, {
+  if (!botSocket) {
+    console.log(`Initializing botSocket with URL: ${WEBSOCKET_SERVER_URL}`); // Synchronous log for startup
+    botSocket = io(WEBSOCKET_SERVER_URL, {
       reconnection: true,
       reconnectionAttempts: maxRetries,
       reconnectionDelay: 1000,
@@ -19,28 +20,31 @@ function initializeSocket() {
       transports: ['websocket'],
     });
 
-    socket.on('connect', async () => {
+    botSocket.on('connect', async () => {
       await log('✅ Connected to WebSocket server');
-      socket.emit('register', { name: 'bot_lead', role: 'lead' });
-      retryCount = 0;
+      botSocket.emit('register', { name: 'bot_lead', role: 'lead' });
     });
 
-    socket.on('disconnect', async (reason) => {
+    botSocket.on('connect_error', async (err) => {
+      await error(`❌ WebSocket connection error: ${err.message}`);
+    });
+
+    botSocket.on('reconnect_attempt', async (attempt) => {
+      await log(`🔄 Reconnect attempt ${attempt}/${maxRetries}`);
+    });
+
+    botSocket.on('disconnect', async (reason) => {
       await log(`⚠️ WebSocket disconnected (${reason}). Retrying...`);
-      if (retryCount < maxRetries) {
-        retryCount++;
-        const delay = Math.min(1000 * Math.pow(2, retryCount), maxDelay);
-        await log(`🔄 Reconnect attempt ${retryCount}/${maxRetries}, retrying in ${delay / 1000} seconds`);
-      } else {
-        await error('❌ Max reconnection attempts reached.');
-      }
     });
 
-    socket.on('error', async (err) => {
-      await error('❌ WebSocket error: ' + err.message);
+    botSocket.on('error', async (err) => {
+      await error(`❌ WebSocket error: ${err.message}`);
     });
   }
-  return socket;
+  return botSocket;
 }
 
-export const botSocket = initializeSocket();
+// Initialize immediately
+initializeSocket();
+
+export { botSocket, BACKEND_URL };

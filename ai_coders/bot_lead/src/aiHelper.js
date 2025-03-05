@@ -14,7 +14,7 @@ try {
   console.error('Failed to load jszip:', e.message);
   process.exit(1);
 }
-import { lastGeneratedTask, setLastGeneratedTask } from './stateManager.js'; // Fixed import
+import { lastGeneratedTask, setLastGeneratedTask } from './stateManager.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-api-key" });
 
@@ -47,17 +47,17 @@ export async function grokThink(input, user) {
   }
 }
 
-export async function generateResponse(prompt) {
+export async function generateResponse(prompt, userId, tone = "witty") {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: `Respond in a ${tone} tone: ${prompt}` }],
       max_tokens: 1000,
     });
     return response.choices[0].message.content.trim();
   } catch (error) {
     console.error('OpenAI error:', error.message);
-    return "Oops, I tripped over my circuits! Let’s try again.";
+    return `Oops, I tripped over my circuits, ${userId}! Let’s try that again.`;
   }
 }
 

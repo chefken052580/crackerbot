@@ -2,8 +2,8 @@ import io from 'socket.io-client';
 
 let socket;
 let retryCount = 0;
-const maxRetries = Infinity; // Changed to Infinity for continuous attempts
-const maxDelay = 60000; // 1 minute max delay
+const maxRetries = Infinity;
+const maxDelay = 60000;
 
 function connectToWebSocket() {
   socket = io('http://websocket_server:5002', {
@@ -11,7 +11,7 @@ function connectToWebSocket() {
     reconnectionAttempts: maxRetries,
     reconnectionDelay: 1000,
     reconnectionDelayMax: maxDelay,
-    transports: ['websocket'], // Ensure only WebSocket transport is used
+    transports: ['websocket'],
   });
 
   socket.on('connect', () => {
@@ -22,17 +22,13 @@ function connectToWebSocket() {
 
   socket.on('message', (data) => {
     console.log('Received message:', data);
-    // Handle messages here, e.g., process commands or update tasks
     if (data.type === 'command') {
       console.log("Command received:", data.command);
-      // Example command handling:
       if (data.command === "some_backend_command") {
-        // Process command
         socket.emit('response', { type: "response", user: 'bot_backend', text: "Command processed" });
       }
     } else if (data.type === 'message') {
       console.log("General message received:", data.text);
-      // Handle general messages if needed
     }
   });
 

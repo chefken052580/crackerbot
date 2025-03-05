@@ -1,6 +1,7 @@
 {
   "name": "bot_frontend",
   "version": "0.1.0",
+  "type": "module",
   "private": true,
   "dependencies": {
     "@reduxjs/toolkit": "^2.6.0",

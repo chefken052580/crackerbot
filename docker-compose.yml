@@ -1,12 +1,11 @@
 version: '3.8'
-
 services:
   bot_frontend:
     build:
       context: ./ai_coders/bot_frontend
       dockerfile: Dockerfile
     volumes:
-      - ./ai_coders/bot_frontend/src:/bot_frontend/src
+      - ./ai_coders/bot_frontend/src:/app/src
     ports:
       - "3000:80"
     networks:
@@ -16,11 +15,10 @@ services:
       - bot_lead
       - redis
     healthcheck:
-      test: ["CMD", "curl", "-sSf", "http://localhost:80/health"]
+      test: ["CMD", "curl", "-sSf", "http://localhost:80"]
       interval: 30s
       timeout: 10s
       retries: 3
-
   bot_backend:
     build:
       context: ./ai_coders/bot_backend
@@ -40,13 +38,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
   bot_lead:
     build:
       context: ./ai_coders/bot_lead
       dockerfile: Dockerfile
     volumes:
       - ./ai_coders/bot_lead/src:/bot_lead/src
+    ports:
+      - "5001:5001"
     networks:
       - bot_network
     depends_on:
@@ -55,7 +54,14 @@ services:
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - NODE_ENV=production
-
+      - BACKEND_URL=http://bot_backend:5000
+      - SERVER_HOST=websocket_server
+      - WEBSOCKET_PORT=5002
+    healthcheck:
+      test: ["CMD", "curl", "-sSf", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
   redis:
     image: redis:alpine
     ports:
@@ -67,7 +73,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
   websocket_server:
     build:
       context: ./ai_coders/websocket_server
@@ -82,7 +87,6 @@ services:
       timeout: 5s
       retries: 3
     restart: always
-
   ngrok:
     image: ngrok/ngrok:latest
     environment:
@@ -104,7 +108,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
 networks:
   bot_network:
     driver: bridge

@@ -33,21 +33,27 @@ io.on('connection', (socket) => {
       const bot = { name: data.name, role: data.role, socketId: socket.id };
       bots.push(bot);
       console.log(`✅ ${data.name} (${data.role}) registered successfully.`);
-
-      // Notify bot_lead when bot_frontend registers, include IP
-      if (data.name === 'bot_frontend') {
-        const leadBot = bots.find(bot => bot.name === 'bot_lead');
-        if (leadBot) {
-          io.to(leadBot.socketId).emit('frontend_connected', { 
-            frontendId: socket.id, 
-            ip: socket.handshake.address 
-          });
-          console.log(`📤 Notified bot_lead of bot_frontend connection with IP ${socket.handshake.address}`);
-        }
-      }
     }
+
+    const leadBot = bots.find(bot => bot.name === 'bot_lead');
+    if (leadBot) {
+      io.to(leadBot.socketId).emit('register', { ...data, ip: socket.handshake.address });
+      console.log(`📤 Forwarded register event to bot_lead for ${data.name} with IP ${socket.handshake.address}`);
+    }
+
     console.log(`🚨 Debug: Registered bots:`, bots.map(b => b.name));
     socket.emit("register_success");
+  });
+
+  socket.on('reset_user', (data) => {
+    console.log(`🔄 Reset_user event from ${socket.id}:`, data);
+    const leadBot = bots.find(bot => bot.name === 'bot_lead');
+    if (leadBot) {
+      io.to(leadBot.socketId).emit('reset_user', { ...data, ip: socket.handshake.address });
+      console.log(`📤 Forwarded reset_user event to bot_lead with IP ${socket.handshake.address}`);
+    } else {
+      console.warn(`⚠️ bot_lead not found for reset_user.`);
+    }
   });
 
   socket.on('message', (data) => {
@@ -56,10 +62,7 @@ io.on('connection', (socket) => {
     const targetBot = bots.find(bot => bot.name === targetBotName);
 
     if (targetBot) {
-      const messageWithIp = { 
-        ...data, 
-        ip: socket.handshake.address // Add IP to all messages
-      };
+      const messageWithIp = { ...data, ip: socket.handshake.address };
       io.to(targetBot.socketId).emit('message', messageWithIp);
       console.log(`📤 Message sent to ${targetBot.name}:`, JSON.stringify(messageWithIp));
     } else {

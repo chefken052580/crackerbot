@@ -1,7 +1,6 @@
-// ai_coders/bot_frontend/src/components/ChatMessage.jsx
 import React from 'react';
 
-const ChatMessage = ({ message, onDownload, onPreview, colorScheme }) => {
+const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
   const getMessageStyle = (type) => {
     if (type === "progress") {
       const percentage = parseInt(message.text.match(/\d+%/)?.[0] || "0");
@@ -75,6 +74,23 @@ const ChatMessage = ({ message, onDownload, onPreview, colorScheme }) => {
     window.URL.revokeObjectURL(url);
   };
 
+  const parseOptions = (text, predefinedOptions) => {
+    if (predefinedOptions) return predefinedOptions;
+    const optionPatterns = [
+      /HTML, JS, Python, PHP, Ruby, Java, C\+\+, Full-Stack, Graph, Image, JPEG, GIF, Doc, PDF, CSV, JSON, or MP4/i,
+      /network or features/i,
+      /mainnet-beta, testnet, devnet, or none/i,
+      /add more, edit, or done/i,
+      /go/i
+    ];
+    for (const pattern of optionPatterns) {
+      const match = text.match(pattern);
+      if (match) return match[0].split(/,\s*(?:or\s*)?/).map(opt => opt.trim());
+    }
+    return [];
+  };
+
+  const options = message.type === "question" ? parseOptions(message.text, message.options) : [];
   const displayUser = message.from || message.user || message.userId || "Admin";
 
   return (
@@ -108,6 +124,21 @@ const ChatMessage = ({ message, onDownload, onPreview, colorScheme }) => {
             >
               Download {message.fileName}
             </button>
+          </>
+        ) : message.type === "question" && options.length > 0 ? (
+          <>
+            {message.text.split(options.join(', '))[0]}
+            <div className="flex flex-wrap gap-2 mt-1">
+              {options.map((option, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onOptionClick(option === "custom" ? "custom " : option)}
+                  className={`${colorScheme.bubble} px-3 py-1 rounded-full text-sm cursor-pointer`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
           </>
         ) : (
           message.text

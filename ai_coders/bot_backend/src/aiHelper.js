@@ -1,23 +1,19 @@
-const { Configuration, OpenAIApi } = require("openai");
+import OpenAI from 'openai';
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const openai = new OpenAIApi(configuration);
-
-async function generateDatabaseSchema(prompt) {
+export async function generateDatabaseSchema(prompt) {
   try {
-    const response = await openai.createCompletion({
-      model: "text-davinci-003", // or the latest model available
-      prompt: `Create a database schema for: ${prompt}`,
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: `Create a database schema for: ${prompt}` }],
       max_tokens: 1000,
     });
-    return response.data.choices[0].text.trim();
+    return response.choices[0].message.content.trim();
   } catch (error) {
     console.error('Error in AI generation:', error);
     throw error;
   }
 }
-
-module.exports = { generateDatabaseSchema };

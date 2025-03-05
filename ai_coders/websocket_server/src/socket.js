@@ -1,10 +1,10 @@
-const { Server } = require("socket.io");
+import { Server } from 'socket.io';
 
 class WebSocketHandler {
   constructor(httpServer) {
     this.io = new Server(httpServer, {
-      pingInterval: 25000, // Send a ping packet every 25 seconds
-      pingTimeout: 60000, // Disconnect after 60 seconds of no response
+      pingInterval: 25000,
+      pingTimeout: 60000,
       cors: {
         origin: "https://visually-sterling-spider.ngrok-free.app",
         credentials: true,
@@ -12,17 +12,29 @@ class WebSocketHandler {
         allowedHeaders: ["Content-Type"]
       }
     });
-
     this.clients = {};
     this.initializeHandlers();
   }
 
   initializeHandlers() {
     this.io.on("connection", (socket) => {
-      console.log(`🔗 New client connected: ID ${socket.id}`);
+      console.log(`🔗 New client connected: ID ${socket.id}, IP: ${socket.handshake.address}`);
 
       socket.on("register", ({ name, role }) => {
         this.registerClient(socket, { name, role });
+        this.io.emit('register', { name, role, target: name, ip: socket.handshake.address });
+        console.log(`📤 Forwarded register event to ${name} for ${name} with IP ${socket.handshake.address}`);
+      });
+
+      socket.on("frontend_connected", (data) => {
+        console.log(`📩 Received frontend_connected: ${JSON.stringify(data)}`);
+        const leadClient = this.clients['bot_lead'];
+        if (leadClient) {
+          leadClient.emit("frontend_connected", data);
+          console.log(`📤 Forwarded frontend_connected to bot_lead`);
+        } else {
+          console.warn(`⚠️ bot_lead not found for frontend_connected`);
+        }
       });
 
       socket.on("message", (message) => {
@@ -58,11 +70,12 @@ class WebSocketHandler {
     }
     this.clients[name] = socket;
     console.log(`✅ ${name} (${role}) registered successfully.`);
+    console.log(`🚨 Debug: Registered bots: [ ${Object.keys(this.clients).join(', ')} ]`);
   }
 
   handleMessage(socket, message) {
     try {
-      console.log(`📩 Received message: ${JSON.stringify(message)}`);
+      console.log(`📩 Message received: ${JSON.stringify(message)}`);
       switch (message.type) {
         case "command":
           this.forwardCommand(message);
@@ -85,7 +98,8 @@ class WebSocketHandler {
       targetClient.emit("command", { command, args });
       console.log(`🚀 Command "${command}" sent to ${target}`);
     } else {
-      console.error(`⚠️ Target bot "${target}" not found.`);
+      console.error(`⚠️ Target bot "${target}" not found. Message not delivered.`);
+      console.log(`🚨 Debug: Registered bots: [ ${Object.keys(this.clients).join(', ')} ]`);
     }
   }
 
@@ -118,9 +132,10 @@ class WebSocketHandler {
     const clientName = Object.keys(this.clients).find(name => this.clients[name] === socket);
     if (clientName) {
       delete this.clients[clientName];
-      console.log(`❌ ${clientName} disconnected (${reason}).`);
+      console.log(`❌ ${clientName} disconnected. Remaining bots: [ ${Object.keys(this.clients).join(', ')} ]`);
+      console.log(`🔌 Client ${socket.id} disconnected: ${reason}`);
     }
   }
 }
 
-module.exports = WebSocketHandler;
+export default WebSocketHandler;

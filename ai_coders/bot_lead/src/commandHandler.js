@@ -1,16 +1,15 @@
-// ai_coders/bot_lead/src/commandHandler.js
 import { log } from './logger.js';
 import { redisClient } from './redisClient.js';
 import { lastGeneratedTask } from './stateManager.js';
 import { generateResponse } from './aiHelper.js';
-import { botSocket } from './socket.js'; // Import from socket.js
+import { botSocket } from './socket.js';
 
 export async function handleCommand(socket, command, data) {
   const ip = data.ip || 'unknown';
   const userKey = `user:ip:${ip}:name`;
   const toneKey = `user:ip:${ip}:tone`;
   let userName = await redisClient.get(userKey) || 'stranger';
-  const tone = await redisClient.get(toneKey) || 'default';
+  const tone = await redisClient.get(toneKey) || 'witty';
   await log(`Processing command: ${command} from IP ${ip} (${userName}) with tone ${tone}`);
   botSocket.emit('typing', { target: 'bot_frontend', ip });
 
@@ -21,7 +20,9 @@ export async function handleCommand(socket, command, data) {
       await log(`Cleared name for IP ${ip}`);
       response = {
         text: await generateResponse(
-          `I’m Cracker Bot, resetting the name for ${userName} from IP ${ip}. Ask them, 'What would you like to be called this time?' in a playful, creative, ${tone} way.`
+          `I’m Cracker Bot, resetting the name for ${userName}. Ask them, 'What would you like to be called this time?' in a playful, creative, ${tone} way.`,
+          userName,
+          tone
         ),
         type: "question",
         ip,
@@ -36,7 +37,9 @@ export async function handleCommand(socket, command, data) {
         await log(`Set tone to ${toneArg} for IP ${ip}`);
         response = {
           text: await generateResponse(
-            `I’m Cracker Bot, switching to a ${toneArg} tone for ${userName} from IP ${ip}. Confirm the change with some ${toneArg} flair!`
+            `I’m Cracker Bot, switching to a ${toneArg} tone for ${userName}. Confirm the change with some flair!`,
+            userName,
+            toneArg
           ),
           type: "success",
           ip,
@@ -44,7 +47,9 @@ export async function handleCommand(socket, command, data) {
       } else {
         response = {
           text: await generateResponse(
-            `I’m Cracker Bot, with ${userName} from IP ${ip}. They said "/tone" but didn’t specify a vibe. Suggest some options like "blunt," "unhinged," or "polite" with a ${tone} twist!`
+            `I’m Cracker Bot, with ${userName}. They said "/tone" but didn’t specify a vibe. Suggest some options like "blunt," "unhinged," or "polite" with a ${tone} twist!`,
+            userName,
+            tone
           ),
           type: "error",
           ip,
@@ -55,7 +60,9 @@ export async function handleCommand(socket, command, data) {
     case '/check_bot_health':
       response = {
         text: await generateResponse(
-          `I’m Cracker Bot, helping ${userName} from IP ${ip}. They asked to check bot health. Respond with a fun status update in a ${tone} tone.`
+          `I’m Cracker Bot, helping ${userName}. They asked to check bot health. Respond with a fun status update in a ${tone} tone.`,
+          userName,
+          tone
         ),
         type: "success",
         ip,
@@ -65,7 +72,9 @@ export async function handleCommand(socket, command, data) {
     case '/stop_bots':
       response = {
         text: await generateResponse(
-          `I’m Cracker Bot, with ${userName} from IP ${ip}. They said "/stop_bots". Tell them it’s not implemented yet, in a ${tone} way.`
+          `I’m Cracker Bot, with ${userName}. They said "/stop_bots". Tell them it’s not implemented yet, in a ${tone} way.`,
+          userName,
+          tone
         ),
         type: "success",
         ip,
@@ -82,7 +91,9 @@ export async function handleCommand(socket, command, data) {
         .join(', ') || 'None';
       response = {
         text: await generateResponse(
-          `I’m Cracker Bot, assisting ${userName} from IP ${ip}. They want a project list. Here’s what’s active: "${tasksFormatted}". Respond creatively in a ${tone} tone.`
+          `I’m Cracker Bot, assisting ${userName}. They want a project list. Here’s what’s active: "${tasksFormatted}". Respond creatively in a ${tone} tone.`,
+          userName,
+          tone
         ),
         type: "success",
         ip,
@@ -94,7 +105,9 @@ export async function handleCommand(socket, command, data) {
       await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, status: 'in_progress' }));
       response = {
         text: await generateResponse(
-          `I’m Cracker Bot, kicking off a task for ${userName} from IP ${ip}. Ask them for a task name in a fun, engaging, ${tone} way.`
+          `I’m Cracker Bot, kicking off a task for ${userName}. Ask them for a task name in a fun, engaging, ${tone} way.`,
+          userName,
+          tone
         ),
         type: "question",
         taskId,
@@ -125,7 +138,9 @@ export async function handleCommand(socket, command, data) {
       ];
       response = {
         text: await generateResponse(
-          `I’m Cracker Bot, helping ${userName} from IP ${ip}. They want help. Show them these commands: ${helpOptions.join(', ')}. Plus, templates: ${templates.join(', ')}. Respond with flair in a ${tone} tone and tell them to pick something fun!`
+          `I’m Cracker Bot, helping ${userName}. They want help. Show them these commands: ${helpOptions.join(', ')}. Plus, templates: ${templates.join(', ')}. Respond with flair in a ${tone} tone and tell them to pick something fun!`,
+          userName,
+          tone
         ),
         type: "success",
         ip,
@@ -136,7 +151,9 @@ export async function handleCommand(socket, command, data) {
       if (lastGeneratedTask && lastGeneratedTask.content) {
         response = {
           text: await generateResponse(
-            `I’m Cracker Bot, handing ${userName} from IP ${ip} their last file: ${lastGeneratedTask.fileName}. Tell them to click and download it, with some ${tone} flair!`
+            `I’m Cracker Bot, handing ${userName} their last file: ${lastGeneratedTask.fileName}. Tell them to click and download it, with some ${tone} flair!`,
+            userName,
+            tone
           ),
           type: "download",
           content: lastGeneratedTask.content,
@@ -146,7 +163,9 @@ export async function handleCommand(socket, command, data) {
       } else {
         response = {
           text: await generateResponse(
-            `I’m Cracker Bot, with ${userName} from IP ${ip}. They want to download, but there’s no task yet. Nudge them to build something first, in a ${tone} way!`
+            `I’m Cracker Bot, with ${userName}. They want to download, but there’s no task yet. Nudge them to build something first, in a ${tone} way!`,
+            userName,
+            tone
           ),
           type: "error",
           ip,
@@ -173,7 +192,9 @@ export async function handleCommand(socket, command, data) {
           await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'features', user: userName, ip, ...template, status: 'in_progress' }));
           response = {
             text: await generateResponse(
-              `I’m Cracker Bot, starting "${template.name}" for ${userName} from IP ${ip}. Ask them to confirm or tweak features (or say "go") in a fun, ${tone} way!`
+              `I’m Cracker Bot, starting "${template.name}" for ${userName}. Ask them to confirm or tweak features (or say "go") in a fun, ${tone} way!`,
+              userName,
+              tone
             ),
             type: "question",
             taskId,
@@ -182,7 +203,9 @@ export async function handleCommand(socket, command, data) {
         } else {
           response = {
             text: await generateResponse(
-              `I’m Cracker Bot, with ${userName} from IP ${ip}. They picked a bad template number. Tell them to check "/help" again, with some ${tone} sass!`
+              `I’m Cracker Bot, with ${userName}. They picked a bad template number. Tell them to check "/help" again, with some ${tone} sass!`,
+              userName,
+              tone
             ),
             type: "error",
             ip,
@@ -194,7 +217,9 @@ export async function handleCommand(socket, command, data) {
         await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, initialTask: task || null, status: 'in_progress' }));
         response = {
           text: await generateResponse(
-            `I’m Cracker Bot, starting "${task || 'something'}" for ${userName} from IP ${ip}. Ask for the task name in a quirky, excited, ${tone} way!`
+            `I’m Cracker Bot, starting "${task || 'something'}" for ${userName}. Ask for the task name in a quirky, excited, ${tone} way!`,
+            userName,
+            tone
           ),
           type: "question",
           taskId,
@@ -203,7 +228,9 @@ export async function handleCommand(socket, command, data) {
       } else if (command.startsWith('/')) {
         response = {
           text: await generateResponse(
-            `I’m Cracker Bot, with ${userName} from IP ${ip}. They tried "${command}", but I don’t get it. Tell them it’s not a thing—maybe check "/help"—with some playful, ${tone} confusion!`
+            `I’m Cracker Bot, with ${userName}. They tried "${command}", but I don’t get it. Tell them it’s not a thing—maybe check "/help"—with some playful, ${tone} confusion!`,
+            userName,
+            tone
           ),
           type: "error",
           ip,
@@ -211,7 +238,9 @@ export async function handleCommand(socket, command, data) {
       } else {
         response = {
           text: await generateResponse(
-            `I’m Cracker Bot, chatting with ${userName} from IP ${ip}. They said: "${command}". Respond creatively based on their input, in a ${tone} tone.`
+            `I’m Cracker Bot, chatting with ${userName}. They said: "${command}". Respond creatively based on their input, in a ${tone} tone.`,
+            userName,
+            tone
           ),
           type: "success",
           ip,

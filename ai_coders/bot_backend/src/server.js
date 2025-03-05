@@ -5,10 +5,12 @@ import http from 'http';
 import ioClient from 'socket.io-client';
 import { createClient } from 'redis';
 import OpenAI from 'openai';
+import { generateDatabaseSchema } from './aiHelper.js';
+import fs from 'fs/promises';
 
 const BOT_NAME = "bot_backend";
 const PORT = process.env.PORT || 5000;
-const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
+const WEBSOCKET_SERVER_URL = "ws://websocket_server:5002";
 
 const app = express();
 const server = http.createServer(app);
@@ -35,16 +37,31 @@ const openai = new OpenAI({
 app.post("/api/generate_schema", async (req, res) => {
   try {
     const { prompt } = req.body;
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: `Create a database schema for: ${prompt}` }],
-      max_tokens: 1000,
-    });
-    const schema = response.choices[0].message.content.trim();
+    const schema = await generateDatabaseSchema(prompt);
     res.json({ schema });
   } catch (error) {
     console.error('Error in AI generation:', error);
     res.status(500).json({ error: 'Failed to generate schema' });
+  }
+});
+
+app.post("/api/task", async (req, res) => {
+  const { command, args } = req.body;
+  try {
+    let response;
+    if (command === 'buildTask') {
+      response = await processBuildTask(args);
+    } else if (command === 'createFile') {
+      response = await createFile(args);
+    } else if (command === 'manageDatabase') {
+      response = await manageDatabase(args);
+    } else {
+      response = { error: `Unknown command: ${command}` };
+    }
+    res.json(response);
+  } catch (error) {
+    console.error('Error processing task:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -64,29 +81,48 @@ botSocket.on('connect', () => {
 botSocket.on('command', async (data) => {
   console.log(`${BOT_NAME} received command:`, data);
   try {
-    const response = await processCommand(data.command);
-    botSocket.emit('commandResponse', { success: true, response, target: 'frontend' });
+    const response = await fetch(`http://localhost:${PORT}/api/task`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const result = await response.json();
+    botSocket.emit('commandResponse', { success: true, response: result, target: 'bot_frontend' });
   } catch (error) {
     console.error('Error processing command:', error);
-    botSocket.emit('commandResponse', { success: false, error: error.message, target: 'frontend' });
+    botSocket.emit('commandResponse', { success: false, error: error.message, target: 'bot_frontend' });
   }
 });
 
 botSocket.on('connect_error', (error) => console.error(`${BOT_NAME} WebSocket connection error:`, error.message));
 botSocket.on('disconnect', (reason) => console.log(`${BOT_NAME} WebSocket disconnected:`, reason));
 
-async function processCommand(command) {
-  if (command.startsWith('Create Node.js API for')) {
-    const task = command.replace('Create Node.js API for ', '');
-    const [name, features] = task.split(': ').map(s => s.trim());
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: `Generate a Node.js API for ${name} with features: ${features || 'basic functionality'}, including endpoints and basic logic.` }],
-      max_tokens: 1000,
-    });
-    return `Backend API for ${name} generated:\n${response.choices[0].message.content.trim()}`;
+async function processBuildTask(args) {
+  const { task, userName, tone } = args;
+  const response = await openai.chat.completions.create({
+    model: "gpt-3.5-turbo",
+    messages: [{ role: "user", content: `Generate code for ${task.name} (${task.type}) with features: ${task.features || 'basic functionality'}.` }],
+    max_tokens: 1000,
+  });
+  return { content: response.choices[0].message.content.trim() };
+}
+
+async function createFile(args) {
+  const { fileName, content } = args;
+  await fs.writeFile(`/tmp/${fileName}`, content);
+  return { message: `File ${fileName} created`, fileName };
+}
+
+async function manageDatabase(args) {
+  const { action, key, value } = args;
+  if (action === 'set') {
+    await redisClient.set(key, value);
+    return { message: `Set ${key} to ${value} in Redis` };
+  } else if (action === 'get') {
+    const result = await redisClient.get(key);
+    return { message: `Got ${result} for ${key} from Redis`, value: result };
   }
-  return `${BOT_NAME} awaiting backend-specific task. Use 'Create Node.js API for <task>' to proceed.`;
+  return { error: 'Unsupported database action' };
 }
 
 server.listen(PORT, () => console.log(`${BOT_NAME} server running on http://0.0.0.0:${PORT}`));
