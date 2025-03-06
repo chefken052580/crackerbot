@@ -11,5 +11,5 @@ tunnels:
     proto: http
   websocket:
     addr: websocket_server:5002
-    proto: http  # Switch to HTTP for socket.io
-    hostname: websocket-visually-sterling-spider.ngrok-free.app  # New subdomain
+    proto: http
+    hostname: websocket-visually-sterling-spider.ngrok-free.app

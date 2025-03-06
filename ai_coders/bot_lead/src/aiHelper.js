@@ -15,6 +15,7 @@ try {
   process.exit(1);
 }
 import { lastGeneratedTask, setLastGeneratedTask } from './stateManager.js';
+import { log } from './logger.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-api-key" });
 
@@ -62,8 +63,8 @@ export async function generateResponse(prompt, userId, tone = "witty") {
 }
 
 export async function startBuildTask(task, userName) {
-  const { name, features, user, type, network } = task;
-  botSocket.emit('typing', { target: 'bot_frontend' });
+  const { name, features, user, type, network, frontendId } = task;
+  botSocket.emit('typing', { target: 'bot_frontend', frontendId });
   try {
     const planResponse = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
@@ -71,7 +72,14 @@ export async function startBuildTask(task, userName) {
       max_tokens: 150,
     });
     const plan = planResponse.choices[0].message.content.trim();
-    botSocket.emit('message', { user: "Cracker Bot", text: `Starting "${name}" as a ${type} project... Plan: ${plan}`, type: "bot", target: 'bot_frontend' });
+    botSocket.emit('message', { 
+      user: "Cracker Bot", 
+      text: `Starting "${name}" as a ${type} project... Plan: ${plan}`, 
+      type: "bot", 
+      target: 'bot_frontend', 
+      frontendId 
+    });
+    await log(`Started build task "${name}" for frontendId ${frontendId}`);
 
     let content;
     if (type === 'full-stack') {
@@ -157,8 +165,8 @@ export async function startBuildTask(task, userName) {
 }
 
 export async function editTask(task) {
-  const { name, features, user, type, network, editRequest } = task;
-  botSocket.emit('typing', { target: 'bot_frontend' });
+  const { name, features, user, type, network, editRequest, frontendId } = task;
+  botSocket.emit('typing', { target: 'bot_frontend', frontendId });
   try {
     const planResponse = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
@@ -166,7 +174,13 @@ export async function editTask(task) {
       max_tokens: 150,
     });
     const plan = planResponse.choices[0].message.content.trim();
-    botSocket.emit('message', { user: "Cracker Bot", text: `Editing "${name}" as a ${type} project... Plan: ${plan}`, type: "bot", target: 'bot_frontend' });
+    botSocket.emit('message', { 
+      user: "Cracker Bot", 
+      text: `Editing "${name}" as a ${type} project... Plan: ${plan}`, 
+      type: "bot", 
+      target: 'bot_frontend', 
+      frontendId 
+    });
 
     let content;
     if (type === 'full-stack') {

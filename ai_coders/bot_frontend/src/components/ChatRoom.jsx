@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
-import ChatMessage from "./ChatMessage";
+import ChatMessage from "./ChatMessage";  // Use the existing separate file
 
 const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
 
 const commands = [
   { command: "/create", description: "Start a new project" },
   { command: "/projects", description: "List your projects" },
-  { command: "/vibe_check", description: "Check my vibe" },
-  { command: "/chill", description: "Take a breather" },
   { command: "/download", description: "Grab your latest file" },
   { command: "/reset_name", description: "Change your name" },
   { command: "/tone", description: "Set my vibe (e.g., /tone sassy)" },
@@ -32,7 +30,7 @@ const colorSchemes = {
     button: "bg-neon-green hover:bg-neon-yellow",
     buttonText: "text-gray-900",
     accent: "text-neon-yellow",
-    bubble: "bg-neon-purple hover:bg-neon-yellow text-gray-900",
+    bubble: "bg-purple-600 hover:bg-yellow-400 text-white font-semibold",
   },
   pastel: {
     bg: "bg-gray-100",
@@ -49,7 +47,7 @@ const colorSchemes = {
     button: "bg-blue-400 hover:bg-blue-500",
     buttonText: "text-white",
     accent: "text-pink-500",
-    bubble: "bg-indigo-200 hover:bg-indigo-300 text-indigo-800",
+    bubble: "bg-indigo-300 hover:bg-indigo-400 text-indigo-900 font-semibold",
   },
   darkMetal: {
     bg: "bg-gray-800",
@@ -66,7 +64,7 @@ const colorSchemes = {
     button: "bg-green-500 hover:bg-green-600",
     buttonText: "text-gray-900",
     accent: "text-orange-400",
-    bubble: "bg-violet-500 hover:bg-violet-600 text-gray-200",
+    bubble: "bg-violet-600 hover:bg-violet-700 text-white font-semibold",
   },
   retro: {
     bg: "bg-black",
@@ -83,7 +81,7 @@ const colorSchemes = {
     button: "bg-green-600 hover:bg-green-700",
     buttonText: "text-white",
     accent: "text-yellow-300",
-    bubble: "bg-magenta-400 hover:bg-magenta-500 text-black",
+    bubble: "bg-magenta-500 hover:bg-magenta-600 text-white font-semibold",
   },
   solarized: {
     bg: "bg-[#002b36]",
@@ -100,7 +98,7 @@ const colorSchemes = {
     button: "bg-[#2aa198] hover:bg-[#859900]",
     buttonText: "text-[#002b36]",
     accent: "text-[#b58900]",
-    bubble: "bg-[#d33682] hover:bg-[#dc322f] text-[#002b36]",
+    bubble: "bg-[#d33682] hover:bg-[#dc322f] text-white font-semibold",
   },
   cyberpunk: {
     bg: "bg-[#0d0c1d]",
@@ -117,7 +115,7 @@ const colorSchemes = {
     button: "bg-[#ff00ff] hover:bg-[#00ffff]",
     buttonText: "text-[#0d0c1d]",
     accent: "text-[#ffaa00]",
-    bubble: "bg-[#ff007f] hover:bg-[#ff00ff] text-[#0d0c1d]",
+    bubble: "bg-[#ff007f] hover:bg-[#ff00ff] text-white font-semibold",
   },
   forest: {
     bg: "bg-[#1a2f27]",
@@ -134,7 +132,7 @@ const colorSchemes = {
     button: "bg-[#8ab573] hover:bg-[#73d9a7]",
     buttonText: "text-[#1a2f27]",
     accent: "text-[#e0c589]",
-    bubble: "bg-[#d9a773] hover:bg-[#e0c589] text-[#1a2f27]",
+    bubble: "bg-[#d9a773] hover:bg-[#e0c589] text-[#1a2f27] font-semibold",
   },
 };
 
@@ -160,7 +158,7 @@ const ChatRoom = () => {
   const recognitionRef = useRef(null);
 
   useEffect(() => {
-    console.log("ChatRoom mounted, setting up WebSocket");
+    console.log("ChatRoom mounted, initializing WebSocket");
 
     socketRef.current = io(WEBSOCKET_SERVER_URL, {
       reconnection: true,
@@ -173,11 +171,26 @@ const ChatRoom = () => {
 
     socketRef.current.on("connect", () => {
       console.log("WebSocket connected, ID:", socketRef.current.id);
-      setMessages((prev) => [...prev, { from: "System", text: "Connected to WebSocket", type: "system", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { 
+        from: "System", 
+        text: "Connected to WebSocket", 
+        type: "system", 
+        timestamp: new Date().toLocaleTimeString() 
+      }]);
       setIsConnected(true);
       const userName = localStorage.getItem('userName') || "Guest";
-      socketRef.current.emit("register", { name: "bot_frontend", role: "frontend", userId: socketRef.current.id, userName });
-      socketRef.current.emit("frontend_connected", { ip: window.location.hostname, frontendId: socketRef.current.id });
+      socketRef.current.emit("register", { 
+        name: "bot_frontend", 
+        role: "frontend", 
+        userId: socketRef.current.id, 
+        userName 
+      });
+      socketRef.current.emit("frontend_connected", { 
+        ip: window.location.hostname, 
+        frontendId: socketRef.current.id,
+        userName 
+      });
+      console.log("Emitted frontend_connected with ID:", socketRef.current.id, "and userName:", userName);
     });
 
     socketRef.current.on("message", (data) => {
@@ -191,8 +204,9 @@ const ChatRoom = () => {
         fileName: data.fileName,
         fileContent: data.content,
         taskId: data.taskId,
-        options: data.options,
+        options: data.options,  // Include options for bubbles
         timestamp: new Date().toLocaleTimeString(),
+        frontendId: data.frontendId,
       };
 
       if (data.type === "progress") {
@@ -204,42 +218,27 @@ const ChatRoom = () => {
           setTaskPending({ taskId: data.taskId, question: data.text });
           setCurrentTask((prev) => {
             const current = prev[data.taskId] || {};
-            if (data.text.includes("task name") || data.text.includes("thing called")) {
+            if (data.text.includes("task name") || data.text.includes("call this")) {
               return { ...prev, [data.taskId]: { ...current, step: "name" } };
-            } else if (data.text.includes("type") || data.text.includes("gonna be")) {
+            } else if (data.text.includes("type") || data.text.includes("should this be")) {
               return { ...prev, [data.taskId]: { ...current, step: "type" } };
-            } else if (data.text.includes("features") || data.text.includes("ya want")) {
+            } else if (data.text.includes("features") || data.text.includes("want in it")) {
               return { ...prev, [data.taskId]: { ...current, step: "features" } };
-            } else if (data.text.includes("network")) {
-              return { ...prev, [data.taskId]: { ...current, step: "network-or-features" } };
-            } else if (data.text.includes("edit") || data.text.includes("spin")) {
-              return { ...prev, [data.taskId]: { ...current, step: "edit" } };
-            } else if (data.text.includes("What’s your name") || data.text.includes("name?")) {
-              return { ...prev, [data.taskId]: { ...current, step: "name" } };
+            } else if (data.text.includes("Should we shoot")) {
+              return { ...prev, [data.taskId]: { ...current, step: "choice" } };
             }
             return prev;
           });
         } else if (data.type === "task_response" && data.taskId) {
           setCurrentTask((prev) => {
             const current = prev[data.taskId] || {};
-            if (current.step === "name" && !data.text.includes("What’s your name") && !data.text.includes("name?")) {
+            if (current.step === "name" && !data.text.includes("What’s your name")) {
               localStorage.setItem('userName', data.text.trim());
               return { ...prev, [data.taskId]: { ...current, name: data.text, step: "complete" } };
             } else if (current.step === "type") {
-              return { ...prev, [data.taskId]: { ...current, type: data.text, step: data.text.toLowerCase() === 'full-stack' ? "network-or-features" : "features" } };
-            } else if (current.step === "network-or-features") {
-              const choice = data.text.toLowerCase();
-              if (choice === 'network') {
-                return { ...prev, [data.taskId]: { ...current, step: "network" } };
-              } else {
-                return { ...prev, [data.taskId]: { ...current, step: "features" } };
-              }
-            } else if (current.step === "network") {
-              return { ...prev, [data.taskId]: { ...current, network: data.text, step: "features" } };
+              return { ...prev, [data.taskId]: { ...current, type: data.text, step: "features" } };
             } else if (current.step === "features") {
               return { ...prev, [data.taskId]: { ...current, features: data.text, step: "building" } };
-            } else if (current.step === "edit") {
-              return { ...prev, [data.taskId]: { ...current, editRequest: data.text, step: "building" } };
             }
             return prev;
           });
@@ -251,24 +250,35 @@ const ChatRoom = () => {
 
       if (data.user && data.user !== "Cracker Bot" && data.user !== "System") {
         localStorage.setItem('userName', data.user);
+        console.log("Updated userName in localStorage:", data.user);
       }
       if (playSound) audioRef.current.play().catch(() => console.log("Audio play failed"));
     });
 
     socketRef.current.on("typing", (data) => {
-      console.log("Typing event:", data);
+      console.log("Typing event received:", data);
       setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
     });
 
     socketRef.current.on("connect_error", (error) => {
       console.error("WebSocket connect error:", error.message);
-      setMessages((prev) => [...prev, { from: "System", text: `Connection Error: ${error.message}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { 
+        from: "System", 
+        text: `Connection Error: ${error.message}`, 
+        type: "error", 
+        timestamp: new Date().toLocaleTimeString() 
+      }]);
       setIsConnected(false);
     });
 
     socketRef.current.on("disconnect", (reason) => {
       console.log("WebSocket disconnected:", reason);
-      setMessages((prev) => [...prev, { from: "System", text: `Disconnected: ${reason}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { 
+        from: "System", 
+        text: `Disconnected: ${reason}`, 
+        type: "error", 
+        timestamp: new Date().toLocaleTimeString() 
+      }]);
       setIsConnected(false);
     });
 
@@ -306,6 +316,7 @@ const ChatRoom = () => {
       user: userName,
       userId: socketRef.current.id,
       ip: window.location.hostname,
+      frontendId: socketRef.current.id,
     };
 
     setMessages((prev) => [
@@ -314,16 +325,18 @@ const ChatRoom = () => {
         from: userName, 
         text: messageText, 
         type: "user", 
-        timestamp: new Date().toLocaleTimeString() 
+        timestamp: new Date().toLocaleTimeString(),
+        frontendId: socketRef.current.id,
       }
     ]);
 
     if (taskPending) {
       messageData.type = "task_response";
       messageData.taskId = taskPending.taskId;
-      if (taskPending.question.includes("What’s your name") || taskPending.question.includes("name?")) {
+      if (taskPending.question.includes("What’s your name")) {
         localStorage.setItem('userName', messageText.trim());
         messageData.user = messageText.trim();
+        console.log("Set userName in localStorage from task response:", messageText.trim());
       }
       setTaskPending(null);
     } else if (messageText.startsWith("/")) {
@@ -443,7 +456,12 @@ const ChatRoom = () => {
       setProgressMessage(null);
       socketRef.current.disconnect();
       socketRef.current.connect();
-      setMessages((prev) => [...prev, { from: "System", text: "Reset and reconnected", type: "system", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { 
+        from: "System", 
+        text: "Reset and reconnected", 
+        type: "system", 
+        timestamp: new Date().toLocaleTimeString() 
+      }]);
     }
   };
 
@@ -451,9 +469,19 @@ const ChatRoom = () => {
     try {
       const decoded = atob(fileContent);
       const lines = decoded.split('\n').slice(0, 5).join('\n');
-      setMessages((prev) => [...prev, { from: "System", text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, type: "system", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { 
+        from: "System", 
+        text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, 
+        type: "system", 
+        timestamp: new Date().toLocaleTimeString() 
+      }]);
     } catch (e) {
-      setMessages((prev) => [...prev, { from: "System", text: "Preview failed—binary file!", type: "error", timestamp: new Date().toLocaleTimeString() }]);
+      setMessages((prev) => [...prev, { 
+        from: "System", 
+        text: "Preview failed—binary file!", 
+        type: "error", 
+        timestamp: new Date().toLocaleTimeString() 
+      }]);
     }
   };
 
@@ -530,7 +558,7 @@ const ChatRoom = () => {
                 <ChatMessage
                   message={msg}
                   onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
-                  onOptionClick={(option) => sendMessage(option)}
+                  onOptionClick={(option) => sendMessage(option)}  // Pass bubble click handler
                   colorScheme={currentScheme}
                 />
               </div>

@@ -3,10 +3,11 @@ import { generateResponse } from './aiHelper.js';
 import { botSocket } from './socket.js';
 import { ffmpegAvailable, imagemagickAvailable, generateGif, generateMp4, generatePdf, generateImage, zipFilesWithReadme } from './contentUtils.js';
 import { setLastGeneratedTask } from './stateManager.js';
-import fs from 'fs/promises'; // Use promises for cleaner async
+import fs from 'fs/promises';
 
 export async function buildTask(task, userName, tone) {
-  botSocket.emit('typing', { target: 'bot_frontend' });
+  const frontendId = task.frontendId || botSocket.id;
+  botSocket.emit('typing', { target: 'bot_frontend', frontendId });
   try {
     let progress = 0;
     const progressInterval = setInterval(() => {
@@ -23,6 +24,7 @@ export async function buildTask(task, userName, tone) {
           from: 'Cracker Bot',
           target: 'bot_frontend',
           user: userName,
+          frontendId,
         });
       }
     }, 500);
@@ -44,7 +46,7 @@ export async function buildTask(task, userName, tone) {
           if (typeof value !== 'string') throw new Error(`File content for "${key}" must be a string`);
         }
       } catch (parseErr) {
-        await error(`Failed to parse full-stack JSON: ${parseErr.message}. Raw: ${contentResponse}`);
+        await error(`Failed to parse full-stack JSON for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
         clearInterval(progressInterval);
         return { error: tone === 'blunt' ? `Fuck, ${userName}, the files are busted: ${parseErr.message}! Try again, dipshit.` : `Oops, ${userName}, parsing failed: ${parseErr.message}. Retry?` };
       }
@@ -106,6 +108,7 @@ export async function buildTask(task, userName, tone) {
       from: 'Cracker Bot',
       target: 'bot_frontend',
       user: userName,
+      frontendId,
     });
 
     const completionResponse = tone === 'blunt'
@@ -121,9 +124,10 @@ export async function buildTask(task, userName, tone) {
           : `${task.name}.${task.type === 'javascript' ? 'js' : task.type === 'python' ? 'py' : task.type === 'php' ? 'php' : task.type === 'ruby' ? 'rb' : task.type === 'java' ? 'java' : task.type === 'c++' ? 'cpp' : task.type === 'image' ? 'png' : task.type === 'jpeg' ? 'jpg' : task.type === 'gif' ? 'gif' : task.type === 'doc' ? 'txt' : task.type === 'pdf' ? 'pdf' : task.type === 'csv' ? 'csv' : task.type === 'json' ? 'json' : task.type === 'mp4' ? 'mp4' : 'html'}`
       });
     }
+    await log(`Completed task "${task.name}" for frontendId ${frontendId}`);
     return { content, response };
   } catch (err) {
-    await error('Failed to build task: ' + err.message);
+    await error(`Failed to build task for frontendId ${frontendId}: ${err.message}`);
     clearInterval(progressInterval);
     const buildError = tone === 'blunt'
       ? `Fuck me, ${userName}, building "${task.name}" went to shit: ${err.message}! Retry, ya dumbass?`
@@ -133,7 +137,8 @@ export async function buildTask(task, userName, tone) {
 }
 
 export async function editTask(task, userName, tone) {
-  botSocket.emit('typing', { target: 'bot_frontend' });
+  const frontendId = task.frontendId || botSocket.id;
+  botSocket.emit('typing', { target: 'bot_frontend', frontendId });
   try {
     let progress = 0;
     const progressInterval = setInterval(() => {
@@ -150,6 +155,7 @@ export async function editTask(task, userName, tone) {
           from: 'Cracker Bot',
           target: 'bot_frontend',
           user: userName,
+          frontendId,
         });
       }
     }, 500);
@@ -220,6 +226,7 @@ export async function editTask(task, userName, tone) {
       from: 'Cracker Bot',
       target: 'bot_frontend',
       user: userName,
+      frontendId,
     });
 
     const completionResponse = tone === 'blunt'
@@ -235,9 +242,10 @@ export async function editTask(task, userName, tone) {
           : `${task.name}.${task.type === 'javascript' ? 'js' : task.type === 'python' ? 'py' : task.type === 'php' ? 'php' : task.type === 'ruby' ? 'rb' : task.type === 'java' ? 'java' : task.type === 'c++' ? 'cpp' : task.type === 'image' ? 'png' : task.type === 'jpeg' ? 'jpg' : task.type === 'gif' ? 'gif' : task.type === 'doc' ? 'txt' : task.type === 'pdf' ? 'pdf' : task.type === 'csv' ? 'csv' : task.type === 'json' ? 'json' : task.type === 'mp4' ? 'mp4' : 'html'}`
       });
     }
+    await log(`Completed editing task "${task.name}" for frontendId ${frontendId}`);
     return { content, response };
   } catch (err) {
-    await error('Failed to edit task: ' + err.message);
+    await error(`Failed to edit task for frontendId ${frontendId}: ${err.message}`);
     clearInterval(progressInterval);
     const editError = tone === 'blunt'
       ? `Fuck’s sake, ${userName}, editing "${task.name}" went tits up: ${err.message}! Retry, ya dumb shit?`

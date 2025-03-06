@@ -30,10 +30,18 @@ class WebSocketHandler {
         console.log(`📩 Received frontend_connected: ${JSON.stringify(data)}`);
         const leadClient = this.clients['bot_lead'];
         if (leadClient) {
-          leadClient.emit("frontend_connected", data);
-          console.log(`📤 Forwarded frontend_connected to bot_lead`);
+          const forwardedData = { ...data, ip: socket.handshake.address };
+          leadClient.emit("frontend_connected", forwardedData);
+          console.log(`📤 Forwarded frontend_connected to bot_lead with data: ${JSON.stringify(forwardedData)}`);
         } else {
-          console.warn(`⚠️ bot_lead not found for frontend_connected`);
+          console.warn(`⚠️ bot_lead not found for frontend_connected. Clients: [${Object.keys(this.clients).join(', ')}]`);
+          // Queue the event if bot_lead isn’t registered yet
+          socket.once('register', ({ name }) => {
+            if (name === 'bot_lead') {
+              this.clients['bot_lead'].emit("frontend_connected", { ...data, ip: socket.handshake.address });
+              console.log(`📤 Delayed forward of frontend_connected to newly registered bot_lead`);
+            }
+          });
         }
       });
 
@@ -66,6 +74,7 @@ class WebSocketHandler {
   registerClient(socket, { name, role }) {
     if (!name || !role) {
       console.error("❌ Invalid registration data. Missing name or role.");
+      socket.emit("register_failed", { message: "Missing name or role" });
       return;
     }
     this.clients[name] = socket;
@@ -76,15 +85,14 @@ class WebSocketHandler {
   handleMessage(socket, message) {
     try {
       console.log(`📩 Message received: ${JSON.stringify(message)}`);
-      switch (message.type) {
-        case "command":
-          this.forwardCommand(message);
-          break;
-        case "general_message":
-          this.broadcastMessage(message);
-          break;
-        default:
-          console.warn(`⚠️ Unknown message type: ${message.type}`);
+      const targetClient = this.clients[message.target || 'bot_lead'];
+      if (targetClient) {
+        const messageWithIp = { ...message, ip: socket.handshake.address };
+        targetClient.emit("message", messageWithIp);
+        console.log(`📤 Message forwarded to ${message.target || 'bot_lead'}: ${JSON.stringify(messageWithIp)}`);
+      } else {
+        console.warn(`⚠️ Target bot '${message.target || 'bot_lead'}' not found. Message: ${JSON.stringify(message)}`);
+        console.log(`🚨 Debug: Registered bots: [ ${Object.keys(this.clients).join(', ')} ]`);
       }
     } catch (error) {
       console.error("❌ Error handling message:", error.message);
@@ -98,7 +106,7 @@ class WebSocketHandler {
       targetClient.emit("command", { command, args });
       console.log(`🚀 Command "${command}" sent to ${target}`);
     } else {
-      console.error(`⚠️ Target bot "${target}" not found. Message not delivered.`);
+      console.error(`⚠️ Target bot "${target}" not found for command.`);
       console.log(`🚨 Debug: Registered bots: [ ${Object.keys(this.clients).join(', ')} ]`);
     }
   }
@@ -133,8 +141,8 @@ class WebSocketHandler {
     if (clientName) {
       delete this.clients[clientName];
       console.log(`❌ ${clientName} disconnected. Remaining bots: [ ${Object.keys(this.clients).join(', ')} ]`);
-      console.log(`🔌 Client ${socket.id} disconnected: ${reason}`);
     }
+    console.log(`🔌 Client ${socket.id} disconnected: ${reason}`);
   }
 }
 

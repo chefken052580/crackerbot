@@ -1,50 +1,55 @@
-import io from 'socket.io-client';
-import { log, error } from './logger.js';
-import config from './config.js';
+import { io } from 'socket.io-client';
+import { log } from './logger.js';
 
-const WEBSOCKET_SERVER_URL = process.env.WEBSOCKET_URL || `ws://${config.server.host}:${config.server.websocketPort}`;
-const BACKEND_URL = process.env.BACKEND_URL || 'http://bot_backend:5000';
-const maxRetries = 50;
-const maxDelay = 60000;
+const WEBSOCKET_SERVER_URL = "ws://websocket_server:5002";
+const BACKEND_URL = "http://bot_backend:5000";
 
-let botSocket = null;
+const botSocket = io(WEBSOCKET_SERVER_URL, {
+  reconnection: true,
+  transports: ['websocket'],
+});
 
-function initializeSocket() {
-  if (!botSocket) {
-    console.log(`Initializing botSocket with URL: ${WEBSOCKET_SERVER_URL}`); // Synchronous log for startup
-    botSocket = io(WEBSOCKET_SERVER_URL, {
-      reconnection: true,
-      reconnectionAttempts: maxRetries,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: maxDelay,
-      transports: ['websocket'],
+console.log('Initializing botSocket with URL:', WEBSOCKET_SERVER_URL);
+
+botSocket.on('connect', async () => {
+  console.log('Bot socket connected to server');
+  await log(`Bot_lead connected to WebSocket server with ID: ${botSocket.id}`);
+  botSocket.emit('register', { name: 'bot_lead', role: 'lead' });
+  botSocket.emit('message', {
+    text: "Cracker Bot online—ready to rock the matrix!",
+    type: "system",
+    from: 'Cracker Bot',
+    target: 'bot_frontend',
+  });
+  await log(`Sent test connect message`);
+});
+
+botSocket.onAny((event, ...args) => {
+  console.log(`[DEBUG] Bot_lead received event: ${event}, args: ${JSON.stringify(args)}`);
+});
+
+botSocket.on('frontend_connected', async (data) => {
+    const frontendId = data.frontendId;
+    const welcome = await generateResponse(
+      `I’m Cracker Bot—a well-oiled set of engineer bots ready to program anything in the matrix. New connection detected! What’s your name, code warrior?`,
+      "Guest",
+      DEFAULT_TONE
+    );
+    botSocket.emit('message', {
+      text: welcome,
+      type: "question",
+      from: 'Cracker Bot',
+      target: 'bot_frontend',
+      ip: data.ip || 'unknown',
+      taskId: `initial_name:${frontendId}:${Date.now()}`,
+      user: 'Guest',
+      frontendId,
     });
+    await log(`Sent initial name prompt for frontendId ${frontendId}: ${welcome}`);
+  });
 
-    botSocket.on('connect', async () => {
-      await log('✅ Connected to WebSocket server');
-      botSocket.emit('register', { name: 'bot_lead', role: 'lead' });
-    });
-
-    botSocket.on('connect_error', async (err) => {
-      await error(`❌ WebSocket connection error: ${err.message}`);
-    });
-
-    botSocket.on('reconnect_attempt', async (attempt) => {
-      await log(`🔄 Reconnect attempt ${attempt}/${maxRetries}`);
-    });
-
-    botSocket.on('disconnect', async (reason) => {
-      await log(`⚠️ WebSocket disconnected (${reason}). Retrying...`);
-    });
-
-    botSocket.on('error', async (err) => {
-      await error(`❌ WebSocket error: ${err.message}`);
-    });
-  }
-  return botSocket;
-}
-
-// Initialize immediately
-initializeSocket();
+botSocket.on('disconnect', (reason) => {
+  console.log(`Bot socket disconnected: ${reason}`);
+});
 
 export { botSocket, BACKEND_URL };

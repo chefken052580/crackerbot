@@ -11,12 +11,25 @@ export const redisClient = createClient({
 redisClient.on('error', async (err) => await error('Redis client error: ' + err.message));
 redisClient.on('connect', async () => await log('Connected to Redis'));
 
-(async () => {
-  try {
-    await redisClient.connect();
-  } catch (err) {
-    await error('Failed to connect to Redis: ' + err.message);
+async function connectWithRetry() {
+  let retries = 5;
+  const delay = 1000;
+  while (retries > 0) {
+    try {
+      await redisClient.connect();
+      await log('Redis connection established');
+      return;
+    } catch (err) {
+      retries--;
+      await error(`Failed to connect to Redis (retries left: ${retries}): ${err.message}`);
+      if (retries === 0) throw err;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
+}
+
+(async () => {
+  await connectWithRetry();
 })();
 
 export async function storeMessage(user, text) {

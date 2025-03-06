@@ -14,8 +14,9 @@ export function initializeWebSocket(server) {
 
     socket.on('command', async (data) => {
       await log('Received command from client: ' + JSON.stringify(data));
-      const response = await handleCommand(botSocket, data.command, data);
-      io.emit('commandResponse', { ...response, target: 'bot_frontend' });
+      const frontendId = data.frontendId || socket.id;
+      const response = await handleCommand(botSocket, data.command, { ...data, frontendId });
+      io.emit('commandResponse', { ...response, target: 'bot_frontend', frontendId });
     });
   });
 
@@ -26,8 +27,9 @@ export function initializeWebSocket(server) {
 
   botSocket.on('command', async (data) => {
     await log('Bot received command: ' + JSON.stringify(data));
-    const response = await handleCommand(botSocket, data.command, data);
-    botSocket.emit('commandResponse', { success: true, ...response, target: 'bot_frontend' });
+    const frontendId = data.frontendId || botSocket.id;
+    const response = await handleCommand(botSocket, data.command, { ...data, frontendId });
+    botSocket.emit('commandResponse', { success: true, ...response, target: 'bot_frontend', frontendId });
   });
 
   botSocket.on('taskResponse', async (data) => {

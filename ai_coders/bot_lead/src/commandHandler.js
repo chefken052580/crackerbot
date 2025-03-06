@@ -6,18 +6,19 @@ import { botSocket } from './socket.js';
 
 export async function handleCommand(socket, command, data) {
   const ip = data.ip || 'unknown';
-  const userKey = `user:ip:${ip}:name`;
-  const toneKey = `user:ip:${ip}:tone`;
+  const frontendId = data.frontendId || socket.id;
+  const userKey = `user:frontend:${frontendId}:name`;
+  const toneKey = `user:frontend:${frontendId}:tone`;
   let userName = await redisClient.get(userKey) || 'stranger';
   const tone = await redisClient.get(toneKey) || 'witty';
-  await log(`Processing command: ${command} from IP ${ip} (${userName}) with tone ${tone}`);
-  botSocket.emit('typing', { target: 'bot_frontend', ip });
+  await log(`Processing command: ${command} from frontendId ${frontendId} (${userName}) with tone ${tone}`);
+  botSocket.emit('typing', { target: 'bot_frontend', frontendId });
 
   let response;
   switch (command) {
     case '/reset_name':
       await redisClient.del(userKey);
-      await log(`Cleared name for IP ${ip}`);
+      await log(`Cleared name for frontendId ${frontendId}`);
       response = {
         text: await generateResponse(
           `I’m Cracker Bot, resetting the name for ${userName}. Ask them, 'What would you like to be called this time?' in a playful, creative, ${tone} way.`,
@@ -26,7 +27,8 @@ export async function handleCommand(socket, command, data) {
         ),
         type: "question",
         ip,
-        taskId: `reset_name:${ip}:${Date.now()}`,
+        taskId: `reset_name:${frontendId}:${Date.now()}`,
+        frontendId,
       };
       break;
 
@@ -34,7 +36,7 @@ export async function handleCommand(socket, command, data) {
       const toneArg = data.text?.split(' ')[1]?.toLowerCase();
       if (toneArg) {
         await redisClient.set(toneKey, toneArg);
-        await log(`Set tone to ${toneArg} for IP ${ip}`);
+        await log(`Set tone to ${toneArg} for frontendId ${frontendId}`);
         response = {
           text: await generateResponse(
             `I’m Cracker Bot, switching to a ${toneArg} tone for ${userName}. Confirm the change with some flair!`,
@@ -43,6 +45,7 @@ export async function handleCommand(socket, command, data) {
           ),
           type: "success",
           ip,
+          frontendId,
         };
       } else {
         response = {
@@ -53,6 +56,7 @@ export async function handleCommand(socket, command, data) {
           ),
           type: "error",
           ip,
+          frontendId,
         };
       }
       break;
@@ -66,6 +70,7 @@ export async function handleCommand(socket, command, data) {
         ),
         type: "success",
         ip,
+        frontendId,
       };
       break;
 
@@ -78,6 +83,7 @@ export async function handleCommand(socket, command, data) {
         ),
         type: "success",
         ip,
+        frontendId,
       };
       break;
 
@@ -97,12 +103,13 @@ export async function handleCommand(socket, command, data) {
         ),
         type: "success",
         ip,
+        frontendId,
       };
       break;
 
     case '/start_task':
       const taskId = Date.now().toString();
-      await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, status: 'in_progress' }));
+      await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, frontendId, status: 'in_progress' }));
       response = {
         text: await generateResponse(
           `I’m Cracker Bot, kicking off a task for ${userName}. Ask them for a task name in a fun, engaging, ${tone} way.`,
@@ -112,6 +119,7 @@ export async function handleCommand(socket, command, data) {
         type: "question",
         taskId,
         ip,
+        frontendId,
       };
       break;
 
@@ -144,6 +152,7 @@ export async function handleCommand(socket, command, data) {
         ),
         type: "success",
         ip,
+        frontendId,
       };
       break;
 
@@ -159,6 +168,7 @@ export async function handleCommand(socket, command, data) {
           content: lastGeneratedTask.content,
           fileName: lastGeneratedTask.fileName,
           ip,
+          frontendId,
         };
       } else {
         response = {
@@ -169,6 +179,7 @@ export async function handleCommand(socket, command, data) {
           ),
           type: "error",
           ip,
+          frontendId,
         };
       }
       break;
@@ -189,7 +200,7 @@ export async function handleCommand(socket, command, data) {
         if (templateNum >= 0 && templateNum < templatesList.length) {
           const taskId = Date.now().toString();
           const template = templatesList[templateNum];
-          await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'features', user: userName, ip, ...template, status: 'in_progress' }));
+          await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'features', user: userName, ip, frontendId, ...template, status: 'in_progress' }));
           response = {
             text: await generateResponse(
               `I’m Cracker Bot, starting "${template.name}" for ${userName}. Ask them to confirm or tweak features (or say "go") in a fun, ${tone} way!`,
@@ -199,6 +210,7 @@ export async function handleCommand(socket, command, data) {
             type: "question",
             taskId,
             ip,
+            frontendId,
           };
         } else {
           response = {
@@ -209,12 +221,13 @@ export async function handleCommand(socket, command, data) {
             ),
             type: "error",
             ip,
+            frontendId,
           };
         }
       } else if (command.startsWith('/build') || command.startsWith('/create')) {
         const task = command.replace(/^\/(build|create)/, '').trim();
         const taskId = Date.now().toString();
-        await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, initialTask: task || null, status: 'in_progress' }));
+        await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, ip, frontendId, initialTask: task || null, status: 'in_progress' }));
         response = {
           text: await generateResponse(
             `I’m Cracker Bot, starting "${task || 'something'}" for ${userName}. Ask for the task name in a quirky, excited, ${tone} way!`,
@@ -224,6 +237,7 @@ export async function handleCommand(socket, command, data) {
           type: "question",
           taskId,
           ip,
+          frontendId,
         };
       } else if (command.startsWith('/')) {
         response = {
@@ -234,6 +248,7 @@ export async function handleCommand(socket, command, data) {
           ),
           type: "error",
           ip,
+          frontendId,
         };
       } else {
         response = {
@@ -244,6 +259,7 @@ export async function handleCommand(socket, command, data) {
           ),
           type: "success",
           ip,
+          frontendId,
         };
       }
   }
@@ -255,6 +271,7 @@ export async function handleCommand(socket, command, data) {
       target: 'bot_frontend', 
       user: userName,
       ip,
+      frontendId,
     });
   }
 }
