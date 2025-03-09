@@ -1,7 +1,7 @@
 import io from 'socket.io-client';
 
 const BOT_NAME = "bot_backend";
-const WEBSOCKET_SERVER_URL = "ws://websocket_server:5002";
+const WEBSOCKET_SERVER_URL = process.env.WEBSOCKET_URL || "ws://websocket_server:5002";
 
 let retryCount = 0;
 const maxRetries = Infinity;

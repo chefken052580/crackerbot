@@ -75,22 +75,11 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
   };
 
   const parseOptions = (text, predefinedOptions) => {
-    if (predefinedOptions) return predefinedOptions;
-    const optionPatterns = [
-      /HTML, JS, Python, PHP, Ruby, Java, C\+\+, Full-Stack, Graph, Image, JPEG, GIF, Doc, PDF, CSV, JSON, or MP4/i,
-      /network or features/i,
-      /mainnet-beta, testnet, devnet, or none/i,
-      /add more, edit, or done/i,
-      /go/i
-    ];
-    for (const pattern of optionPatterns) {
-      const match = text.match(pattern);
-      if (match) return match[0].split(/,\s*(?:or\s*)?/).map(opt => opt.trim());
-    }
-    return [];
+    return predefinedOptions || [];
   };
 
-  const options = message.type === "question" ? parseOptions(message.text, message.options) : [];
+  const options = (message.type === "question" || message.type === "success") ? 
+    parseOptions(message.text, message.options) : [];
   const displayUser = message.from || message.user || message.userId || "Admin";
 
   return (
@@ -114,6 +103,7 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
               <button
                 onClick={() => onPreview(message.fileContent)}
                 className={`${colorScheme.accent} underline hover:text-neon-green ml-2`}
+                aria-label={`Preview ${message.fileName || 'file'}`}
               >
                 Preview
               </button>
@@ -121,23 +111,29 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
             <button
               onClick={() => handleDownloadClick(message.fileName || `${message.taskId || 'file'}.html`, message.fileContent)}
               className={`${colorScheme.accent} underline hover:text-neon-green ml-2`}
+              aria-label={`Download ${message.fileName || 'file'}`}
             >
               Download {message.fileName}
             </button>
           </>
-        ) : message.type === "question" && options.length > 0 ? (
+        ) : (message.type === "question" || message.type === "success") && options.length > 0 ? (
           <>
-            {message.text.split(options.join(', '))[0]}
+            {message.text}
             <div className="flex flex-wrap gap-2 mt-1">
-              {options.map((option, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => onOptionClick(option === "custom" ? "custom " : option)}
-                  className={`${colorScheme.bubble} px-3 py-1 rounded-full text-sm cursor-pointer`}
-                >
-                  {option}
-                </button>
-              ))}
+              {options.length === 1 ? (
+                <span className={`${colorScheme.bubble} px-3 py-1 rounded-full text-sm`}>{options[0]}</span>
+              ) : (
+                options.map((option, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onOptionClick(option)}
+                    className={`${colorScheme.bubble} px-3 py-1 rounded-full text-sm cursor-pointer`}
+                    aria-label={`Select ${option}`}
+                  >
+                    {option}
+                  </button>
+                ))
+              )}
             </div>
           </>
         ) : (

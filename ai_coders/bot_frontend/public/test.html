@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebSocket Test</title>
+</head>
+<body>
+  <h1>WebSocket Test Page</h1>
+  <p>If you see this, the page loaded!</p>
+  <div id="messages">Loading...</div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    console.log("test.html: Page loaded");
+    document.getElementById("messages").innerText = "Script running...";
+    try {
+      console.log("test.html: Attempting WebSocket connection");
+      const socket = io("wss://visually-sterling-spider.ngrok-free.app/socket.io/", {
+        path: "/socket.io",
+        transports: ["websocket"],
+      });
+      socket.on("connect", () => {
+        console.log("test.html: WebSocket connected, ID:", socket.id);
+        document.getElementById("messages").innerText = "Connected!";
+      });
+      socket.on("connect_error", (err) => {
+        console.error("test.html: WebSocket connect error:", err.message);
+        document.getElementById("messages").innerText = `Error: ${err.message}`;
+      });
+    } catch (e) {
+      console.error("test.html: Socket.IO initialization failed:", e);
+      document.getElementById("messages").innerText = `Init Error: ${e.message}`;
+    }
+  </script>
+</body>
+</html>

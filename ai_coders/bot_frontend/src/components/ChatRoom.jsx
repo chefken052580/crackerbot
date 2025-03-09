@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
-import ChatMessage from "./ChatMessage";  // Use the existing separate file
+import ChatMessage from "./ChatMessage";
 
-const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
+// Use the ngrok-exposed WebSocket URL directly
+const getWebSocketUrl = () => {
+  // Hardcode the ngrok WebSocket URL for external access
+  const directUrl = "wss://visually-sterling-spider.ngrok-free.app/socket.io/";
+  console.log("WebSocket URL:", directUrl);
+  return directUrl; // Use the ngrok tunnel URL matching the websocket tunnel
+};
 
 const commands = [
   { command: "/create", description: "Start a new project" },
@@ -32,110 +38,9 @@ const colorSchemes = {
     accent: "text-neon-yellow",
     bubble: "bg-purple-600 hover:bg-yellow-400 text-white font-semibold",
   },
-  pastel: {
-    bg: "bg-gray-100",
-    chatBg: "bg-white",
-    text: "text-gray-800",
-    user: "text-pink-500 bg-pink-100",
-    bot: "text-blue-500 bg-blue-100",
-    system: "text-purple-500 bg-purple-100 italic",
-    command: "text-indigo-500 bg-indigo-100",
-    success: "text-blue-500 bg-blue-100",
-    error: "text-red-500 bg-gray-100",
-    question: "text-teal-500 bg-teal-100",
-    progress: "bg-white",
-    button: "bg-blue-400 hover:bg-blue-500",
-    buttonText: "text-white",
-    accent: "text-pink-500",
-    bubble: "bg-indigo-300 hover:bg-indigo-400 text-indigo-900 font-semibold",
-  },
-  darkMetal: {
-    bg: "bg-gray-800",
-    chatBg: "bg-gray-700",
-    text: "text-gray-200",
-    user: "text-orange-400 bg-gray-600",
-    bot: "text-green-400 bg-gray-700",
-    system: "text-blue-400 bg-gray-800 italic",
-    command: "text-violet-400 bg-gray-600",
-    success: "text-green-400 bg-gray-700",
-    error: "text-red-400 bg-gray-700",
-    question: "text-cyan-400 bg-gray-700",
-    progress: "bg-gray-700",
-    button: "bg-green-500 hover:bg-green-600",
-    buttonText: "text-gray-900",
-    accent: "text-orange-400",
-    bubble: "bg-violet-600 hover:bg-violet-700 text-white font-semibold",
-  },
-  retro: {
-    bg: "bg-black",
-    chatBg: "bg-gray-900",
-    text: "text-white",
-    user: "text-yellow-300 bg-gray-800",
-    bot: "text-green-300 bg-gray-900",
-    system: "text-blue-300 bg-black italic",
-    command: "text-magenta-300 bg-gray-800",
-    success: "text-green-300 bg-gray-900",
-    error: "text-red-300 bg-gray-900",
-    question: "text-purple-300 bg-gray-900",
-    progress: "bg-gray-900",
-    button: "bg-green-600 hover:bg-green-700",
-    buttonText: "text-white",
-    accent: "text-yellow-300",
-    bubble: "bg-magenta-500 hover:bg-magenta-600 text-white font-semibold",
-  },
-  solarized: {
-    bg: "bg-[#002b36]",
-    chatBg: "bg-[#073642]",
-    text: "text-[#839496]",
-    user: "text-[#b58900] bg-[#073642]",
-    bot: "text-[#2aa198] bg-[#073642]",
-    system: "text-[#6c71c4] bg-[#002b36] italic",
-    command: "text-[#d33682] bg-[#073642]",
-    success: "text-[#2aa198] bg-[#073642]",
-    error: "text-[#cb4b16] bg-[#073642]",
-    question: "text-[#268bd2] bg-[#073642]",
-    progress: "bg-[#073642]",
-    button: "bg-[#2aa198] hover:bg-[#859900]",
-    buttonText: "text-[#002b36]",
-    accent: "text-[#b58900]",
-    bubble: "bg-[#d33682] hover:bg-[#dc322f] text-white font-semibold",
-  },
-  cyberpunk: {
-    bg: "bg-[#0d0c1d]",
-    chatBg: "bg-[#1a1a3d]",
-    text: "text-[#a0a0ff]",
-    user: "text-[#ff00ff] bg-[#1a1a3d]",
-    bot: "text-[#00ffff] bg-[#1a1a3d]",
-    system: "text-[#ffaa00] bg-[#0d0c1d] italic",
-    command: "text-[#ff007f] bg-[#1a1a3d]",
-    success: "text-[#00ffff] bg-[#1a1a3d]",
-    error: "text-[#ff3333] bg-[#1a1a3d]",
-    question: "text-[#00ccff] bg-[#1a1a3d]",
-    progress: "bg-[#1a1a3d]",
-    button: "bg-[#ff00ff] hover:bg-[#00ffff]",
-    buttonText: "text-[#0d0c1d]",
-    accent: "text-[#ffaa00]",
-    bubble: "bg-[#ff007f] hover:bg-[#ff00ff] text-white font-semibold",
-  },
-  forest: {
-    bg: "bg-[#1a2f27]",
-    chatBg: "bg-[#2f4538]",
-    text: "text-[#d9e0c7]",
-    user: "text-[#e0c589] bg-[#2f4538]",
-    bot: "text-[#8ab573] bg-[#2f4538]",
-    system: "text-[#b58973] bg-[#1a2f27] italic",
-    command: "text-[#d9a773] bg-[#2f4538]",
-    success: "text-[#8ab573] bg-[#2f4538]",
-    error: "text-[#d97373] bg-[#2f4538]",
-    question: "text-[#a7d973] bg-[#2f4538]",
-    progress: "bg-[#2f4538]",
-    button: "bg-[#8ab573] hover:bg-[#73d9a7]",
-    buttonText: "text-[#1a2f27]",
-    accent: "text-[#e0c589]",
-    bubble: "bg-[#d9a773] hover:bg-[#e0c589] text-[#1a2f27] font-semibold",
-  },
 };
 
+// Rest of the ChatRoom component remains unchanged
 const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -151,154 +56,232 @@ const ChatRoom = () => {
   const [playSound, setPlaySound] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const chatEndRef = useRef(null);
-  const audioRef = useRef(new Audio('/ping.wav'));
+  const audioRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
   const recognitionRef = useRef(null);
 
   useEffect(() => {
-    console.log("ChatRoom mounted, initializing WebSocket");
+    console.log("ChatRoom.jsx: Component mounted"); // Sanity check
+    const WEBSOCKET_SERVER_URL = getWebSocketUrl();
+    console.log("ChatRoom.jsx: Initializing WebSocket with URL:", WEBSOCKET_SERVER_URL);
 
-    socketRef.current = io(WEBSOCKET_SERVER_URL, {
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      transports: ["websocket"],
-      path: "/socket.io",
-    });
+    try {
+      socketRef.current = io(WEBSOCKET_SERVER_URL, {
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        transports: ["websocket"],
+        path: "/socket.io",
+      });
+      console.log("ChatRoom.jsx: Socket.IO initialized");
+    } catch (e) {
+      console.error("ChatRoom.jsx: Failed to initialize Socket.IO:", e);
+      return;
+    }
 
     socketRef.current.on("connect", () => {
-      console.log("WebSocket connected, ID:", socketRef.current.id);
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: "Connected to WebSocket", 
-        type: "system", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      console.log(`ChatRoom.jsx: ✅ WebSocket connected, ID: ${socketRef.current.id}`);
+      setMessages((prev) => [
+        ...prev,
+        { 
+          from: "System", 
+          text: "Connected to your private Cracker Bot session", 
+          type: "system", 
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: socketRef.current.id,
+        }
+      ]);
       setIsConnected(true);
       const userName = localStorage.getItem('userName') || "Guest";
       socketRef.current.emit("register", { 
         name: "bot_frontend", 
         role: "frontend", 
         userId: socketRef.current.id, 
-        userName 
+        userName,
+        frontendId: socketRef.current.id,
       });
       socketRef.current.emit("frontend_connected", { 
         ip: window.location.hostname, 
         frontendId: socketRef.current.id,
         userName 
       });
-      console.log("Emitted frontend_connected with ID:", socketRef.current.id, "and userName:", userName);
-    });
-
-    socketRef.current.on("message", (data) => {
-      console.log("Message received:", data);
-      setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
-      const newMessage = {
-        from: data.from,
-        user: data.user || "Admin",
-        text: data.text,
-        type: data.type || "bot",
-        fileName: data.fileName,
-        fileContent: data.content,
-        taskId: data.taskId,
-        options: data.options,  // Include options for bubbles
-        timestamp: new Date().toLocaleTimeString(),
-        frontendId: data.frontendId,
-      };
-
-      if (data.type === "progress") {
-        setProgressMessage(newMessage);
-        if (data.progress === 100) setTimeout(() => setProgressMessage(null), 2000);
-      } else {
-        setMessages((prev) => [...prev, newMessage]);
-        if (data.type === "question" && data.taskId) {
-          setTaskPending({ taskId: data.taskId, question: data.text });
-          setCurrentTask((prev) => {
-            const current = prev[data.taskId] || {};
-            if (data.text.includes("task name") || data.text.includes("call this")) {
-              return { ...prev, [data.taskId]: { ...current, step: "name" } };
-            } else if (data.text.includes("type") || data.text.includes("should this be")) {
-              return { ...prev, [data.taskId]: { ...current, step: "type" } };
-            } else if (data.text.includes("features") || data.text.includes("want in it")) {
-              return { ...prev, [data.taskId]: { ...current, step: "features" } };
-            } else if (data.text.includes("Should we shoot")) {
-              return { ...prev, [data.taskId]: { ...current, step: "choice" } };
-            }
-            return prev;
-          });
-        } else if (data.type === "task_response" && data.taskId) {
-          setCurrentTask((prev) => {
-            const current = prev[data.taskId] || {};
-            if (current.step === "name" && !data.text.includes("What’s your name")) {
-              localStorage.setItem('userName', data.text.trim());
-              return { ...prev, [data.taskId]: { ...current, name: data.text, step: "complete" } };
-            } else if (current.step === "type") {
-              return { ...prev, [data.taskId]: { ...current, type: data.text, step: "features" } };
-            } else if (current.step === "features") {
-              return { ...prev, [data.taskId]: { ...current, features: data.text, step: "building" } };
-            }
-            return prev;
-          });
-          if (data.text.match(/\d+%/) && parseInt(data.text.match(/\d+%/)[0]) === 100) {
-            setProgressMessage(null);
-          }
-        }
-      }
-
-      if (data.user && data.user !== "Cracker Bot" && data.user !== "System") {
-        localStorage.setItem('userName', data.user);
-        console.log("Updated userName in localStorage:", data.user);
-      }
-      if (playSound) audioRef.current.play().catch(() => console.log("Audio play failed"));
-    });
-
-    socketRef.current.on("typing", (data) => {
-      console.log("Typing event received:", data);
-      setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
+      console.log(`ChatRoom.jsx: 📤 Emitted frontend_connected with ID: ${socketRef.current.id}, userName: ${userName}`);
     });
 
     socketRef.current.on("connect_error", (error) => {
-      console.error("WebSocket connect error:", error.message);
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: `Connection Error: ${error.message}`, 
-        type: "error", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      console.error(`ChatRoom.jsx: ❌ WebSocket connect error: ${error.message}`, error);
+      setMessages((prev) => [
+        ...prev,
+        { 
+          from: "System", 
+          text: `Connection Error: ${error.message}`, 
+          type: "error", 
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: socketRef.current.id || "unknown",
+        }
+      ]);
       setIsConnected(false);
     });
 
+    socketRef.current.on("error", (data) => {
+      console.error(`ChatRoom.jsx: ❌ WebSocket server error: ${data.message}`, data);
+      setMessages((prev) => [
+        ...prev,
+        { 
+          from: "System", 
+          text: `Server Error: ${data.message}`, 
+          type: "error", 
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: socketRef.current.id || "unknown",
+        }
+      ]);
+    });
+
+    socketRef.current.on("message", (data) => {
+      if (data.frontendId === socketRef.current.id) {
+        console.log(`ChatRoom.jsx: 📩 Message received for user ${socketRef.current.id}:`, data);
+        setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
+        const newMessage = {
+          from: data.from,
+          user: data.user || "Admin",
+          text: data.text,
+          type: data.type || "bot",
+          fileName: data.fileName,
+          fileContent: data.content,
+          taskId: data.taskId,
+          options: data.options,
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: data.frontendId,
+          progress: data.progress,
+        };
+
+        if (data.type === "progress") {
+          setProgressMessage((prev) => ({
+            ...newMessage,
+            progress: data.progress || (prev ? prev.progress : 0),
+            taskId: data.taskId || prev?.taskId,
+          }));
+          if (data.progress === 100) {
+            setTimeout(() => setProgressMessage(null), 1000);
+          }
+          console.log(`ChatRoom.jsx: 📈 Progress update for ${socketRef.current.id}: ${data.text} (${data.progress}%)`);
+        } else if (data.type === "download" && data.content) {
+          setMessages((prev) => [...prev, newMessage]);
+          const byteCharacters = atob(data.content);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const mimeType = {
+            'html': 'text/html', 'js': 'application/javascript', 'py': 'text/x-python', 'php': 'application/x-httpd-php',
+            'rb': 'text/x-ruby', 'java': 'text/x-java-source', 'cpp': 'text/x-c++', 'zip': 'application/zip',
+            'png': 'image/png', 'jpg': 'image/jpeg', 'gif': 'image/gif', 'txt': 'text/plain',
+            'pdf': 'application/pdf', 'csv': 'text/csv', 'json': 'application/json', 'mp4': 'video/mp4'
+          }[data.fileName.split('.').pop()] || 'application/octet-stream';
+          const blob = new Blob([byteArray], { type: mimeType });
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = data.fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+          console.log(`ChatRoom.jsx: 📥 Download for ${socketRef.current.id}: ${data.fileName}`);
+        } else {
+          setMessages((prev) => [...prev, newMessage]);
+          if ((data.type === "question" || data.type === "success") && data.options && data.options.length > 0) {
+            setTaskPending({ taskId: data.taskId || `welcome:${socketRef.current.id}`, question: data.text });
+            setCurrentTask((prev) => ({
+              ...prev,
+              [data.taskId || `welcome:${socketRef.current.id}`]: { 
+                step: data.taskId?.includes("initial_name") ? "name" : data.taskId ? "choice" : "welcome" 
+              }
+            }));
+            console.log(`ChatRoom.jsx: ❓ Question for ${socketRef.current.id}: ${data.text}`);
+          } else if (data.type === "task_response" && data.taskId) {
+            setCurrentTask((prev) => {
+              const current = prev[data.taskId] || {};
+              if (data.taskId.startsWith("initial_name:")) {
+                localStorage.setItem('userName', data.text.trim());
+                return { ...prev, [data.taskId]: { ...current, name: data.text, step: "complete" } };
+              } else if (current.step === "welcome" && data.text === "Build something epic!") {
+                return { ...prev, [data.taskId]: { ...current, step: "name" } };
+              } else if (current.step === "name") {
+                return { ...prev, [data.taskId]: { ...current, name: data.text, step: "type" } };
+              } else if (current.step === "type") {
+                return { ...prev, [data.taskId]: { ...current, type: data.text, step: "features" } };
+              } else if (current.step === "features") {
+                return { ...prev, [data.taskId]: { ...current, features: data.text, step: "building" } };
+              } else if (current.step === "choice") {
+                return { ...prev, [data.taskId]: { ...current, choice: data.text, step: "complete" } };
+              }
+              return prev;
+            });
+            setTaskPending(null);
+            console.log(`ChatRoom.jsx: ✅ Task response processed for ${socketRef.current.id}: ${data.text}`);
+          } else {
+            console.log(`ChatRoom.jsx: 💬 AI message for ${socketRef.current.id}: ${data.text}`);
+          }
+        }
+
+        if (data.user && data.user !== "Cracker Bot" && data.user !== "System") {
+          localStorage.setItem('userName', data.user);
+          console.log(`ChatRoom.jsx: 🖋️ Updated userName in localStorage: ${data.user}`);
+        }
+        if (playSound) audioRef.current?.play().catch(() => console.log("ChatRoom.jsx: Audio play failed"));
+      } else {
+        console.log(`ChatRoom.jsx: 🚫 Message ignored (not for user ${socketRef.current.id}):`, data);
+      }
+    });
+
+    socketRef.current.on("typing", (data) => {
+      if (data.frontendId === socketRef.current.id) {
+        console.log(`ChatRoom.jsx: ⌨️ Typing event received for user ${socketRef.current.id}:`, data);
+        setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
+      } else {
+        console.log(`ChatRoom.jsx: 🚫 Typing ignored (not for user ${socketRef.current.id}):`, data);
+      }
+    });
+
     socketRef.current.on("disconnect", (reason) => {
-      console.log("WebSocket disconnected:", reason);
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: `Disconnected: ${reason}`, 
-        type: "error", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      console.log(`ChatRoom.jsx: 🔌 WebSocket disconnected: ${reason}`);
+      setMessages((prev) => [
+        ...prev,
+        { 
+          from: "System", 
+          text: `Disconnected: ${reason}`, 
+          type: "error", 
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: socketRef.current.id || "unknown",
+        }
+      ]);
       setIsConnected(false);
     });
 
     return () => {
-      console.log("ChatRoom unmounting, cleaning up WebSocket");
+      console.log(`ChatRoom.jsx: 🧹 Unmounting, cleaning up WebSocket for ID: ${socketRef.current.id || "unknown"}`);
       socketRef.current.off("connect");
       socketRef.current.off("message");
       socketRef.current.off("typing");
       socketRef.current.off("connect_error");
+      socketRef.current.off("error");
       socketRef.current.off("disconnect");
       socketRef.current.disconnect();
       if (recognitionRef.current) {
         recognitionRef.current.stop();
+        recognitionRef.current = null;
       }
     };
   }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping, progressMessage]);
+  }, [messages, isTyping, progressMessage, currentTask]);
 
   useEffect(() => {
     if (showCommands && commandsRef.current) {
@@ -307,9 +290,12 @@ const ChatRoom = () => {
   }, [showCommands, filteredCommands]);
 
   const sendMessage = (messageText) => {
-    if (!socketRef.current || !messageText.trim() || !isConnected) return;
+    if (!socketRef.current || !messageText.trim() || !isConnected) {
+      console.warn(`ChatRoom.jsx: ⚠️ Cannot send: Connected=${isConnected}, Text="${messageText}"`);
+      return;
+    }
 
-    console.log("Sending message:", messageText);
+    console.log(`ChatRoom.jsx: 📤 Sending message from user ${socketRef.current.id}:`, messageText);
     const userName = localStorage.getItem('userName') || "Guest";
     const messageData = {
       text: messageText.trim(),
@@ -336,18 +322,20 @@ const ChatRoom = () => {
       if (taskPending.question.includes("What’s your name")) {
         localStorage.setItem('userName', messageText.trim());
         messageData.user = messageText.trim();
-        console.log("Set userName in localStorage from task response:", messageText.trim());
+        console.log(`ChatRoom.jsx: 🖋️ Set userName in localStorage from task: ${messageText.trim()}`);
       }
+      socketRef.current.emit('message', messageData);
       setTaskPending(null);
     } else if (messageText.startsWith("/")) {
       messageData.type = "command";
       messageData.target = "bot_lead";
       setMessages((prev) => [...prev, { ...messageData, type: "command", timestamp: new Date().toLocaleTimeString() }]);
+      socketRef.current.emit('message', messageData);
     } else {
       messageData.type = "general_message";
+      socketRef.current.emit('message', messageData);
     }
 
-    socketRef.current.emit('message', messageData);
     setInput("");
     setShowCommands(false);
     setCommandIndex(-1);
@@ -400,21 +388,30 @@ const ChatRoom = () => {
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         setInput(transcript);
+        sendMessage(transcript);
         setIsRecording(false);
+        recognitionRef.current = null;
       };
       recognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
+        console.error("ChatRoom.jsx: Speech recognition error:", event.error);
         setIsRecording(false);
+        recognitionRef.current = null;
+      };
+      recognition.onend = () => {
+        setIsRecording(false);
+        recognitionRef.current = null;
       };
       recognition.start();
       setIsRecording(true);
     } else {
       recognitionRef.current?.stop();
       setIsRecording(false);
+      recognitionRef.current = null;
     }
   };
 
   const startVoiceToText = () => {
+    if (isRecording) return;
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognitionRef.current = recognition;
     recognition.continuous = true;
@@ -426,8 +423,13 @@ const ChatRoom = () => {
       setInput(transcript);
     };
     recognition.onerror = (event) => {
-      console.error("Voice-to-text error:", event.error);
+      console.error("ChatRoom.jsx: Voice-to-text error:", event.error);
       setIsRecording(false);
+      recognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      setIsRecording(false);
+      recognitionRef.current = null;
     };
     recognition.onstart = () => setIsRecording(true);
     recognition.start();
@@ -440,15 +442,16 @@ const ChatRoom = () => {
       if (input.trim()) {
         sendMessage(input);
       }
+      recognitionRef.current = null;
     }
   };
 
   const manualReconnect = () => {
-    console.log("Manual reconnect triggered with reset");
+    console.log(`ChatRoom.jsx: 🔄 Manual reconnect triggered for user ${socketRef.current.id || "unknown"}`);
     if (socketRef.current) {
       const userId = socketRef.current.id;
       const ip = window.location.hostname;
-      socketRef.current.emit('reset_user', { userId, ip });
+      socketRef.current.emit('reset_user', { userId, ip, frontendId: socketRef.current.id });
       localStorage.removeItem('userName');
       setMessages([]);
       setTaskPending(null);
@@ -456,12 +459,16 @@ const ChatRoom = () => {
       setProgressMessage(null);
       socketRef.current.disconnect();
       socketRef.current.connect();
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: "Reset and reconnected", 
-        type: "system", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        { 
+          from: "System", 
+          text: "Reset and reconnected to your private session", 
+          type: "system", 
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: socketRef.current.id,
+        }
+      ]);
     }
   };
 
@@ -469,19 +476,27 @@ const ChatRoom = () => {
     try {
       const decoded = atob(fileContent);
       const lines = decoded.split('\n').slice(0, 5).join('\n');
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, 
-        type: "system", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        { 
+          from: "System", 
+          text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, 
+          type: "system", 
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: socketRef.current.id,
+        }
+      ]);
     } catch (e) {
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: "Preview failed—binary file!", 
-        type: "error", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        { 
+          from: "System", 
+          text: "Preview failed—binary file!", 
+          type: "error", 
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: socketRef.current.id,
+        }
+      ]);
     }
   };
 
@@ -494,6 +509,8 @@ const ChatRoom = () => {
 
   const currentScheme = colorSchemes[colorScheme];
 
+  console.log("ChatRoom.jsx: Rendering component, isConnected:", isConnected); // Sanity check
+
   return (
     <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text}`}>
       <div className="flex-shrink-0 p-4 flex justify-between items-center">
@@ -505,12 +522,6 @@ const ChatRoom = () => {
             className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText}`}
           >
             <option value="neon">Neon</option>
-            <option value="pastel">Pastel</option>
-            <option value="darkMetal">Dark Metal</option>
-            <option value="retro">Retro</option>
-            <option value="solarized">Solarized</option>
-            <option value="cyberpunk">Cyberpunk</option>
-            <option value="forest">Forest</option>
           </select>
           <button
             onClick={toggleSound}
@@ -553,12 +564,22 @@ const ChatRoom = () => {
       <div className="flex-1 flex items-center justify-center">
         <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4`}>
           <div className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}>
+            {!isConnected && (
+              <div className={`text-center ${currentScheme.text}`}>
+                Connecting to your private Cracker Bot session...
+              </div>
+            )}
+            {isConnected && messages.length === 0 && !progressMessage && (
+              <div className={`text-center ${currentScheme.text}`}>
+                Welcome to Cracker Bot! Your private AI chat—type a message or /guide to start.
+              </div>
+            )}
             {messages.map((msg, index) => (
               <div key={index}>
                 <ChatMessage
                   message={msg}
                   onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
-                  onOptionClick={(option) => sendMessage(option)}  // Pass bubble click handler
+                  onOptionClick={(option) => sendMessage(option)}
                   colorScheme={currentScheme}
                 />
               </div>
@@ -579,7 +600,7 @@ const ChatRoom = () => {
 
           {taskPending && currentTask[taskPending.taskId] && (
             <div className={`text-gray-400 my-2`}>
-              Task: {currentTask[taskPending.taskId].name || "Pending"} | 
+              Task Name: {currentTask[taskPending.taskId].name || "Pending"} | 
               Type: {currentTask[taskPending.taskId].type || "Pending"} | 
               Features: {currentTask[taskPending.taskId].features || "Pending"}
             </div>
@@ -613,6 +634,7 @@ const ChatRoom = () => {
               onKeyDown={handleKeyDown}
               placeholder={taskPending ? `Answer: ${taskPending.question}` : "Type your message or /command..."}
               className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-gray-600 ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-${currentScheme.accent.split('-')[1]}`}
+              disabled={!isConnected}
             />
             <button
               onMouseDown={startVoiceToText}
@@ -620,18 +642,21 @@ const ChatRoom = () => {
               onTouchStart={startVoiceToText}
               onTouchEnd={stopVoiceToText}
               className={`p-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-md shadow-lg transform transition-all duration-200 ${isRecording ? 'scale-110 animate-pulse' : ''}`}
+              disabled={!isConnected}
             >
               🎙️
             </button>
             <button
               onClick={() => sendMessage(input)}
               className={`${currentScheme.button} ${currentScheme.buttonText} px-4 py-2 rounded-r-md transition`}
+              disabled={!isConnected}
             >
               Send
             </button>
           </div>
         </div>
       </div>
+      <audio ref={audioRef} src="/notification.mp3" preload="auto" />
     </div>
   );
 };

@@ -1,8 +1,18 @@
-FROM node:18-alpine
-WORKDIR /usr/src/app
+FROM node:18-slim
+WORKDIR /bot_backend
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libcairo2-dev \
+    libpango1.0-dev \
+    libjpeg-dev \
+    libgif-dev \
+    librsvg2-dev \
+    libpixman-1-dev \
+    && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 RUN npm install
-RUN npm install openai
-COPY src/ ./src/
+RUN npm rebuild canvas --update-binary
+RUN npm install -g pm2
+COPY src/ ./src/  
 EXPOSE 5000
-CMD ["node", "src/server.js"]
+CMD ["pm2-runtime", "start", "src/server.js"]

@@ -1,124 +1,161 @@
-version: '3.8'
 services:
-  bot_frontend:
-    build:
-      context: ./ai_coders/bot_frontend
-      dockerfile: Dockerfile
-    volumes:
-      - ./ai_coders/bot_frontend/src:/app/src
-    ports:
-      - "3000:80"
-    networks:
-      - bot_network
-    depends_on:
-      websocket_server:
-        condition: service_healthy
-      bot_lead:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-sSf", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    environment:
-      - NODE_ENV=production
-
-  bot_backend:
-    build:
-      context: ./ai_coders/bot_backend
-      dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
-    networks:
-      - bot_network
-    depends_on:
-      websocket_server:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    command: node src/server.js
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    healthcheck:
-      test: ["CMD", "curl", "-sSf", "http://localhost:5000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  bot_lead:
-    build:
-      context: ./ai_coders/bot_lead
-      dockerfile: Dockerfile
-    volumes:
-      - ./ai_coders/bot_lead/src:/bot_lead/src
-    ports:
-      - "5001:5001"
-    networks:
-      - bot_network
-    depends_on:
-      websocket_server:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - NODE_ENV=production
-      - BACKEND_URL=http://bot_backend:5000
-      - SERVER_HOST=websocket_server
-      - WEBSOCKET_PORT=5002
-    healthcheck:
-      test: ["CMD", "curl", "-sSf", "http://localhost:5001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
+    container_name: redis
     ports:
       - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD:-crackerbot}
+    volumes:
+      - redis-data:/data
     networks:
-      - bot_network
+      - crackerbot-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   websocket_server:
     build:
       context: ./ai_coders/websocket_server
       dockerfile: Dockerfile
+    container_name: websocket_server
     ports:
       - "5002:5002"
+    environment:
+      - PORT=5002
+      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
+      - WEBSOCKET_URL=ws://websocket_server:5002
+    depends_on:
+      redis:
+        condition: service_healthy
     networks:
-      - bot_network
+      - crackerbot-network
+    volumes:
+      - ./ai_coders/websocket_server:/websocket_server
     healthcheck:
-      test: ["CMD", "curl", "-sSf", "http://localhost:5002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
-    restart: always
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bot_lead:
+    build:
+      context: ./ai_coders/bot_lead
+      dockerfile: Dockerfile
+    container_name: bot_lead
+    ports:
+      - "5001:5001"
     environment:
-      - NODE_ENV=production
+      - PORT=5001
+      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
+      - WEBSOCKET_URL=ws://websocket_server:5002
+      - SERVER_HOST=websocket_server
+      - WEBSOCKET_PORT=5002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-crackerbot}
+      - REDIS_DB=0
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_key_here}
+      - LOG_DIR=/bot_lead/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      websocket_server:
+        condition: service_healthy
+    networks:
+      - crackerbot-network
+    volumes:
+      - ./ai_coders/bot_lead:/bot_lead
+      - bot_lead-logs:/bot_lead/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bot_backend:
+    build:
+      context: ./ai_coders/bot_backend
+      dockerfile: Dockerfile
+    container_name: bot_backend
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
+      - WEBSOCKET_URL=ws://websocket_server:5002
+      - BACKEND_URL=http://bot_backend:5000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-crackerbot}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_key_here}
+      - LOG_DIR=/bot_backend/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+      websocket_server:
+        condition: service_healthy
+    networks:
+      - crackerbot-network
+    volumes:
+      - ./ai_coders/bot_backend:/bot_backend
+      - bot_backend-logs:/bot_backend/logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bot_frontend:
+    build:
+      context: ./ai_coders/bot_frontend
+      dockerfile: Dockerfile
+    container_name: bot_frontend
+    ports:
+      - "80:80"
+    environment:
+      - WEBSOCKET_SERVER_HOST=websocket_server
+    depends_on:
+      websocket_server:
+        condition: service_healthy
+      bot_lead:
+        condition: service_started
+    networks:
+      - crackerbot-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   ngrok:
     image: ngrok/ngrok:latest
-    environment:
-      - NGROK_AUTHTOKEN=2pg1fl3g1wDInoW9OJkujqyv0Ro_4NBkBhsL3NSVbK249kRL7
-    command: ["start", "--all", "--config", "/etc/ngrok.yml", "--log=stdout"]
-    volumes:
-      - ./ngrok.yml:/etc/ngrok.yml:ro
+    container_name: ngrok
+    entrypoint: ["/bin/sh", "-c", "ngrok start frontend --config /etc/ngrok.yml --log stdout --log-level info"]
     ports:
       - "4040:4040"
-    networks:
-      - bot_network
+    volumes:
+      - ./ngrok.yml:/etc/ngrok.yml
     depends_on:
       - bot_frontend
-      - bot_backend
-      - websocket_server
-      - bot_lead
+    networks:
+      - crackerbot-network
     logging:
       driver: "json-file"
       options:
@@ -126,5 +163,10 @@ services:
         max-file: "3"
 
 networks:
-  bot_network:
+  crackerbot-network:
     driver: bridge
+
+volumes:
+  redis-data:
+  bot_lead-logs:
+  bot_backend-logs:

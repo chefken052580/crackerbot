@@ -1,11 +1,15 @@
 import OpenAI from 'openai';
 import { botSocket } from './socket.js';
 import { spawn } from 'child_process';
-import fs from 'fs';
+import fs from 'fs/promises';
 import PDFDocument from 'pdfkit';
-import { Canvas, createCanvas } from 'canvas';
+import { createCanvas } from 'canvas';
 import WavEncoder from 'wav-encoder';
 import { createRequire } from 'module';
+import { log, error } from './logger.js';
+import { redisClient } from './redisClient.js';
+import { lastGeneratedTask, setLastGeneratedTask } from './stateManager.js';
+
 const require = createRequire(import.meta.url);
 let JSZip;
 try {
@@ -14,8 +18,6 @@ try {
   console.error('Failed to load jszip:', e.message);
   process.exit(1);
 }
-import { lastGeneratedTask, setLastGeneratedTask } from './stateManager.js';
-import { log } from './logger.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "sk-placeholder-api-key" });
 
@@ -41,9 +43,10 @@ export async function grokThink(input, user) {
       messages: [{ role: "user", content: `I’m Cracker Bot, helping ${user}. They said: "${input}". Respond intelligently.` }],
       max_tokens: 100,
     });
+    await log(`Generated response for ${user}: ${response.choices[0].message.content.trim()}`);
     return { response: response.choices[0].message.content.trim(), type: "bot" };
-  } catch (error) {
-    console.error('OpenAI error:', error.message);
+  } catch (err) {
+    await error(`OpenAI error in grokThink for ${user}: ${err.message}`);
     return { response: `Hello ${user}! I’m Cracker Bot—how can I assist you today?`, type: "bot" };
   }
 }
@@ -55,9 +58,10 @@ export async function generateResponse(prompt, userId, tone = "witty") {
       messages: [{ role: "user", content: `Respond in a ${tone} tone: ${prompt}` }],
       max_tokens: 1000,
     });
+    await log(`Generated response for ${userId} with tone ${tone}: ${response.choices[0].message.content.trim()}`);
     return response.choices[0].message.content.trim();
-  } catch (error) {
-    console.error('OpenAI error:', error.message);
+  } catch (err) {
+    await error(`OpenAI error in generateResponse for ${userId}: ${err.message}`);
     return `Oops, I tripped over my circuits, ${userId}! Let’s try that again.`;
   }
 }
@@ -95,7 +99,10 @@ export async function startBuildTask(task, userName) {
       const files = JSON.parse(contentResponse.choices[0].message.content.trim());
       content = await zipFilesWithReadme(files, task);
     } else if (type === 'mp4') {
-      if (!await ffmpegAvailable()) return { response: "Missing FFmpeg—install it!", content: null };
+      if (!await ffmpegAvailable()) {
+        await error(`Missing FFmpeg for MP4 generation in task "${name}" for ${frontendId}`);
+        return { response: "Missing FFmpeg—install it to generate MP4s!", content: null };
+      }
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: `Short description (max 150 chars) for "${name}" MP4 with features: ${features}.` }],
@@ -104,8 +111,8 @@ export async function startBuildTask(task, userName) {
       let videoText = contentResponse.choices[0].message.content.trim().substring(0, 150);
       const outputFile = `/tmp/${name}-${Date.now()}.mp4`;
       await generateMp4(videoText, outputFile);
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'pdf') {
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
@@ -115,10 +122,13 @@ export async function startBuildTask(task, userName) {
       let pdfText = contentResponse.choices[0].message.content.trim().substring(0, 500);
       const outputFile = `/tmp/${name}-${Date.now()}.pdf`;
       await generatePdf(pdfText, outputFile);
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'gif') {
-      if (!await imagemagickAvailable()) return { response: "Missing ImageMagick—install it!", content: null };
+      if (!await imagemagickAvailable()) {
+        await error(`Missing ImageMagick for GIF generation in task "${name}" for ${frontendId}`);
+        return { response: "Missing ImageMagick—install it to generate GIFs!", content: null };
+      }
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: `3 short text frames (max 20 chars each) for "${name}" GIF with features: ${features}. Return as JSON array.` }],
@@ -128,19 +138,19 @@ export async function startBuildTask(task, userName) {
       const frames = JSON.parse(contentResponse.choices[0].message.content.trim());
       const outputFile = `/tmp/${name}-${Date.now()}.gif`;
       await generateGif(frames, outputFile);
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'image' || type === 'jpeg') {
       const outputFile = `/tmp/${name}-${Date.now()}.${type === 'image' ? 'png' : 'jpg'}`;
       await generateImage(features, outputFile, type === 'image' ? 'png' : 'jpeg');
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else {
-      const langPrompt = { 'html': 'HTML', 'javascript': 'JavaScript', 'python': 'Python' }[type] || 'HTML';
+      const langPrompt = { 'html': 'HTML', 'javascript': 'JavaScript', 'python': 'Python', 'php': 'PHP', 'ruby': 'Ruby', 'java': 'Java', 'c++': 'C++' }[type] || 'HTML';
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: `Generate ${langPrompt} code for "${name}" with features: ${features}.` }],
-        max_tokens: 1000,
+        max_tokens:Filt1000,
       });
       content = contentResponse.choices[0].message.content.trim();
     }
@@ -157,10 +167,11 @@ export async function startBuildTask(task, userName) {
         fileName: type === 'full-stack' || type === 'graph' ? `${name}-v${task.version || 1}.zip` : `${name}.${type === 'javascript' ? 'js' : type === 'python' ? 'py' : type === 'php' ? 'php' : type === 'ruby' ? 'rb' : type === 'java' ? 'java' : type === 'c++' ? 'cpp' : type === 'image' ? 'png' : type === 'jpeg' ? 'jpg' : type === 'gif' ? 'gif' : type === 'doc' ? 'txt' : type === 'pdf' ? 'pdf' : type === 'csv' ? 'csv' : type === 'json' ? 'json' : type === 'mp4' ? 'mp4' : 'html'}`
       });
     }
+    await log(`Completed build task "${name}" for frontendId ${frontendId}`);
     return { response: completionResponse.choices[0].message.content.trim(), content };
-  } catch (error) {
-    console.error('Error in startBuildTask:', error.message);
-    return { response: "Oops, something went wrong!", content: null };
+  } catch (err) {
+    await error(`Error in startBuildTask for "${name}" (frontendId ${frontendId}): ${err.message}`);
+    return { response: "Oops, something went wrong while building your project!", content: null };
   }
 }
 
@@ -181,6 +192,7 @@ export async function editTask(task) {
       target: 'bot_frontend', 
       frontendId 
     });
+    await log(`Started editing task "${name}" for frontendId ${frontendId}`);
 
     let content;
     if (type === 'full-stack') {
@@ -196,7 +208,10 @@ export async function editTask(task) {
       const files = JSON.parse(contentResponse.choices[0].message.content.trim());
       content = await zipFilesWithReadme(files, task);
     } else if (type === 'mp4') {
-      if (!await ffmpegAvailable()) return { response: "Missing FFmpeg—install it!", content: null };
+      if (!await ffmpegAvailable()) {
+        await error(`Missing FFmpeg for MP4 edit in task "${name}" for ${frontendId}`);
+        return { response: "Missing FFmpeg—install it to edit MP4s!", content: null };
+      }
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: `Edit the MP4 "${name}" with features: ${features}. Apply this change: ${editRequest}. Provide a short description (max 150 chars) for a video slideshow.` }],
@@ -205,8 +220,8 @@ export async function editTask(task) {
       let videoText = contentResponse.choices[0].message.content.trim().substring(0, 150);
       const outputFile = `/tmp/${name}-${Date.now()}.mp4`;
       await generateMp4(videoText, outputFile);
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'pdf') {
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
@@ -216,10 +231,13 @@ export async function editTask(task) {
       let pdfText = contentResponse.choices[0].message.content.trim().substring(0, 500);
       const outputFile = `/tmp/${name}-${Date.now()}.pdf`;
       await generatePdf(pdfText, outputFile);
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'gif') {
-      if (!await imagemagickAvailable()) return { response: "Missing ImageMagick—install it!", content: null };
+      if (!await imagemagickAvailable()) {
+        await error(`Missing ImageMagick for GIF edit in task "${name}" for ${frontendId}`);
+        return { response: "Missing ImageMagick—install it to edit GIFs!", content: null };
+      }
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: `Edit the GIF "${name}" with features: ${features}. Apply this change: ${editRequest}. Provide a list of 3 short text frames (max 20 chars each) for an animation as JSON array.` }],
@@ -229,15 +247,15 @@ export async function editTask(task) {
       const frames = JSON.parse(contentResponse.choices[0].message.content.trim());
       const outputFile = `/tmp/${name}-${Date.now()}.gif`;
       await generateGif(frames, outputFile);
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'image' || type === 'jpeg') {
       const outputFile = `/tmp/${name}-${Date.now()}.${type === 'image' ? 'png' : 'jpg'}`;
       await generateImage(features, outputFile, type === 'image' ? 'png' : 'jpeg');
-      content = Buffer.from(fs.readFileSync(outputFile)).toString('base64');
-      fs.unlinkSync(outputFile);
+      content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
     } else {
-      const langPrompt = { 'html': 'HTML', 'javascript': 'JavaScript', 'python': 'Python' }[type] || 'HTML';
+      const langPrompt = { 'html': 'HTML', 'javascript': 'JavaScript', 'python': 'Python', 'php': 'PHP', 'ruby': 'Ruby', 'java': 'Java', 'c++': 'C++' }[type] || 'HTML';
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: `Edit the ${langPrompt} file "${name}" with features: ${features}. Apply this change: ${editRequest}. Return the updated ${langPrompt} code.` }],
@@ -258,10 +276,11 @@ export async function editTask(task) {
         fileName: type === 'full-stack' || type === 'graph' ? `${name}-v${task.version || 1}.zip` : `${name}.${type === 'javascript' ? 'js' : type === 'python' ? 'py' : type === 'php' ? 'php' : type === 'ruby' ? 'rb' : type === 'java' ? 'java' : type === 'c++' ? 'cpp' : type === 'image' ? 'png' : type === 'jpeg' ? 'jpg' : type === 'gif' ? 'gif' : type === 'doc' ? 'txt' : type === 'pdf' ? 'pdf' : type === 'csv' ? 'csv' : type === 'json' ? 'json' : type === 'mp4' ? 'mp4' : 'html'}`
       });
     }
+    await log(`Completed edit task "${name}" for frontendId ${frontendId}`);
     return { response: completionResponse.choices[0].message.content.trim(), content };
-  } catch (error) {
-    console.error('Error in editTask:', error.message);
-    return { response: "Oops, something went wrong!", content: null };
+  } catch (err) {
+    await error(`Error in editTask for "${name}" (frontendId ${frontendId}): ${err.message}`);
+    return { response: "Oops, something went wrong while editing your project!", content: null };
   }
 }
 
@@ -271,6 +290,7 @@ async function generateMp4(script, outputFile) {
   const slideTexts = script.split('. ').slice(0, 3);
   const slideFiles = [];
   for (let i = 0; i < slideTexts.length; i++) {
+    console.log('Loading canvas for MP4 slide');
     const canvas = createCanvas(640, 480);
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = 'black';
@@ -280,7 +300,8 @@ async function generateMp4(script, outputFile) {
     ctx.textAlign = 'center';
     ctx.fillText(slideTexts[i], 320, 240);
     const slideFile = `/tmp/slide-${Date.now()}-${i}.png`;
-    fs.writeFileSync(slideFile, canvas.toBuffer('image/png'));
+    await fs.writeFile(slideFile, canvas.toBuffer('image/png'));
+    console.log('Canvas initialized successfully for MP4 slide');
     slideFiles.push(slideFile);
   }
   return new Promise((resolve, reject) => {
@@ -298,9 +319,9 @@ async function generateMp4(script, outputFile) {
       outputFile,
     ];
     const ffmpeg = spawn('ffmpeg', ffmpegArgs);
-    ffmpeg.on('close', (code) => {
-      fs.unlinkSync(audioFile);
-      slideFiles.forEach(file => fs.unlinkSync(file));
+    ffmpeg.on('close', async (code) => {
+      await fs.unlink(audioFile).catch(() => {});
+      await Promise.all(slideFiles.map(file => fs.unlink(file).catch(() => {})));
       code === 0 ? resolve(outputFile) : reject(new Error(`FFmpeg exited with code ${code}`));
     });
   });
@@ -327,6 +348,7 @@ async function generatePdf(text, outputFile) {
 }
 
 async function generateImage(description, outputFile, format) {
+  console.log('Loading canvas for image');
   const canvas = createCanvas(200, 200);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = 'black';
@@ -335,7 +357,8 @@ async function generateImage(description, outputFile, format) {
   ctx.font = '16px DejaVu Sans';
   ctx.textAlign = 'center';
   ctx.fillText(description.slice(0, 20), 100, 100);
-  fs.writeFileSync(outputFile, canvas.toBuffer(`image/${format}`));
+  await fs.writeFile(outputFile, canvas.toBuffer(`image/${format}`));
+  console.log('Canvas initialized successfully for image');
   return outputFile;
 }
 
@@ -345,7 +368,7 @@ async function generateTechnoAudio(outputFile) {
   const audioData = new Float32Array(sampleRate * duration);
   const wavData = { sampleRate, channelData: [audioData] };
   const wavBuffer = await WavEncoder.encode(wavData);
-  fs.writeFileSync(outputFile, Buffer.from(wavBuffer));
+  await fs.writeFile(outputFile, Buffer.from(wavBuffer));
   return outputFile;
 }
 
@@ -354,7 +377,7 @@ async function zipFilesWithReadme(files, task) {
   for (const [fileName, content] of Object.entries(files)) {
     zip.file(fileName, content);
   }
-  const readme = `<html><body><h1>${task.name}</h1><p>Features: ${task.features}</p><footer>Generated by Cracker Bot - <a href="https://github.com/chefken052580/crackerbot">GitHub</a></footer></body></html>`;
+  const readme = `<html><body><h1>${task.name}</h1><p>Features: ${task.features}</p><footer>Generated by Cracker Bot - <a href="https://github.com/chefken052580/cracker-bot">GitHub</a></footer></body></html>`;
   zip.file('readme.html', readme);
   return await zip.generateAsync({ type: "nodebuffer" });
 }

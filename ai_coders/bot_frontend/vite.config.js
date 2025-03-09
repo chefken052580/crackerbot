@@ -18,7 +18,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    outDir: 'build', // Ensure this matches where your build output goes
+    outDir: 'build',
     sourcemap: true,
     target: "es2020",
     rollupOptions: {
@@ -28,7 +28,7 @@ export default defineConfig({
           if (id.includes("node_modules")) return "vendor";
         },
       },
-      external: ["structured-clone"], // Treat structured-clone as external if dynamically imported
+      external: ["structured-clone"],
     },
   },
   resolve: {
