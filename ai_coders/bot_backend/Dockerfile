@@ -1,5 +1,7 @@
-FROM node:18-slim
+FROM node:20-slim
 WORKDIR /bot_backend
+
+# Install system dependencies for canvas
 RUN apt-get update && apt-get install -y \
     build-essential \
     libcairo2-dev \
@@ -9,10 +11,12 @@ RUN apt-get update && apt-get install -y \
     librsvg2-dev \
     libpixman-1-dev \
     && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 RUN npm install
-RUN npm rebuild canvas --update-binary
 RUN npm install -g pm2
-COPY src/ ./src/  
+RUN npm rebuild canvas --update-binary
+
+COPY src/ ./src/
 EXPOSE 5000
 CMD ["pm2-runtime", "start", "src/server.js"]

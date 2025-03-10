@@ -1,3 +1,4 @@
+import io from 'socket.io-client';
 import { log, error } from './logger.js';
 import { redisClient, storeMessage } from './redisClient.js';
 import { setLastGeneratedTask, delegateTask, updateTaskStatus } from './stateManager.js';
@@ -5,43 +6,46 @@ import { handleCommand } from './commandHandler.js';
 import { generateResponse } from './aiHelper.js';
 import { zipFilesWithReadme } from './contentUtils.js';
 
-// Default tone for AI responses
 const DEFAULT_TONE = "Cool, Edgy, Smooth, Super Smart";
-
-// Comprehensive extension map for all task types
 const extensionMap = {
-  'html': 'html',
-  'javascript': 'js',
-  'js': 'js',
-  'python': 'py',
-  'php': 'php',
-  'ruby': 'rb',
-  'java': 'java',
-  'c++': 'cpp',
-  'full-stack': 'zip',
-  'graph': 'zip',
-  'image': 'png',
-  'jpeg': 'jpg',
-  'gif': 'gif',
-  'doc': 'txt',
-  'pdf': 'pdf',
-  'csv': 'csv',
-  'json': 'json',
-  'mp4': 'mp4'
+  'html': 'html', 'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php',
+  'ruby': 'rb', 'java': 'java', 'c++': 'cpp', 'full-stack': 'zip', 'graph': 'zip',
+  'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'doc': 'txt', 'pdf': 'pdf',
+  'csv': 'csv', 'json': 'json', 'mp4': 'mp4'
 };
 
-/**
- * Initializes the task manager with WebSocket event handlers.
- * @param {Object} botSocket - The WebSocket connection instance.
- */
-export function initTaskManager(botSocket) {
+export async function initTaskManager(botSocket) {
+  let WEBSOCKET_URL;
+  try {
+    const response = await fetch('http://ngrok:4040/api/tunnels'); // Ngrok API inside container
+    const data = await response.json();
+    const wsTunnel = data.tunnels.find(t => t.name === 'websocket');
+    WEBSOCKET_URL = wsTunnel ? wsTunnel.public_url.replace('https://', 'wss://') : process.env.WEBSOCKET_URL || 'ws://websocket_server:5002';
+    log(`Dynamic WebSocket URL: ${WEBSOCKET_URL}`);
+  } catch (err) {
+    WEBSOCKET_URL = process.env.WEBSOCKET_URL || 'ws://websocket_server:5002';
+    error(`Failed to fetch ngrok WebSocket URL: ${err.message}, falling back to ${WEBSOCKET_URL}`);
+  }
+
+  if (!botSocket) {
+    botSocket = io(WEBSOCKET_URL, {
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      transports: ['websocket'],
+      path: '/socket.io',
+    });
+  }
+
   botSocket.on('connect', () => {
     log('Task Manager connected to WebSocket server');
+    botSocket.emit('register', { name: 'bot_lead', role: 'lead', userId: botSocket.id });
   });
+
 
   botSocket.on('disconnect', () => {
     log('Task Manager disconnected from WebSocket server');
-    // TODO: Consider adding reconnection logic here
   });
 
   botSocket.on('frontend_connected', async ({ frontendId, ip, userName: providedName }) => {
@@ -66,7 +70,6 @@ export function initTaskManager(botSocket) {
         options: ["Please type in your name below!"],
         frontendId,
       });
-      await log(`New frontend connected (ID: ${frontendId}), asking for name`);
     } else {
       const welcome = await generateResponse(
         `Smooth return, ${userName}! I’m Cracker Bot, ready to whip up epic programs. What’s our next play?`,
@@ -83,7 +86,6 @@ export function initTaskManager(botSocket) {
         options: ["Shoot the shit", "Build something epic!"],
         frontendId,
       });
-      await log(`Returning user ${userName} (frontendId: ${frontendId}) welcomed`);
     }
   });
 
@@ -114,14 +116,18 @@ export function initTaskManager(botSocket) {
         frontendId,
         ip,
       });
-      await log(`Task ${name} completed and sent to frontendId ${frontendId}`);
       await updateTaskStatus(taskId, 'completed');
     } catch (err) {
       await error(`Error handling taskResult for taskId ${taskId}: ${err.message}`);
     }
   });
 
-  log('Task Manager initialized');
+  botSocket.on('message', (message) => {
+    handleMessage(botSocket, message);
+  });
+
+  log('Task Manager initialized with provided botSocket');
+  return botSocket;
 }
 
 /**

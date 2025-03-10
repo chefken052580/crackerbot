@@ -29,8 +29,8 @@ const imagemagickAvailable = () => new Promise((resolve) => {
 });
 
 export async function buildTask(task, userName, tone) {
-  const frontendId = task.frontendId || botSocket.id;
-  const ip = task.ip;
+  const frontendId = task.frontendId || botSocket.id; // Ensure frontendId is set
+  const ip = task.ip || 'unknown';
   await log(`Building task: ${JSON.stringify(task)} for ${userName} with frontendId ${frontendId}`);
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
@@ -48,7 +48,7 @@ export async function buildTask(task, userName, tone) {
         from: 'Cracker Bot',
         target: 'bot_frontend',
         user: userName,
-        frontendId,
+        frontendId, // Routes to user's room via websocket_server
         ip,
       });
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -73,7 +73,7 @@ export async function buildTask(task, userName, tone) {
             Object.keys(files).length !== expectedKeys.length) {
           throw new Error("Invalid JSON structure: Must contain exactly server.js, index.html, package.json, setup.sh as strings");
         }
-        await log(`Full-stack files generated: ${JSON.stringify(files)}`);
+        await log(`Full-stack files generated for frontendId ${frontendId}`);
       } catch (parseErr) {
         await error(`Failed to parse full-stack JSON for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
         throw new Error(tone === 'blunt' ? `Fuck, ${userName}, the files are busted: ${parseErr.message}!` : `Oops, ${userName}, parsing failed: ${parseErr.message}.`);
@@ -178,7 +178,7 @@ export async function buildTask(task, userName, tone) {
         fileName,
         type: task.type,
         name: task.name,
-        frontendId,
+        frontendId, // Ensures routing to user's room
         ip,
       });
     }
@@ -204,7 +204,7 @@ export async function buildTask(task, userName, tone) {
 
 export async function editTask(task, userName, tone) {
   const frontendId = task.frontendId || botSocket.id;
-  const ip = task.ip;
+  const ip = task.ip || 'unknown';
   await log(`Editing task: ${JSON.stringify(task)} for ${userName} with frontendId ${frontendId}`);
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
@@ -247,7 +247,7 @@ export async function editTask(task, userName, tone) {
             Object.keys(files).length !== expectedKeys.length) {
           throw new Error("Invalid JSON structure: Must contain exactly server.js, index.html, package.json, setup.sh as strings");
         }
-        await log(`Edited full-stack files generated: ${JSON.stringify(files)}`);
+        await log(`Edited full-stack files generated for frontendId ${frontendId}`);
       } catch (parseErr) {
         await error(`Failed to parse edited full-stack JSON for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
         throw new Error(tone === 'blunt' ? `Fuck, ${userName}, edit files are trash: ${parseErr.message}!` : `Oops, ${userName}, edit parsing failed: ${parseErr.message}.`);
@@ -352,7 +352,7 @@ export async function editTask(task, userName, tone) {
         fileName,
         type: task.type,
         name: task.name,
-        frontendId,
+        frontendId, // Ensures routing to user's room
         ip,
       });
     }

@@ -5,6 +5,8 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+export { openai }; // Added to fix taskExecution.js import
+
 export async function generateDatabaseSchema(prompt) {
   try {
     const response = await openai.chat.completions.create({

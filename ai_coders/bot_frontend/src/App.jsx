@@ -1,5 +1,5 @@
 import React from "react";
-import ChatRoom from "@components/ChatRoom";
+import ChatRoom from "./components/ChatRoom"; // Updated path
 
 console.log("App.jsx: Module loaded");
 

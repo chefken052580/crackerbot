@@ -24,7 +24,7 @@ services:
       - "5002:5002"
     environment:
       - PORT=5002
-      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
+      - CORS_ORIGIN=*
       - WEBSOCKET_URL=ws://websocket_server:5002
     depends_on:
       redis:
@@ -53,7 +53,7 @@ services:
       - "5001:5001"
     environment:
       - PORT=5001
-      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
+      - CORS_ORIGIN=*
       - WEBSOCKET_URL=ws://websocket_server:5002
       - SERVER_HOST=websocket_server
       - WEBSOCKET_PORT=5002
@@ -72,7 +72,7 @@ services:
       - crackerbot-network
     volumes:
       - ./ai_coders/bot_lead:/bot_lead
-      - bot_lead-logs:/bot_lead/logs
+      - bot_lead_logs:/bot_lead/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 10s
@@ -93,7 +93,7 @@ services:
       - "5000:5000"
     environment:
       - PORT=5000
-      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
+      - CORS_ORIGIN=*
       - WEBSOCKET_URL=ws://websocket_server:5002
       - BACKEND_URL=http://bot_backend:5000
       - REDIS_HOST=redis
@@ -110,7 +110,7 @@ services:
       - crackerbot-network
     volumes:
       - ./ai_coders/bot_backend:/bot_backend
-      - bot_backend-logs:/bot_backend/logs
+      - bot_backend_logs:/bot_backend/logs
     logging:
       driver: "json-file"
       options:
@@ -123,7 +123,7 @@ services:
       dockerfile: Dockerfile
     container_name: bot_frontend
     ports:
-      - "80:80"
+      - "8080:80"
     environment:
       - WEBSOCKET_SERVER_HOST=websocket_server
     depends_on:
@@ -147,12 +147,13 @@ services:
   ngrok:
     image: ngrok/ngrok:latest
     container_name: ngrok
-    entrypoint: ["/bin/sh", "-c", "ngrok start frontend --config /etc/ngrok.yml --log stdout --log-level info"]
+    entrypoint: ["/bin/sh", "-c", "ngrok start websocket frontend ngrok-api --config /etc/ngrok.yml --log stdout --log-level info"]
     ports:
       - "4040:4040"
     volumes:
       - ./ngrok.yml:/etc/ngrok.yml
     depends_on:
+      - websocket_server
       - bot_frontend
     networks:
       - crackerbot-network
@@ -168,5 +169,5 @@ networks:
 
 volumes:
   redis-data:
-  bot_lead-logs:
-  bot_backend-logs:
+  bot_lead_logs:
+  bot_backend_logs:

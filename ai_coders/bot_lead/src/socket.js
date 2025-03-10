@@ -5,12 +5,9 @@ export const BACKEND_URL = process.env.BACKEND_URL || "http://bot_backend:5000";
 
 export const botSocket = io(WEBSOCKET_SERVER_URL, {
   reconnection: true,
-  reconnectionAttempts: Infinity,
+  reconnectionAttempts: 10,
   reconnectionDelay: 1000,
-  reconnectionDelayMax: 60000,
+  reconnectionDelayMax: 5000,
   transports: ['websocket'],
+  path: '/socket.io',
 });
-
-export function getSocketInstance() {
-  return botSocket;
-}
