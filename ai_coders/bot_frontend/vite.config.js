@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [react()],
   css: {
     postcss: {
-      plugins: [tailwindcss(path.resolve(__dirname, "tailwind.config.js")), autoprefixer()],
+      plugins: [tailwindcss(), autoprefixer()],
     },
   },
   server: {
@@ -18,7 +18,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    outDir: "build",
+    outDir: 'build', // Ensure this matches where your build output goes
     sourcemap: true,
     target: "es2020",
     rollupOptions: {
@@ -28,6 +28,7 @@ export default defineConfig({
           if (id.includes("node_modules")) return "vendor";
         },
       },
+      external: ["structured-clone"], // Treat structured-clone as external if dynamically imported
     },
   },
   resolve: {
@@ -36,5 +37,5 @@ export default defineConfig({
       "@components": path.resolve(__dirname, "src/components"),
     },
   },
-  publicDir: "public",
+  publicDir: path.resolve(__dirname, "public"),
 });

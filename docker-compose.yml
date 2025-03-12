@@ -24,7 +24,7 @@ services:
       - "5002:5002"
     environment:
       - PORT=5002
-      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app  # Revert to main for specificity
+      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
     depends_on:
       redis:
         condition: service_healthy
@@ -120,11 +120,14 @@ services:
     build:
       context: ./ai_coders/bot_frontend
       dockerfile: Dockerfile
+      args:
+        - WEBSOCKET_SERVER_HOST=websocket_server
     container_name: bot_frontend
     ports:
       - "8080:80"
     environment:
       - WEBSOCKET_SERVER_HOST=websocket_server
+      - NODE_ENV=development
     depends_on:
       websocket_server:
         condition: service_healthy
@@ -148,7 +151,7 @@ services:
     container_name: ngrok
     environment:
       - NGROK_AUTHTOKEN=2pg1fl3g1wDInoW9OJkujqyv0Ro_4NBkBhsL3NSVbK249kRL7
-    command: ["start", "--all", "--config", "/etc/ngrok.yml", "--log=stdout"]  # Revert to main style
+    command: ["start", "--all", "--config", "/etc/ngrok.yml", "--log=stdout"]
     ports:
       - "4040:4040"
     volumes:

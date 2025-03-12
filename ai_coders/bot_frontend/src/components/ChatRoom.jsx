@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage"; // Assumes this is a separate file
 
-const WEBSOCKET_SERVER_URL = "ws://websocket_server:5002"; // Internal Docker network
+const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
 
 const commands = [
   { command: "/create", description: "Start a new project" },
