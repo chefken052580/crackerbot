@@ -5,6 +5,7 @@ import { setLastGeneratedTask, delegateTask, updateTaskStatus } from './stateMan
 import { handleCommand } from './commandHandler.js';
 import { generateResponse } from './aiHelper.js';
 import { zipFilesWithReadme } from './contentUtils.js';
+import { botSocket } from './socket.js'; // Import botSocket from socket.js
 
 const DEFAULT_TONE = "Cool, Edgy, Smooth, Super Smart";
 const extensionMap = {
@@ -14,41 +15,24 @@ const extensionMap = {
   'csv': 'csv', 'json': 'json', 'mp4': 'mp4'
 };
 
-export async function initTaskManager(botSocket) {
-  let WEBSOCKET_URL;
-  try {
-    const response = await fetch('http://ngrok:4040/api/tunnels'); // Ngrok API inside container
-    const data = await response.json();
-    const wsTunnel = data.tunnels.find(t => t.name === 'websocket');
-    WEBSOCKET_URL = wsTunnel ? wsTunnel.public_url.replace('https://', 'wss://') : process.env.WEBSOCKET_URL || 'ws://websocket_server:5002';
-    log(`Dynamic WebSocket URL: ${WEBSOCKET_URL}`);
-  } catch (err) {
-    WEBSOCKET_URL = process.env.WEBSOCKET_URL || 'ws://websocket_server:5002';
-    error(`Failed to fetch ngrok WebSocket URL: ${err.message}, falling back to ${WEBSOCKET_URL}`);
-  }
+export async function initTaskManager(botSocketArg) {
+  const socket = botSocketArg || botSocket; // Use imported botSocket by default
+  await log(`Task Manager initialized with WebSocket URL: ${socket.io.uri}`); // Log the URL from socket.js
 
-  if (!botSocket) {
-    botSocket = io(WEBSOCKET_URL, {
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      transports: ['websocket'],
-      path: '/socket.io',
-    });
-  }
-
-  botSocket.on('connect', () => {
+  socket.on('connect', () => {
     log('Task Manager connected to WebSocket server');
-    botSocket.emit('register', { name: 'bot_lead', role: 'lead', userId: botSocket.id });
+    socket.emit('register', { name: 'bot_lead', role: 'lead', userId: socket.id });
   });
 
+  socket.on('connect_error', (err) => {
+    error(`Task Manager WebSocket connection failed: ${err.message}`);
+  });
 
-  botSocket.on('disconnect', () => {
+  socket.on('disconnect', () => {
     log('Task Manager disconnected from WebSocket server');
   });
 
-  botSocket.on('frontend_connected', async ({ frontendId, ip, userName: providedName }) => {
+  socket.on('frontend_connected', async ({ frontendId, ip, userName: providedName }) => {
     const userKey = `user:frontend:${frontendId}:name`;
     let userName = await redisClient.get(userKey) || providedName || 'Guest';
     await log(`New frontend connected (ID: ${frontendId}), checking name for ${userName}`);
@@ -59,7 +43,7 @@ export async function initTaskManager(botSocket) {
         userName,
         DEFAULT_TONE
       );
-      botSocket.emit('message', {
+      socket.emit('message', {
         text: namePrompt,
         type: "question",
         taskId: `initial_name:${frontendId}`,
@@ -76,7 +60,7 @@ export async function initTaskManager(botSocket) {
         userName,
         DEFAULT_TONE
       );
-      botSocket.emit('message', {
+      socket.emit('message', {
         text: welcome,
         type: "success",
         from: 'Cracker Bot',
@@ -89,7 +73,7 @@ export async function initTaskManager(botSocket) {
     }
   });
 
-  botSocket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip }) => {
+  socket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip }) => {
     try {
       const taskData = await redisClient.hGet('tasks', taskId);
       if (!taskData) {
@@ -105,7 +89,7 @@ export async function initTaskManager(botSocket) {
         userName,
         tone
       );
-      botSocket.emit('message', {
+      socket.emit('message', {
         text: response,
         type: 'download',
         taskId,
@@ -122,12 +106,12 @@ export async function initTaskManager(botSocket) {
     }
   });
 
-  botSocket.on('message', (message) => {
-    handleMessage(botSocket, message);
+  socket.on('message', (message) => {
+    handleMessage(socket, message);
   });
 
   log('Task Manager initialized with provided botSocket');
-  return botSocket;
+  return socket;
 }
 
 /**

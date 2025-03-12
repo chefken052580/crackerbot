@@ -2,6 +2,38 @@ import { openai } from './aiHelper.js';
 import { botSocket } from './socket.js';
 import { zipFilesWithReadme } from './contentUtils.js';
 
+export function initializeTaskExecution() {
+  botSocket.on('command', async (data) => {
+    const { command, args } = data;
+    if (command === 'buildTask') {
+      const result = await startBuildTask(botSocket, args.task);
+      botSocket.emit('taskResult', {
+        taskId: args.task.taskId,
+        content: result.content,
+        fileName: Array.isArray(result.content) && result.content.length === 1 ? result.content[0].fileName : undefined,
+        type: args.task.type,
+        name: args.task.name,
+        frontendId: args.frontendId,
+        ip: args.ip,
+        error: result.error
+      });
+      console.log(`Emitted taskResult for taskId ${args.task.taskId} to frontendId ${args.frontendId}`);
+    }
+    // Add 'editTask' handler if needed later
+  });
+
+  botSocket.on('connect', () => {
+    console.log('Backend bot connected to WebSocket server');
+    botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
+  });
+
+  botSocket.on('disconnect', () => {
+    console.log('Backend bot disconnected from WebSocket server');
+  });
+
+  console.log('Task execution initialized');
+}
+
 export async function startBuildTask(botSocket, task) {
   const { name, features, user, type, network, frontendId, ip } = task;
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });

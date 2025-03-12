@@ -1,0 +1,8 @@
+2025-03-12T08:03:45: PM2 log: Launching in no daemon mode
+2025-03-12T08:03:45: PM2 log: App [websocket_server:0] starting in -fork mode-
+2025-03-12T08:03:45: PM2 log: App [websocket_server:0] online
+✅ HTTP and WebSocket server running on port 5002
+🔗 New client connected: ID _zUkWj6vdvuB58aTAAAB, IP: ::ffff:172.18.0.7
+✅ bot_backend (backend) registered with ID _zUkWj6vdvuB58aTAAAB
+🔗 New client connected: ID 2hM72639OV_kYpwIAAAD, IP: ::ffff:172.18.0.7
+✅ bot_lead (lead) registered with ID 2hM72639OV_kYpwIAAAD

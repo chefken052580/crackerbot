@@ -6,7 +6,12 @@ class WebSocketHandler {
       pingInterval: 25000,
       pingTimeout: 60000,
       cors: {
-        origin: process.env.CORS_ORIGIN || "https://visually-sterling-spider.ngrok-free.app",
+        origin: [
+          process.env.CORS_ORIGIN || "https://visually-sterling-spider.ngrok-free.app",
+          "http://localhost:*",
+          "http://bot_frontend:80",
+          "ws://websocket_server:5002",
+        ],
         methods: ["GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
         credentials: true,
       },
@@ -31,7 +36,7 @@ class WebSocketHandler {
           this.bots.set(data.name, botData);
           socket.clientName = data.name;
           console.log(`✅ ${data.name} (${data.role}) registered with ID ${socket.id}`);
-          socket.emit("register_success"); // Confirm to client only
+          socket.emit("register_success");
 
           const leadBot = this.bots.get('bot_lead');
           if (leadBot && data.role !== 'lead') {
@@ -83,7 +88,6 @@ class WebSocketHandler {
           if (!data || typeof data !== 'object') throw new Error("Invalid message format");
           console.log(`📩 Message received: ${JSON.stringify(data)}`);
           if (data.frontendId) {
-            // Direct message to specific frontend client
             this.io.to(data.frontendId).emit('message', { ...data, ip: socket.handshake.address });
             console.log(`📤 Sent message to frontendId ${data.frontendId}`);
           } else {

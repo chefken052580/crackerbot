@@ -24,8 +24,7 @@ services:
       - "5002:5002"
     environment:
       - PORT=5002
-      - CORS_ORIGIN=*
-      - WEBSOCKET_URL=ws://websocket_server:5002
+      - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app  # Revert to main for specificity
     depends_on:
       redis:
         condition: service_healthy
@@ -147,7 +146,9 @@ services:
   ngrok:
     image: ngrok/ngrok:latest
     container_name: ngrok
-    entrypoint: ["/bin/sh", "-c", "ngrok start websocket frontend ngrok-api --config /etc/ngrok.yml --log stdout --log-level info"]
+    environment:
+      - NGROK_AUTHTOKEN=2pg1fl3g1wDInoW9OJkujqyv0Ro_4NBkBhsL3NSVbK249kRL7
+    command: ["start", "--all", "--config", "/etc/ngrok.yml", "--log=stdout"]  # Revert to main style
     ports:
       - "4040:4040"
     volumes:

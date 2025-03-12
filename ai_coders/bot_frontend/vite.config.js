@@ -5,11 +5,11 @@ import autoprefixer from "autoprefixer";
 import path from "path";
 
 export default defineConfig({
-  root: ".", // Project root
+  root: ".", 
   plugins: [react()],
   css: {
     postcss: {
-      plugins: [tailwindcss(), autoprefixer()],
+      plugins: [tailwindcss(path.resolve(__dirname, "tailwind.config.js")), autoprefixer()],
     },
   },
   server: {
@@ -22,13 +22,12 @@ export default defineConfig({
     sourcemap: true,
     target: "es2020",
     rollupOptions: {
-      input: "index.html", // Use index.html from root
+      input: path.resolve(__dirname, "index.html"),
       output: {
         manualChunks: (id) => {
           if (id.includes("node_modules")) return "vendor";
         },
       },
-      external: ["structured-clone"],
     },
   },
   resolve: {
@@ -37,5 +36,5 @@ export default defineConfig({
       "@components": path.resolve(__dirname, "src/components"),
     },
   },
-  publicDir: "public", // Static assets from public/
+  publicDir: "public",
 });

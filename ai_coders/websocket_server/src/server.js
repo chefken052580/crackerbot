@@ -10,8 +10,14 @@ const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
   path: '/socket.io',
   cors: {
-    origin: "https://visually-sterling-spider.ngrok-free.app",
+    origin: [
+      "https://visually-sterling-spider.ngrok-free.app",
+      "http://localhost:*",
+      "http://bot_frontend:80",
+      "ws://websocket_server:5002",
+    ],
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
@@ -21,13 +27,31 @@ app.get('/health', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log(`🔗 New client connected: ID ${socket.id}, IP: ${socket.handshake.address}`);
-  
+
   socket.on('register', (data) => {
-    console.log(`✅ ${data.name} (${data.role}) registered with ID ${socket.id}`);
-    socket.role = data.role;
-    socket.frontendId = data.frontendId;
-    if (data.role === 'frontend') {
-      socket.join(data.frontendId); // Create a unique room for each user
+    try {
+      if (!data || !data.name || !data.role) {
+        console.error(`❌ Registration failed for ${socket.id}: Missing name or role`, data);
+        socket.emit('error', { message: 'Missing name or role' });
+        return;
+      }
+      console.log(`✅ ${data.name} (${data.role}) registered with ID ${socket.id}`);
+      socket.role = data.role;
+      socket.frontendId = data.frontendId;
+      if (data.role === 'frontend') {
+        socket.join(data.frontendId);
+        io.emit('frontend_connected', { 
+          frontendId: socket.id, 
+          ip: socket.handshake.address, 
+          userName: data.name || 'Guest' 
+        });
+        console.log(`📤 Emitted frontend_connected for ${data.name}`);
+      } else if (data.role === 'lead') {
+        socket.join('bot_lead');
+      }
+    } catch (error) {
+      console.error(`❌ Error in register for ${socket.id}:`, error.message);
+      socket.emit('error', { message: error.message });
     }
   });
 
@@ -38,11 +62,11 @@ io.on('connection', (socket) => {
   socket.on('message', (data) => {
     console.log(`📩 Message from ${socket.id}:`, data);
     if (data.target === 'bot_lead') {
-      io.to('bot_lead').emit('message', data); // Forward commands to bot_lead
+      io.to('bot_lead').emit('message', data);
     } else if (socket.role === 'lead') {
-      io.to(data.frontendId).emit('message', data); // bot_lead responses to user
+      io.to(data.frontendId).emit('message', data);
     } else if (socket.role === 'backend') {
-      io.to('bot_lead').emit('message', data); // bot_backend reports to bot_lead
+      io.to('bot_lead').emit('message', data);
     } else {
       io.emit('message', { ...data, from: socket.role === 'frontend' ? data.user : 'Server' });
     }
@@ -50,6 +74,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', (reason) => {
     console.log(`🔌 Client disconnected: ID ${socket.id}, Reason: ${reason}`);
+  });
+
+  socket.on('error', (error) => {
+    console.error(`❌ Socket error for ${socket.id}:`, error);
   });
 });
 

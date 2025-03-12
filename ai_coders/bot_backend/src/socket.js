@@ -1,55 +1,35 @@
 import io from 'socket.io-client';
 
 const BOT_NAME = "bot_backend";
-const WEBSOCKET_SERVER_URL = process.env.WEBSOCKET_URL || "ws://websocket_server:5002";
+export const WEBSOCKET_SERVER_URL = 'wss://websocket-visually-sterling-spider.ngrok-free.app';
 
-let retryCount = 0;
-const maxRetries = Infinity;
-const maxDelay = 60000;
+export const botSocket = io(WEBSOCKET_SERVER_URL, {
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000,
+  transports: ['websocket'],
+  path: '/socket.io',
+});
 
-function connectToWebSocket() {
-  const socket = io(WEBSOCKET_SERVER_URL, {
-    reconnection: true,
-    reconnectionAttempts: maxRetries,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: maxDelay,
-    timeout: 20000,
-    transports: ['websocket'],
+botSocket.on('connect', () => {
+  console.log(`${BOT_NAME} connected to WebSocket server`);
+  botSocket.emit('register', {
+    name: BOT_NAME,
+    role: 'backend',
   });
+});
 
-  socket.on("connect", () => {
-    console.log(`${BOT_NAME} connected to WebSocket!`);
-    socket.emit("register", {
-      name: BOT_NAME,
-      role: "backend",
-    });
-    retryCount = 0;
-  });
+botSocket.on('command', (data) => {
+  console.log(`${BOT_NAME} received command:`, data.command, data.args);
+  // taskExecution.js handles this, no response needed here
+});
 
-  socket.on("message", (data) => {
-    console.log("Message or command received by Bot Backend:", data);
-    if (data.type === 'command') {
-      console.log("Command received:", data.command);
-      socket.emit('response', { type: "response", user: BOT_NAME, text: `Command ${data.command} received, processing via HTTP on 5000` });
-    } else if (data.type === 'message') {
-      console.log("General message received:", data.text);
-    }
-  });
+botSocket.on('connect_error', (error) => {
+  console.error(`${BOT_NAME} WebSocket connection error:`, error.message);
+});
 
-  socket.on("connect_error", (error) => {
-    console.error("WebSocket error in Bot Backend:", error);
-  });
-
-  socket.on("disconnect", (reason) => {
-    console.log(`${BOT_NAME} WebSocket disconnected. Reason: `, reason);
-    console.log("Attempting to reconnect...");
-    retryCount++;
-    const delay = Math.min(1000 * Math.pow(2, retryCount), maxDelay);
-    console.log(`Retry attempt ${retryCount}, will retry in ${delay / 1000} seconds`);
-    setTimeout(connectToWebSocket, delay);
-  });
-
-  return socket;
-}
-
-export const botSocket = connectToWebSocket();
+botSocket.on('disconnect', (reason) => {
+  console.log(`${BOT_NAME} WebSocket disconnected. Reason:`, reason);
+});

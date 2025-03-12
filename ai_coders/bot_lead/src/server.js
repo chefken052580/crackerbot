@@ -47,7 +47,7 @@ app.post('/api/file', async (req, res) => {
 });
 
 botSocket.on('connect', () => {
-  log(`${BOT_NAME} connected to WebSocket`);
+  log(`${BOT_NAME} connected to WebSocket at ${botSocket.io.uri}`);
   botSocket.emit('register', { name: BOT_NAME, role: 'lead', userId: botSocket.id });
   initTaskManager(botSocket);
 });

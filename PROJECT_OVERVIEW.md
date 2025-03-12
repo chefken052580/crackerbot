@@ -11,7 +11,7 @@ CrackerBot is a collaborative system of software engineering bots designed for r
 - **Role**: Central communication hub, relaying messages between bots.
 - **Location**: `ai_coders/websocket_server/src`
 - **Key Files**:
-  - `server.js`: WebSocket server logic (updated for improved registration and connectivity)
+  - `server.js`: WebSocket server logic
 - **Connection**:
   - Internal: `ws://websocket_server:5002`
   - External (via ngrok): `wss://<ngrok-url>`
@@ -20,14 +20,14 @@ CrackerBot is a collaborative system of software engineering bots designed for r
 - **Role**: User interface bot, displaying chat and task results.
 - **Location**: `ai_coders/bot_frontend/`
 - **Key Files**:
-  - `src/components/ChatRoom.jsx`: React chat UI, the primary interface for user interaction (enhanced with detailed logging and fallback UI for WebSocket failures)
+  - `src/components/ChatRoom.jsx`: React chat UI, the primary interface for user interaction
   - `src/components/ChatMessage.jsx`: Renders individual messages within the chat
   - `src/index.jsx`: React entry point with Redux and `App` component setup
   - `src/App.jsx`: Renders `ChatRoom` as the main application view
   - `src/redux/store.js`: Configures the Redux store for state management
   - `src/redux/exampleSlice.js`: Example Redux slice for managing chat-related state
-  - `nginx.conf`: Custom Nginx configuration for WebSocket proxying
 - **Connection**: Connects to WebSocket server via `wss://<ngrok-url>`
+- **Current Status**: Troubleshooting a Content Security Policy (CSP) issue that’s causing the frontend to display a blank screen. Recent updates include moving `index.html` to the project root for Vite compatibility and modifying `vite.config.js` to output `build/index.html` directly.
 
 ### Lead Bot (`bot_lead`)
 - **Role**: Task orchestration, state management, content generation.
@@ -36,7 +36,7 @@ CrackerBot is a collaborative system of software engineering bots designed for r
   - `taskManager.js`: Core task and message handling
   - `redisClient.js`: Redis client and message storage
   - `contentUtils.js`: Media and content generation utilities
-  - `stateManager.js`: Manages global state (e.g., `lastGeneratedTask`), task delegation via WebSocket/HTTP, and task status updates (updated for dynamic WebSocket URLs)
+  - `stateManager.js`: Manages global state (e.g., `lastGeneratedTask`), task delegation via WebSocket/HTTP, and task status updates. Recently expanded to include WebSocket client functionality after merging `wsClient.js` (March 10, 2025).
   - `aiHelper.js`: AI response and content generation
   - `commandHandler.js`: Command processing
   - `logger.js`: Logging utilities
@@ -52,7 +52,6 @@ CrackerBot is a collaborative system of software engineering bots designed for r
   - `src/logger.js`: Logging utilities for backend bot
   - `Dockerfile`: Container setup
   - `package.json`: Dependencies
-  - `server.js`: Adjusted for improved WebSocket integration
 - **Connection**: Integrates via WebSocket (`botSocket`) and Redis
 - **Status**: Actively handles task building and execution
 
@@ -68,14 +67,14 @@ CrackerBot is a collaborative system of software engineering bots designed for r
 
 ## Directory Structure
 - **`ai_coders/websocket_server/`**: WebSocket Server
-  - `server.js`: WebSocket server logic (updated for registration and connectivity)
+  - `server.js`: WebSocket server logic
   - `Dockerfile`: Server container setup
 
 - **`ai_coders/bot_lead/`**: Lead Bot
   - `taskManager.js`: Task orchestration
   - `redisClient.js`: Redis client setup
   - `contentUtils.js`: Content generation utilities
-  - `stateManager.js`: Global state management, task delegation (via WebSocket/HTTP), and task status updates (updated for dynamic WebSocket URLs)
+  - `stateManager.js`: Global state management, task delegation (via WebSocket/HTTP), and task status updates
   - `aiHelper.js`: AI integration
   - `commandHandler.js`: Command handling
   - `logger.js`: Logging utilities
@@ -85,7 +84,7 @@ CrackerBot is a collaborative system of software engineering bots designed for r
 
 - **`ai_coders/bot_frontend/`**: Frontend Bot
   - `index.html`: Project root for Vite build compatibility
-  - `src/components/ChatRoom.jsx`: React chat UI (enhanced with debugging and WebSocket logic)
+  - `src/components/ChatRoom.jsx`: React chat UI
   - `src/components/ChatMessage.jsx`: Message rendering
   - `src/index.jsx`: React entry point with Redux and `App` component
   - `src/App.jsx`: Renders `ChatRoom`
@@ -95,19 +94,16 @@ CrackerBot is a collaborative system of software engineering bots designed for r
     - `index.html`: Bundled entry point
     - `assets/`: Compiled JS and CSS
   - `public/`: Static assets (e.g., `favicon.ico`, logos)
-  - `nginx.conf`: Custom Nginx configuration for WebSocket proxying
-  - `Dockerfile`: Updated for React and Nginx setup
 
 - **`ai_coders/bot_backend/`**: Backend Bot
   - `src/taskBuilder.js`: Task building logic
   - `src/taskExecution.js`: Task execution logic
   - `src/logger.js`: Logging utilities
-  - `server.js`: Backend server logic (updated for WebSocket integration)
   - `Dockerfile`: Backend bot container setup
   - `package.json`: Dependencies
 
 - **`/` (Root)**:
-  - `docker-compose.yml`: Service definitions (updated to orchestrate all services)
+  - `docker-compose.yml`: Service definitions
   - `PROJECT_OVERVIEW.md`: This file
 
 ---
@@ -138,15 +134,6 @@ CrackerBot is a collaborative system of software engineering bots designed for r
   - `vite.config.js` updated to output `build/index.html` directly.
   - Ngrok simplified to a single tunnel for `bot_frontend:80`.
   - `wsClient.js` merged into `stateManager.js`, which now handles WebSocket client functionality, task delegation, and state management (March 10, 2025).
-  - **New Updates (March 10, 2025)**:
-    - Docker credential fix for pulling images like `nginx:stable-alpine`.
-    - WSL networking resolution to ensure consistent Docker behavior.
-    - Enhanced `ChatRoom.jsx` with detailed logging and fallback UI for WebSocket failures.
-    - Improved WebSocket connection logic with dynamic URLs, tested manually with `wscat`.
-    - Added and verified `nginx.conf` for proper WebSocket proxying in `bot_frontend`.
-    - Updated `docker-compose.yml` to orchestrate all services effectively.
-    - Modified `bot_lead/server.js` and `bot_backend/server.js` for dynamic WebSocket URLs and improved integration.
-    - Updated `websocket_server/server.js` for better registration and connectivity.
 - **Dependencies**: Node.js, Redis, OpenAI, Socket.IO, React, FFmpeg, ImageMagick.
 - **Testing**: Verify Redis connectivity, WebSocket stability, and task delegation to `bot_backend`.
 

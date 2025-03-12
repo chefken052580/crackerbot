@@ -6,4 +6,4 @@ RUN npm install
 RUN npm install -g pm2
 COPY src/ ./src/  
 EXPOSE 5002
-CMD ["pm2-runtime", "start", "src/server.js"]
+CMD ["pm2-runtime", "start", "src/server.js", "--name", "websocket_server"] 
