@@ -29,29 +29,30 @@ const imagemagickAvailable = () => new Promise((resolve) => {
 });
 
 export async function buildTask(task, userName, tone) {
-  const frontendId = task.frontendId || botSocket.id; // Ensure frontendId is set
+  const frontendId = task.frontendId || botSocket.id;
   const ip = task.ip || 'unknown';
   await log(`Building task: ${JSON.stringify(task)} for ${userName} with frontendId ${frontendId}`);
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
     const progressSteps = [0, 25, 50, 75, 100];
-    for (const progress of progressSteps.slice(0, -1)) {
+    const progressId = `progress:${task.taskId}`;
+    for (const progress of progressSteps) {
       const progressMsg = tone === 'blunt'
-        ? `Cookin’ up ${task.name} for ${userName}, you impatient fuck: ${progress}%!`
-        : `Hey ${userName}, I’m whipping up ${task.name} with flair: ${progress}% done!`;
+        ? `Cookin’ up ${task.name} for ${userName}, hold your horses`
+        : `Hey ${userName}, building ${task.name} with style`;
       botSocket.emit('message', {
         text: progressMsg,
         type: "progress",
-        taskId: task.taskId,
+        taskId: progressId,
         progress,
         from: 'Cracker Bot',
         target: 'bot_frontend',
         user: userName,
-        frontendId, // Routes to user's room via websocket_server
+        frontendId,
         ip,
       });
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (progress < 100) await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     let content;
@@ -138,9 +139,26 @@ export async function buildTask(task, userName, tone) {
         throw new Error(tone === 'blunt' ? `Fuck, ${userName}, graph files are trash: ${parseErr.message}!` : `Oops, ${userName}, graph parsing failed: ${parseErr.message}.`);
       }
       content = await zipFilesWithReadme(files, task);
-    } else if (taskType === 'image' || taskType === 'jpeg') {
-      const outputFile = `/tmp/${task.name}-${Date.now()}.${taskType === 'image' ? 'png' : 'jpg'}`;
-      content = await generateImage(task.features, outputFile, taskType === 'image' ? 'png' : 'jpeg');
+    } else if (taskType === 'image' || taskType === 'jpeg' || taskType === 'svg' || taskType === 'webp') {
+      const format = taskType === 'image' ? 'png' : taskType;
+      const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
+      content = await generateImage(task.features, outputFile, format);
+    } else if (taskType === 'mp3' || taskType === 'wav') {
+      if (!(await ffmpegAvailable())) throw new Error("FFmpeg is missing on this system!");
+      const contentResponse = await generateResponse(
+        `Generate a short audio description (max 150 chars) for "${task.name}" based on these features: ${task.features} for ${userName}.`,
+        userName,
+        tone
+      );
+      if (contentResponse.length > 150) throw new Error("Audio description exceeds 150 characters");
+      const outputFile = `/tmp/${task.name}-${Date.now()}.${taskType}`;
+      try {
+        content = await generateAudio(contentResponse, outputFile, taskType);
+        await log(`Generated ${taskType} file at ${outputFile} for frontendId ${frontendId}`);
+      } catch (audioErr) {
+        await error(`Audio generation failed for ${task.name}: ${audioErr.message}`);
+        throw audioErr;
+      }
     } else {
       content = await generateResponse(
         `Generate ${task.type} file content for "${task.name}" based on these features: ${task.features} for ${userName}. Scale the content to match the features description.`,
@@ -149,27 +167,20 @@ export async function buildTask(task, userName, tone) {
       );
     }
 
-    botSocket.emit('message', {
-      text: tone === 'blunt' ? `Done, ${userName}, your ${task.name} is at 100%, grab it, asshole!` : `Sweet ${userName}, ${task.name} is 100% ready—enjoy!`,
-      type: "progress",
-      taskId: task.taskId,
-      progress: 100,
-      from: 'Cracker Bot',
-      target: 'bot_frontend',
-      user: userName,
-      frontendId,
-      ip,
-    });
-
     const completionResponse = tone === 'blunt'
       ? `Holy shit, ${userName}, I fuckin’ finished "${task.name}" as ${task.type}! Grab it, ya lucky bastard!`
       : `Hey ${userName}, Cracker Bot here—I’ve crafted "${task.name}" as ${task.type} with sass and class!`;
     const response = await generateResponse(completionResponse, userName, tone);
     if (content) {
       const extensionMap = {
-        'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
-        'c++': 'cpp', 'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'doc': 'txt', 'pdf': 'pdf',
-        'csv': 'csv', 'json': 'json', 'mp4': 'mp4', 'html': 'html', 'full-stack': 'zip', 'graph': 'zip'
+        'javascript': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
+        'c++': 'cpp', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift',
+        'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua',
+        'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
+        'toml': 'toml', 'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'svg': 'svg', 'webp': 'webp',
+        'doc': 'txt', 'pdf': 'pdf', 'csv': 'csv', 'json': 'json', 'mp4': 'mp4', 'mp3': 'mp3', 'wav': 'wav',
+        'html': 'html', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts',
+        'docker': 'Dockerfile'
       };
       const fileName = `${task.name}.${extensionMap[taskType] || 'txt'}`;
       botSocket.emit('taskResult', {
@@ -178,9 +189,12 @@ export async function buildTask(task, userName, tone) {
         fileName,
         type: task.type,
         name: task.name,
-        frontendId, // Ensures routing to user's room
+        frontendId,
         ip,
       });
+      await log(`Emitted taskResult for ${task.name} (${fileName}) for frontendId ${frontendId}`);
+    } else {
+      throw new Error("No content generated for the task!");
     }
     await log(`Completed task "${task.name}" for frontendId ${frontendId}`);
     return { content, response };
@@ -197,6 +211,10 @@ export async function buildTask(task, userName, tone) {
       user: userName,
       frontendId,
       ip,
+      options: ["Retry", "Edit description"],
+      taskName: task.name,
+      taskType: task.type,
+      taskFeatures: task.features,
     });
     return { error: buildError };
   }
@@ -210,14 +228,23 @@ export async function editTask(task, userName, tone) {
 
   try {
     const progressSteps = [0, 25, 50, 75, 100];
-    for (const progress of progressSteps.slice(0, -1)) {
+    const progressId = `progress:${task.taskId}`;
+    for (const progress of progressSteps) {
       const progressMsg = tone === 'blunt'
-        ? `Revampin’ ${task.name} for ${userName}, you needy fuck: ${progress}%!`
-        : `Tweaking ${userName}’s ${task.name} with style: ${progress}%!`;
+        ? progress === 0 ? `Revampin’ ${task.name} for ${userName}, you needy fuck: ${progress}%!`
+          : progress === 25 ? `Yo ${userName}, tweaking ${task.name} at ${progress}%—chill out!`
+          : progress === 50 ? `Halfway done, ${userName}! ${task.name} at ${progress}%, no rush!`
+          : progress === 75 ? `${task.name} almost tweaked, ${userName}, ${progress}%—hold up!`
+          : `Boom, ${userName}! ${task.name} edit at ${progress}%—get ready!`
+        : progress === 0 ? `Hey ${userName}, editing ${task.name} with flair: ${progress}% done!`
+          : progress === 25 ? `Smooth edits, ${userName}! ${task.name} at ${progress}%—nice!`
+          : progress === 50 ? `Hey ${userName}, ${task.name} edit halfway at ${progress}%—cool!`
+          : progress === 75 ? `${task.name} edit nearing completion, ${userName}, ${progress}%!`
+          : `Hey ${userName}, ${task.name} edit complete at ${progress}%—check it out!`;
       botSocket.emit('message', {
         text: progressMsg,
         type: "progress",
-        taskId: task.taskId,
+        taskId: progressId,
         progress,
         from: 'Cracker Bot',
         target: 'bot_frontend',
@@ -225,7 +252,7 @@ export async function editTask(task, userName, tone) {
         frontendId,
         ip,
       });
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (progress < 100) await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     let content;
@@ -312,9 +339,26 @@ export async function editTask(task, userName, tone) {
         throw new Error(tone === 'blunt' ? `Fuck, ${userName}, edited graph files are trash: ${parseErr.message}!` : `Oops, ${userName}, graph edit failed: ${parseErr.message}.`);
       }
       content = await zipFilesWithReadme(files, task);
-    } else if (taskType === 'image' || taskType === 'jpeg') {
-      const outputFile = `/tmp/${task.name}-${Date.now()}.${taskType === 'image' ? 'png' : 'jpg'}`;
-      content = await generateImage(task.features, outputFile, taskType === 'image' ? 'png' : 'jpeg');
+    } else if (taskType === 'image' || taskType === 'jpeg' || taskType === 'svg' || taskType === 'webp') {
+      const format = taskType === 'image' ? 'png' : taskType;
+      const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
+      content = await generateImage(task.features, outputFile, format);
+    } else if (taskType === 'mp3' || taskType === 'wav') {
+      if (!(await ffmpegAvailable())) throw new Error("FFmpeg is missing on this system!");
+      const contentResponse = await generateResponse(
+        `Edit ${task.type} "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Return a short audio description (max 150 chars).`,
+        userName,
+        tone
+      );
+      if (contentResponse.length > 150) throw new Error("Edited audio description exceeds 150 characters");
+      const outputFile = `/tmp/${task.name}-${Date.now()}.${taskType}`;
+      try {
+        content = await generateAudio(contentResponse, outputFile, taskType);
+        await log(`Edited ${taskType} file at ${outputFile} for frontendId ${frontendId}`);
+      } catch (audioErr) {
+        await error(`Audio edit failed for ${task.name}: ${audioErr.message}`);
+        throw audioErr;
+      }
     } else {
       content = await generateResponse(
         `Edit ${task.type} "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Scale the content to match the features description.`,
@@ -323,27 +367,20 @@ export async function editTask(task, userName, tone) {
       );
     }
 
-    botSocket.emit('message', {
-      text: tone === 'blunt' ? `Done screwing with ${task.name}, ${userName}, 100%—take it, prick!` : `All set, ${userName}, ${task.name} edit is 100%—grab it!`,
-      type: "progress",
-      taskId: task.taskId,
-      progress: 100,
-      from: 'Cracker Bot',
-      target: 'bot_frontend',
-      user: userName,
-      frontendId,
-      ip,
-    });
-
     const completionResponse = tone === 'blunt'
       ? `Shit yeah, ${userName}, I fuckin’ edited "${task.name}" as ${task.type}! Snag it, ya lucky prick!`
       : `Yo ${userName}, Cracker Bot jazzed up "${task.name}" as ${task.type}—download it with glee!`;
     const response = await generateResponse(completionResponse, userName, tone);
     if (content) {
       const extensionMap = {
-        'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
-        'c++': 'cpp', 'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'doc': 'txt', 'pdf': 'pdf',
-        'csv': 'csv', 'json': 'json', 'mp4': 'mp4', 'html': 'html', 'full-stack': 'zip', 'graph': 'zip'
+        'javascript': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
+        'c++': 'cpp', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift',
+        'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua',
+        'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
+        'toml': 'toml', 'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'svg': 'svg', 'webp': 'webp',
+        'doc': 'txt', 'pdf': 'pdf', 'csv': 'csv', 'json': 'json', 'mp4': 'mp4', 'mp3': 'mp3', 'wav': 'wav',
+        'html': 'html', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts',
+        'docker': 'Dockerfile'
       };
       const fileName = `${task.name}.${extensionMap[taskType] || 'txt'}`;
       botSocket.emit('taskResult', {
@@ -352,9 +389,12 @@ export async function editTask(task, userName, tone) {
         fileName,
         type: task.type,
         name: task.name,
-        frontendId, // Ensures routing to user's room
+        frontendId,
         ip,
       });
+      await log(`Emitted taskResult for edited ${task.name} (${fileName}) for frontendId ${frontendId}`);
+    } else {
+      throw new Error("No content generated for the edit!");
     }
     await log(`Completed editing task "${task.name}" for frontendId ${frontendId}`);
     return { content, response };
@@ -371,6 +411,10 @@ export async function editTask(task, userName, tone) {
       user: userName,
       frontendId,
       ip,
+      options: ["Retry", "Edit description"],
+      taskName: task.name,
+      taskType: task.type,
+      taskFeatures: task.features,
     });
     return { error: editError };
   }
@@ -432,13 +476,14 @@ async function generateMp4(script, outputFile) {
     ];
     const ffmpeg = spawn('ffmpeg', ffmpegArgs);
     ffmpeg.on('close', (code) => {
-      slideFiles.forEach(file => fs.unlinkSync(file));
+      slideFiles.forEach(file => fs.unlink(file).catch(() => {}));
       if (code === 0) {
         fs.readFile(outputFile).then(data => resolve(data.toString('base64'))).finally(() => fs.unlink(outputFile).catch(() => {}));
       } else {
         reject(new Error(`FFmpeg exited with code ${code}`));
       }
     });
+    ffmpeg.on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)));
   });
 }
 
@@ -455,6 +500,72 @@ async function generateImage(description, outputFile, format) {
   const content = (await fs.readFile(outputFile)).toString('base64');
   await fs.unlink(outputFile).catch(() => {});
   return content;
+}
+
+async function generateAudio(description, outputFile, format) {
+  const tempWav = `/tmp/temp-${Date.now()}.wav`;
+  const canvas = createCanvas(640, 480);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = 'black';
+  ctx.fillRect(0, 0, 640, 480);
+  ctx.fillStyle = 'white';
+  ctx.font = '24px DejaVu Sans';
+  ctx.textAlign = 'center';
+  ctx.fillText(description.slice(0, 20), 320, 240);
+  const tempImage = `/tmp/audio-slide-${Date.now()}.png`;
+  await fs.writeFile(tempImage, canvas.toBuffer('image/png'));
+
+  return new Promise((resolve, reject) => {
+    const ffmpegArgs = [
+      '-loop', '1',
+      '-i', tempImage,
+      '-f', 'lavfi',
+      '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+      '-c:v', 'libx264',
+      '-c:a', format === 'mp3' ? 'mp3' : 'pcm_s16le',
+      '-shortest',
+      '-t', '5',
+      '-y',
+      format === 'mp3' ? outputFile : tempWav
+    ];
+    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => errorOutput += data.toString());
+    ffmpeg.on('close', async (code) => {
+      await fs.unlink(tempImage).catch(() => {});
+      if (code === 0) {
+        if (format === 'wav') {
+          const ffmpegWavArgs = [
+            '-i', tempWav,
+            '-c:a', 'pcm_s16le',
+            '-y',
+            outputFile
+          ];
+          const wavConvert = spawn('ffmpeg', ffmpegWavArgs);
+          let wavErrorOutput = '';
+          wavConvert.stderr.on('data', (data) => wavErrorOutput += data.toString());
+          wavConvert.on('close', async (wavCode) => {
+            await fs.unlink(tempWav).catch(() => {});
+            if (wavCode === 0) {
+              const content = (await fs.readFile(outputFile)).toString('base64');
+              await fs.unlink(outputFile).catch(() => {});
+              resolve(content);
+            } else {
+              reject(new Error(`FFmpeg WAV conversion failed with code ${wavCode}: ${wavErrorOutput}`));
+            }
+          });
+          wavConvert.on('error', (err) => reject(new Error(`FFmpeg WAV error: ${err.message}`)));
+        } else {
+          const content = (await fs.readFile(outputFile)).toString('base64');
+          await fs.unlink(outputFile).catch(() => {});
+          resolve(content);
+        }
+      } else {
+        reject(new Error(`FFmpeg exited with code ${code}: ${errorOutput}`));
+      }
+    });
+    ffmpeg.on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)));
+  });
 }
 
 async function zipFilesWithReadme(files, task) {

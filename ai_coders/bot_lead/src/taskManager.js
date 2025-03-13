@@ -9,17 +9,55 @@ import { botSocket } from './socket.js';
 
 const DEFAULT_TONE = "Cool, Edgy, Smooth, Super Smart";
 const extensionMap = {
-  'html': 'html', 'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php',
-  'ruby': 'rb', 'java': 'java', 'c++': 'cpp', 'full-stack': 'zip', 'graph': 'zip',
-  'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'doc': 'txt', 'pdf': 'pdf',
-  'csv': 'csv', 'json': 'json', 'mp4': 'mp4'
+  'html': 'html',
+  'javascript': 'js',
+  'python': 'py',
+  'php': 'php',
+  'ruby': 'rb',
+  'java': 'java',
+  'c++': 'cpp',
+  'typescript': 'ts',
+  'go': 'go',
+  'rust': 'rs',
+  'kotlin': 'kt',
+  'swift': 'swift',
+  'csharp': 'cs',
+  'r': 'r',
+  'scala': 'scala',
+  'dart': 'dart',
+  'perl': 'pl',
+  'lua': 'lua',
+  'bash': 'sh',
+  'powershell': 'ps1',
+  'sql': 'sql',
+  'yaml': 'yaml',
+  'xml': 'xml',
+  'markdown': 'md',
+  'toml': 'toml',
+  'full-stack': 'zip',
+  'graph': 'zip',
+  'react': 'jsx',
+  'vue': 'vue',
+  'angular': 'ts',
+  'docker': 'Dockerfile',
+  'image': 'png',
+  'jpeg': 'jpg',
+  'gif': 'gif',
+  'svg': 'svg',
+  'webp': 'webp',
+  'doc': 'txt',
+  'pdf': 'pdf',
+  'csv': 'csv',
+  'json': 'json',
+  'mp4': 'mp4',
+  'mp3': 'mp3',
+  'wav': 'wav'
 };
 
 export async function initTaskManager(botSocketArg) {
   const socket = botSocketArg || botSocket;
   await log(`Task Manager initialized with WebSocket URL: ${socket.io.uri}`);
 
-  // WebSocket connection setup with all standard listeners
   socket.on('connect', () => {
     log('Task Manager connected to WebSocket server');
     socket.emit('register', { name: 'bot_lead', role: 'lead', userId: socket.id });
@@ -72,7 +110,7 @@ export async function initTaskManager(botSocketArg) {
 
     if (!await redisClient.get(userKey)) {
       const namePrompt = await generateResponse(
-        `Yo, Newbie! I’m Cracker Bot, the slickest coder around. What’s your name, fam? Type it below!`, // Clarified bot vs. user
+        `Yo, Newbie! I’m Cracker Bot, the slickest coder around. What’s your name, fam? Type it below!`,
         userName,
         DEFAULT_TONE
       );
@@ -89,7 +127,7 @@ export async function initTaskManager(botSocketArg) {
       });
     } else {
       const welcome = await generateResponse(
-        `Smooth return, ${userName}! I’m Cracker Bot, ready to whip up epic programs. What’s our next play?`, // Consistent userName usage
+        `Smooth return, ${userName}! I’m Cracker Bot, ready to whip up epic programs. What’s our next play?`,
         userName,
         DEFAULT_TONE
       );
@@ -132,8 +170,38 @@ export async function initTaskManager(botSocketArg) {
         target: 'bot_frontend',
         frontendId,
         ip,
+        taskName: name,
+        taskType: type,
+        taskFeatures: task.features,
       });
-      await updateTaskStatus(taskId, 'completed');
+
+      // Transition to review state
+      task.step = 'review';
+      task.status = 'pending';
+      await redisClient.hSet('tasks', taskId, JSON.stringify(task));
+      await updateTaskStatus(taskId, 'pending_review');
+
+      const nextPrompt = await generateResponse(
+        `Sick build, ${userName}! "${name}" is live. What’s next—more features, a tweak, or we calling it?`,
+        userName,
+        tone
+      );
+      socket.emit('message', {
+        text: nextPrompt,
+        type: "question",
+        taskId,
+        from: 'Cracker Bot',
+        target: 'bot_frontend',
+        ip,
+        user: userName,
+        options: ["Add more", "Edit", "Done"],
+        frontendId,
+        taskName: name,
+        taskType: type,
+        taskFeatures: task.features,
+      });
+
+      await log(`Task ${taskId} completed and moved to review state for ${userName}`);
     } catch (err) {
       await error(`Error handling taskResult for taskId ${taskId}: ${err.message}`);
     }
@@ -179,7 +247,7 @@ export async function handleMessage(botSocket, message) {
       await redisClient.del(pendingNameKey);
       userName = newName;
       const welcome = await generateResponse(
-        `Smooth move, ${userName}! I’m Cracker Bot, the slickest coder this side of the matrix. What’s our next play?`, // Fixed prompt
+        `Smooth move, ${userName}! I’m Cracker Bot, the slickest coder this side of the matrix. What’s our next play?`,
         userName,
         tone
       );
@@ -414,6 +482,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: ["Please name your new project"],
           frontendId,
+          taskName: task.name,
         });
       }
       break;
@@ -439,6 +508,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: Object.keys(extensionMap),
           frontendId,
+          taskName: task.name,
         });
       } else {
         const errorMsg = await generateResponse(
@@ -456,6 +526,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: ["Please name your new project"],
           frontendId,
+          taskName: task.name,
         });
       }
       break;
@@ -477,6 +548,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: Object.keys(extensionMap),
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
         });
         break;
       }
@@ -504,6 +577,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         user: userName,
         options: task.type === 'full-stack' ? ["Network", "Features"] : ["Please describe your project in great detail"],
         frontendId,
+        taskName: task.name,
+        taskType: task.type,
       });
       break;
     case 'network-or-features':
@@ -527,6 +602,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: ["mainnet-beta", "testnet", "devnet", "none"],
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
         });
       } else {
         task.step = 'features';
@@ -547,6 +624,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: ["Please describe your project in great detail"],
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
         });
       }
       break;
@@ -570,6 +649,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         user: userName,
         options: ["Please describe your project in great detail"],
         frontendId,
+        taskName: task.name,
+        taskType: task.type,
       });
       break;
     case 'features':
@@ -596,6 +677,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         ip,
         user: userName,
         frontendId,
+        taskName: task.name,
+        taskType: task.type,
+        taskFeatures: task.features,
       });
 
       const progressSteps = [25, 50, 75, 100];
@@ -616,6 +700,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           ip,
           user: userName,
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
+          taskFeatures: task.features,
         });
       }
 
@@ -654,6 +741,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             ip,
             user: userName,
             frontendId,
+            taskName: task.name,
+            taskType: task.type,
+            taskFeatures: task.features,
           });
           const nextPrompt = await generateResponse(
             `Sick build, ${userName}! "${task.name}" is live. What’s next—more features, a tweak, or we calling it?`,
@@ -670,6 +760,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             user: userName,
             options: ["Add more", "Edit", "Done"],
             frontendId,
+            taskName: task.name,
+            taskType: task.type,
+            taskFeatures: task.features,
           });
           task.step = 'review';
           task.status = 'pending';
@@ -690,6 +783,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             user: userName,
             options: ["Retry", "Edit description"],
             frontendId,
+            taskName: task.name,
+            taskType: task.type,
+            taskFeatures: task.features,
           });
           await redisClient.hDel('tasks', taskId);
         }
@@ -708,6 +804,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: ["Retry", "Edit description"],
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
+          taskFeatures: task.features,
         });
         await redisClient.hDel('tasks', taskId);
       }
@@ -734,6 +833,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: ["Please describe your project in great detail"],
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
+          taskFeatures: task.features,
         });
       } else if (lowerAnswer === "edit") {
         task.step = 'edit';
@@ -754,6 +856,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           ip,
           user: userName,
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
+          taskFeatures: task.features,
         });
       } else if (lowerAnswer === "done") {
         const doneMsg = await generateResponse(
@@ -769,6 +874,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           ip,
           user: userName,
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
+          taskFeatures: task.features,
         });
         await updateTaskStatus(taskId, 'completed');
         await redisClient.hDel('tasks', taskId);
@@ -788,6 +896,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           options: ["Add more", "Edit", "Done"],
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
+          taskFeatures: task.features,
         });
       }
       break;
@@ -833,6 +944,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             ip,
             user: userName,
             frontendId,
+            taskName: task.name,
+            taskType: task.type,
+            taskFeatures: task.features,
           });
           const tweakPrompt = await generateResponse(
             `${userName}, "${task.name}" got a glow-up! What’s the next move—more features, another edit, or we good?`,
@@ -849,6 +963,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             user: userName,
             options: ["Add more", "Edit", "Done"],
             frontendId,
+            taskName: task.name,
+            taskType: task.type,
+            taskFeatures: task.features,
           });
           task.step = 'review';
           task.status = 'pending';
@@ -868,6 +985,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             ip,
             user: userName,
             frontendId,
+            taskName: task.name,
+            taskType: task.type,
+            taskFeatures: task.features,
           });
         }
       } catch (e) {
@@ -884,14 +1004,15 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           ip,
           user: userName,
           frontendId,
+          taskName: task.name,
+          taskType: task.type,
+          taskFeatures: task.features,
         });
       }
       break;
     default:
       const lostMsg = await generateResponse(
-        `Lost the thread on "${taskId}", ${userName}! I’m Cracker Bot—what’s the next step for “
-
-this program?`,
+        `Lost the thread on "${taskId}", ${userName}! I’m Cracker Bot—what’s the next step for this program?`,
         userName,
         tone
       );
@@ -903,6 +1024,9 @@ this program?`,
         ip,
         user: userName,
         frontendId,
+        taskName: task.name,
+        taskType: task.type,
+        taskFeatures: task.features,
       });
   }
 }

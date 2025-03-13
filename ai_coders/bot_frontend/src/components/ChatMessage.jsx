@@ -1,10 +1,19 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
+  const [progress, setProgress] = useState(message.type === "progress" ? message.progress : 0);
+  const [displayText, setDisplayText] = useState(message.text);
+
+  useEffect(() => {
+    if (message.type === "progress") {
+      setProgress(message.progress);
+      setDisplayText(`${message.text.split('—')[0]}—${progress}%`);
+    }
+  }, [message.progress, message.text, message.type]);
+
   const getMessageStyle = (type) => {
     if (type === "progress") {
-      const percentage = parseInt(message.text.match(/\d+%/)?.[0] || "0");
-      const colorIntensity = Math.floor((percentage / 100) * 255);
+      const colorIntensity = Math.floor((progress / 100) * 255);
       return `${colorScheme.progress} font-mono text-[rgb(${colorIntensity},${255 - colorIntensity},0)]`;
     }
     return colorScheme[type] || `${colorScheme.text} ${colorScheme.chatBg}`;
@@ -44,6 +53,27 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
         'rb': 'text/x-ruby',
         'java': 'text/x-java-source',
         'cpp': 'text/x-c++src',
+        'ts': 'application/typescript',
+        'go': 'text/x-go',
+        'rs': 'text/x-rust',
+        'kt': 'text/x-kotlin',
+        'swift': 'text/x-swift',
+        'cs': 'text/x-csharp',
+        'r': 'text/x-r',
+        'scala': 'text/x-scala',
+        'dart': 'application/vnd.dart',
+        'pl': 'text/x-perl',
+        'lua': 'text/x-lua',
+        'sh': 'text/x-shellscript',
+        'ps1': 'application/x-powershell',
+        'sql': 'text/x-sql',
+        'yaml': 'application/x-yaml',
+        'xml': 'application/xml',
+        'md': 'text/markdown',
+        'toml': 'application/toml',
+        'jsx': 'text/jsx',
+        'vue': 'text/x-vue',
+        'Dockerfile': 'text/x-dockerfile',
         'txt': 'text/plain',
         'pdf': 'application/pdf',
         'csv': 'text/csv',
@@ -51,11 +81,15 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
         'png': 'image/png',
         'jpg': 'image/jpeg',
         'gif': 'image/gif',
-        'mp4': 'video/mp4'
+        'svg': 'image/svg+xml',
+        'webp': 'image/webp',
+        'mp4': 'video/mp4',
+        'mp3': 'audio/mpeg',
+        'wav': 'audio/wav'
       };
       const mimeType = mimeTypes[extension] || 'application/octet-stream';
       try {
-        blob = ['png', 'jpg', 'gif', 'pdf', 'mp4'].includes(extension)
+        blob = ['png', 'jpg', 'gif', 'svg', 'webp', 'pdf', 'mp4', 'mp3', 'wav'].includes(extension)
           ? new Blob([Uint8Array.from(atob(fileContent), c => c.charCodeAt(0))], { type: mimeType })
           : new Blob([fileContent], { type: mimeType });
       } catch (e) {
@@ -88,11 +122,11 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
         <strong>{displayUser}: </strong>
         {message.type === "progress" ? (
           <>
-            {message.text}
+            {displayText}
             <div className="w-full bg-gray-700 rounded-full h-2.5 mt-1">
               <div
-                className="bg-neon-green h-2.5 rounded-full"
-                style={{ width: `${parseInt(message.text.match(/\d+%/)?.[0] || "0")}%` }}
+                className="bg-neon-green h-2.5 rounded-full transition-all duration-500"
+                style={{ width: `${progress}%` }}
               ></div>
             </div>
           </>
