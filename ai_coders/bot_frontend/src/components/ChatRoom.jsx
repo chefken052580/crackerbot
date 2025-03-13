@@ -180,9 +180,9 @@ const ChatRoom = () => {
         timestamp: new Date().toLocaleTimeString() 
       }]);
       setIsConnected(true);
-      const userName = localStorage.getItem('userName') || "Guest";
+      const userName = localStorage.getItem('userName') || "Guest"; // Default to "Guest" if not set
       socketRef.current.emit("register", { 
-        name: "bot_frontend", 
+        name: userName, // Use stored userName or "Guest", not "bot_frontend"
         role: "frontend", 
         frontendId: socketRef.current.id,
         userName 

@@ -23,7 +23,6 @@ export async function initTaskManager(botSocketArg) {
   socket.on('connect', () => {
     log('Task Manager connected to WebSocket server');
     socket.emit('register', { name: 'bot_lead', role: 'lead', userId: socket.id });
-    // Emit a welcome message to all frontends on connection
     socket.emit('message', {
       text: "Cracker Bot is live and ready to roll! Who’s in the house?",
       type: "system",
@@ -73,7 +72,7 @@ export async function initTaskManager(botSocketArg) {
 
     if (!await redisClient.get(userKey)) {
       const namePrompt = await generateResponse(
-        `Yo, new face! I’m Cracker Bot, the slickest coder around. What’s your name, fam?`,
+        `Yo, Newbie! I’m Cracker Bot, the slickest coder around. What’s your name, fam? Type it below!`, // Clarified bot vs. user
         userName,
         DEFAULT_TONE
       );
@@ -90,7 +89,7 @@ export async function initTaskManager(botSocketArg) {
       });
     } else {
       const welcome = await generateResponse(
-        `Smooth return, ${userName}! I’m Cracker Bot, ready to whip up epic programs. What’s our next play?`,
+        `Smooth return, ${userName}! I’m Cracker Bot, ready to whip up epic programs. What’s our next play?`, // Consistent userName usage
         userName,
         DEFAULT_TONE
       );
@@ -144,7 +143,6 @@ export async function initTaskManager(botSocketArg) {
     handleMessage(socket, message);
   });
 
-  // Additional WebSocket listeners for robustness
   socket.on('error', (err) => {
     error(`WebSocket error: ${err.message}`);
   });
@@ -181,7 +179,7 @@ export async function handleMessage(botSocket, message) {
       await redisClient.del(pendingNameKey);
       userName = newName;
       const welcome = await generateResponse(
-        `Smooth move, ${userName}! I’m Cracker Bot, the slickest coder this side of the matrix, here to whip up epic programs. What’s our next play?`,
+        `Smooth move, ${userName}! I’m Cracker Bot, the slickest coder this side of the matrix. What’s our next play?`, // Fixed prompt
         userName,
         tone
       );
@@ -891,7 +889,9 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       break;
     default:
       const lostMsg = await generateResponse(
-        `Lost the thread on "${taskId}", ${userName}! I’m Cracker Bot—what’s the next step for this program?`,
+        `Lost the thread on "${taskId}", ${userName}! I’m Cracker Bot—what’s the next step for “
+
+this program?`,
         userName,
         tone
       );

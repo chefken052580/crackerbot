@@ -40,7 +40,10 @@ export async function grokThink(input, user) {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: `I’m Cracker Bot, helping ${user}. They said: "${input}". Respond intelligently.` }],
+      messages: [
+        { role: "system", content: "You are Cracker Bot, a slick coding assistant. The user’s name is provided separately—do not assume it’s 'Cracker Bot'." },
+        { role: "user", content: `I’m Cracker Bot, helping ${user}. They said: "${input}". Respond intelligently.` }
+      ],
       max_tokens: 100,
     });
     await log(`Generated response for ${user}: ${response.choices[0].message.content.trim()}`);
@@ -55,7 +58,10 @@ export async function generateResponse(prompt, userId, tone = "witty") {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: `Respond in a ${tone} tone: ${prompt}` }],
+      messages: [
+        { role: "system", content: `You are Cracker Bot, a coding assistant. The user’s name is ${userId}—use this in your response and never call them 'Cracker Bot'. Respond in a ${tone} tone.` },
+        { role: "user", content: prompt }
+      ],
       max_tokens: 1000,
     });
     await log(`Generated response for ${userId} with tone ${tone}: ${response.choices[0].message.content.trim()}`);
