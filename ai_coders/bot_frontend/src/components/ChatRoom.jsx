@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
-import ChatMessage from "./ChatMessage"; // Assumes this is a separate file
+import ChatMessage from "./ChatMessage";
 
-const WEBSOCKET_SERVER_URL = "wss://websocket-visually-sterling-spider.ngrok-free.app";
+const WEBSOCKET_SERVER_URL = process.env.REACT_APP_WEBSOCKET_SERVER_URL || "wss://websocket-visually-sterling-spider.ngrok-free.app";
 
 const commands = [
   { command: "/create", description: "Start a new project" },
@@ -160,7 +160,6 @@ const ChatRoom = () => {
   useEffect(() => {
     console.log("ChatRoom: Mounting component...");
 
-    // Initialize WebSocket
     socketRef.current = io(WEBSOCKET_SERVER_URL, {
       reconnection: true,
       reconnectionAttempts: 10,
@@ -185,7 +184,7 @@ const ChatRoom = () => {
       socketRef.current.emit("register", { 
         name: "bot_frontend", 
         role: "frontend", 
-        frontendId: socketRef.current.id, // Adjusted to frontendId
+        frontendId: socketRef.current.id,
         userName 
       });
       socketRef.current.emit("frontend_connected", { 
@@ -201,7 +200,7 @@ const ChatRoom = () => {
       setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
       const newMessage = {
         from: data.from,
-        user: data.user || "Admin",
+        user: data.user || "Guest",
         text: data.text,
         type: data.type || "bot",
         fileName: data.fileName,
@@ -232,26 +231,10 @@ const ChatRoom = () => {
             }
             return prev;
           });
-        } else if (data.type === "task_response" && data.taskId) {
-          setCurrentTask((prev) => {
-            const current = prev[data.taskId] || {};
-            if (current.step === "name" && !data.text.includes("What’s your name")) {
-              localStorage.setItem('userName', data.text.trim());
-              return { ...prev, [data.taskId]: { ...current, name: data.text, step: "complete" } };
-            } else if (current.step === "type") {
-              return { ...prev, [data.taskId]: { ...current, type: data.text, step: "features" } };
-            } else if (current.step === "features") {
-              return { ...prev, [data.taskId]: { ...current, features: data.text, step: "building" } };
-            }
-            return prev;
-          });
-          if (data.text.match(/\d+%/) && parseInt(data.text.match(/\d+%/)[0]) === 100) {
-            setProgressMessage(null);
-          }
         }
       }
 
-      if (data.user && data.user !== "Cracker Bot" && data.user !== "System") {
+      if (data.user && data.user !== "Guest") {
         localStorage.setItem('userName', data.user);
         console.log("ChatRoom: Updated userName in localStorage:", data.user);
       }
@@ -334,17 +317,6 @@ const ChatRoom = () => {
       frontendId: socketRef.current.id,
     };
 
-    setMessages((prev) => [
-      ...prev,
-      { 
-        from: userName, 
-        text: messageText, 
-        type: "user", 
-        timestamp: new Date().toLocaleTimeString(),
-        frontendId: socketRef.current.id,
-      }
-    ]);
-
     if (taskPending) {
       messageData.type = "task_response";
       messageData.taskId = taskPending.taskId;
@@ -357,7 +329,6 @@ const ChatRoom = () => {
     } else if (messageText.startsWith("/")) {
       messageData.type = "command";
       messageData.target = "bot_lead";
-      setMessages((prev) => [...prev, { ...messageData, type: "command", timestamp: new Date().toLocaleTimeString() }]);
     } else {
       messageData.type = "general_message";
     }

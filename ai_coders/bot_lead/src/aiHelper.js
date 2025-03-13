@@ -141,16 +141,26 @@ export async function startBuildTask(task, userName) {
       content = (await fs.readFile(outputFile)).toString('base64');
       await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'image' || type === 'jpeg') {
-      const outputFile = `/tmp/${name}-${Date.now()}.${type === 'image' ? 'png' : 'jpg'}`;
-      await generateImage(features, outputFile, type === 'image' ? 'png' : 'jpeg');
-      content = (await fs.readFile(outputFile)).toString('base64');
-      await fs.unlink(outputFile).catch(() => {});
+      // Placeholder: GPT-3.5 can't generate images; use canvas as a temporary workaround
+      try {
+        const outputFile = `/tmp/${name}-${Date.now()}.${type === 'image' ? 'png' : 'jpg'}`;
+        await generateImage(features, outputFile, type === 'image' ? 'png' : 'jpeg');
+        content = (await fs.readFile(outputFile)).toString('base64');
+        await fs.unlink(outputFile).catch(() => {});
+        await log(`Generated placeholder image for "${name}" with features: ${features}`);
+      } catch (imgErr) {
+        await error(`Image generation failed for "${name}" (frontendId ${frontendId}): ${imgErr.message}`);
+        return { 
+          response: `Yo ${userName}, I can’t generate real images yet (need an image API like DALL-E)! I tried a placeholder but hit a snag: ${imgErr.message}. Want a text description instead?`, 
+          content: null 
+        };
+      }
     } else {
       const langPrompt = { 'html': 'HTML', 'javascript': 'JavaScript', 'python': 'Python', 'php': 'PHP', 'ruby': 'Ruby', 'java': 'Java', 'c++': 'C++' }[type] || 'HTML';
       const contentResponse = await openai.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: `Generate ${langPrompt} code for "${name}" with features: ${features}.` }],
-        max_tokens:Filt1000,
+        max_tokens: 1000,
       });
       content = contentResponse.choices[0].message.content.trim();
     }
@@ -171,7 +181,7 @@ export async function startBuildTask(task, userName) {
     return { response: completionResponse.choices[0].message.content.trim(), content };
   } catch (err) {
     await error(`Error in startBuildTask for "${name}" (frontendId ${frontendId}): ${err.message}`);
-    return { response: "Oops, something went wrong while building your project!", content: null };
+    return { response: `Oops, something went wrong while building "${name}", ${userName}! Error: ${err.message}`, content: null };
   }
 }
 
@@ -250,10 +260,20 @@ export async function editTask(task) {
       content = (await fs.readFile(outputFile)).toString('base64');
       await fs.unlink(outputFile).catch(() => {});
     } else if (type === 'image' || type === 'jpeg') {
-      const outputFile = `/tmp/${name}-${Date.now()}.${type === 'image' ? 'png' : 'jpg'}`;
-      await generateImage(features, outputFile, type === 'image' ? 'png' : 'jpeg');
-      content = (await fs.readFile(outputFile)).toString('base64');
-      await fs.unlink(outputFile).catch(() => {});
+      // Placeholder: GPT-3.5 can't generate images
+      try {
+        const outputFile = `/tmp/${name}-${Date.now()}.${type === 'image' ? 'png' : 'jpg'}`;
+        await generateImage(features, outputFile, type === 'image' ? 'png' : 'jpeg');
+        content = (await fs.readFile(outputFile)).toString('base64');
+        await fs.unlink(outputFile).catch(() => {});
+        await log(`Generated placeholder image for "${name}" with edit: ${editRequest}`);
+      } catch (imgErr) {
+        await error(`Image edit failed for "${name}" (frontendId ${frontendId}): ${imgErr.message}`);
+        return { 
+          response: `Yo ${user}, I can’t edit real images yet (need an image API)! Tried a placeholder but hit: ${imgErr.message}. Retry or tweak the description?`, 
+          content: null 
+        };
+      }
     } else {
       const langPrompt = { 'html': 'HTML', 'javascript': 'JavaScript', 'python': 'Python', 'php': 'PHP', 'ruby': 'Ruby', 'java': 'Java', 'c++': 'C++' }[type] || 'HTML';
       const contentResponse = await openai.chat.completions.create({
@@ -280,7 +300,7 @@ export async function editTask(task) {
     return { response: completionResponse.choices[0].message.content.trim(), content };
   } catch (err) {
     await error(`Error in editTask for "${name}" (frontendId ${frontendId}): ${err.message}`);
-    return { response: "Oops, something went wrong while editing your project!", content: null };
+    return { response: `Oops, something went wrong while editing "${name}", ${user}! Error: ${err.message}`, content: null };
   }
 }
 

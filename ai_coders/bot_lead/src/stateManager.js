@@ -1,6 +1,6 @@
 import { log, error } from './logger.js';
 import { redisClient } from './redisClient.js';
-import { botSocket } from './socket.js'; // Note: BACKEND_URL removed as unused
+import { botSocket } from './socket.js';
 
 let lastGeneratedTask = null;
 
@@ -8,6 +8,7 @@ export async function setLastGeneratedTask(task) {
   lastGeneratedTask = task;
   try {
     await redisClient.set('lastGeneratedTask', JSON.stringify(task));
+    await log(`Persisted lastGeneratedTask: ${task.name}`);
   } catch (err) {
     await error(`Failed to persist lastGeneratedTask: ${err.message}`);
   }
