@@ -23,15 +23,16 @@ redisClient.on('error', (err) => error(`Redis Client Error: ${err.message}`));
 (async () => {
   try {
     await redisClient.connect();
-    log('Connected to Redis');
+    console.log('Connected to Redis');
+    await log('Connected to Redis');
   } catch (err) {
     await error(`Failed to connect to Redis: ${err.message}`);
     process.exit(1);
   }
 })();
 
-app.get('/health', (req, res) => {
-  log('Healthcheck requested');
+app.get('/health', async (req, res) => {
+  await log('Healthcheck requested');
   res.status(200).send(`${BOT_NAME} is healthy!`);
 });
 
@@ -46,26 +47,20 @@ app.post('/api/file', async (req, res) => {
   }
 });
 
-botSocket.on('connect', () => {
-  log(`${BOT_NAME} connected to WebSocket at ${botSocket.io.uri}`);
-  botSocket.emit('register', { name: BOT_NAME, role: 'lead', userId: botSocket.id });
-  initTaskManager(botSocket);
-});
-
-botSocket.on('connect_error', (err) => error(`${BOT_NAME} WebSocket connection error: ${err.message}`));
-botSocket.on('disconnect', (reason) => log(`${BOT_NAME} WebSocket disconnected: ${reason}`));
+initTaskManager(botSocket); // Initialize once, no connect handler
 
 async function startServer() {
   try {
-    log(`Starting ${BOT_NAME} server...`);
+    await log(`Starting ${BOT_NAME} server...`);
     await new Promise((resolve, reject) => {
       server.listen(PORT, (err) => {
         if (err) return reject(err);
         resolve();
       });
     });
-    log(`${BOT_NAME} server running on http://0.0.0.0:${PORT}`);
-    setInterval(() => log(`${BOT_NAME} is still alive`), 30000);
+    console.log(`${BOT_NAME} server running on http://0.0.0.0:${PORT}`);
+    await log(`${BOT_NAME} server running on http://0.0.0.0:${PORT}`);
+    setInterval(async () => await log(`${BOT_NAME} is still alive`), 30000);
   } catch (err) {
     await error(`Error starting server: ${err.message}`);
     process.exit(1);

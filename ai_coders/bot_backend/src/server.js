@@ -7,6 +7,8 @@ import { startBuildTask } from './taskExecution.js';
 import { zipFilesWithReadme } from './contentUtils.js';
 import { log, error } from './logger.js';
 
+const BOT_NAME = "bot_backend";
+
 const app = express();
 const server = http.createServer(app);
 
@@ -21,32 +23,9 @@ app.get('/health', async (req, res) => {
   res.status(200).send('bot_backend is healthy!');
 });
 
-botSocket.on('connect', async () => {
-  console.log('bot_backend connected to WebSocket server');
-  await log('server.js version 2025-03-15-3 loaded');
-  await log('bot_backend connected to WebSocket server');
-  botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
-});
-
-botSocket.on('connect_error', async (err) => {
-  console.error('bot_backend WebSocket connect error:', err.message);
-  await error(`bot_backend WebSocket connect error: ${err.message}`);
-});
-
-botSocket.on('disconnect', async (reason) => {
-  console.log('bot_backend disconnected from WebSocket server:', reason);
-  await error(`bot_backend disconnected from WebSocket server: ${reason}`);
-});
-
-// Catch-all event listener for debugging
-botSocket.onAny(async (event, ...args) => {
-  console.log(`bot_backend received event: ${event}`, args);
-  await log(`bot_backend received event: ${event} with args: ${JSON.stringify(args)}`);
-});
-
 botSocket.on('command', async (data) => {
-  console.log(`[${new Date().toISOString()}] Received command:`, JSON.stringify(data));
-  await log(`[${new Date().toISOString()}] Command received: ${JSON.stringify(data)}`);
+  console.log(`${BOT_NAME} received command:`, data.command, data.args);
+  await log(`Received command: ${JSON.stringify(data)}`);
   if (data.command === 'buildTask' || data.command === 'editTask') {
     await handleTask(data);
   } else {
@@ -54,11 +33,16 @@ botSocket.on('command', async (data) => {
   }
 });
 
+botSocket.onAny(async (event, ...args) => {
+  console.log(`${BOT_NAME} received event: ${event}`, args);
+  await log(`${BOT_NAME} received event: ${event} with args: ${JSON.stringify(args)}`);
+});
+
 setInterval(async () => {
   if (botSocket.connected) {
-    await log('bot_backend WebSocket heartbeat: still connected');
+    await log(`${BOT_NAME} WebSocket heartbeat: still connected`);
   } else {
-    await error('bot_backend WebSocket heartbeat: disconnected');
+    await error(`${BOT_NAME} WebSocket heartbeat: disconnected`);
   }
 }, 10000);
 
@@ -121,4 +105,5 @@ async function handleTask(data) {
 server.listen(PORT, async () => {
   console.log(`bot_backend server running on port ${PORT}`);
   await log(`bot_backend server running on port ${PORT}`);
+  await log('server.js version 2025-03-15-3 loaded');
 });

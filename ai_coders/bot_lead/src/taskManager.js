@@ -1,4 +1,3 @@
-import io from 'socket.io-client';
 import { log, error } from './logger.js';
 import { redisClient, storeMessage } from './redisClient.js';
 import { setLastGeneratedTask, delegateTask, updateTaskStatus } from './stateManager.js';
@@ -57,17 +56,6 @@ const extensionMap = {
 export async function initTaskManager(botSocketArg) {
   const socket = botSocketArg || botSocket;
   await log(`Task Manager initialized with WebSocket URL: ${socket.io.uri}`);
-
-  socket.on('connect', () => {
-    log('Task Manager connected to WebSocket server');
-    socket.emit('register', { name: 'bot_lead', role: 'lead', userId: socket.id });
-    socket.emit('message', {
-      text: "Cracker Bot is live and ready to roll! Who’s in the house?",
-      type: "system",
-      from: 'Cracker Bot',
-      target: 'bot_frontend',
-    });
-  });
 
   socket.on('connect_error', (err) => {
     error(`Task Manager WebSocket connection failed: ${err.message}`);
@@ -241,7 +229,17 @@ export async function initTaskManager(botSocketArg) {
     log(`Attempting to reconnect to WebSocket server, attempt #${attempt}`);
   });
 
-  log('Task Manager initialized with provided botSocket');
+  // Send initial message on startup if connected
+  if (socket.connected) {
+    socket.emit('message', {
+      text: "Cracker Bot is live and ready to roll! Who’s in the house?",
+      type: "system",
+      from: 'Cracker Bot',
+      target: 'bot_frontend',
+    });
+  }
+
+  await log('Task Manager initialized with provided botSocket');
   return socket;
 }
 
@@ -655,7 +653,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             tone
           );
           botSocket.emit('message', {
-            text: progressMsg, // No percentage in text
+            text: progressMsg,
             type: "progress",
             taskId: progressId,
             progress: progressSteps[i],
