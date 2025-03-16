@@ -15,6 +15,7 @@ class WebSocketHandler {
         methods: ["GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
         credentials: true,
       },
+      path: '/socket.io',
     });
     this.bots = new Map();
     this.pendingEvents = [];
@@ -25,6 +26,10 @@ class WebSocketHandler {
     this.io.on("connection", (socket) => {
       console.log(`🔗 New client connected: ID ${socket.id}, IP: ${socket.handshake.address}`);
 
+      socket.onAny((event, ...args) => {
+        console.log(`📥 Received event from ${socket.id}: ${event}, args: ${JSON.stringify(args)}`);
+      });
+
       socket.on('register', (data) => {
         try {
           if (!data || !data.name || !data.role) {
@@ -32,15 +37,16 @@ class WebSocketHandler {
             socket.emit("register_failed", "Missing name or role");
             return;
           }
-          const botData = { name: data.name, role: data.role, socketId: socket.id };
+          const botData = { name: data.name, role: data.role, socketId: socket.id, socket };
           this.bots.set(data.name, botData);
           socket.clientName = data.name;
           console.log(`✅ ${data.name} (${data.role}) registered with ID ${socket.id}`);
+          console.log(`Current bots: ${Array.from(this.bots.keys())}`);
           socket.emit("register_success");
 
           const leadBot = this.bots.get('bot_lead');
           if (leadBot && data.role !== 'lead') {
-            this.io.to(leadBot.socketId).emit('register', { ...data, ip: socket.handshake.address });
+            leadBot.socket.emit('register', { ...data, ip: socket.handshake.address });
             console.log(`📤 Sent register to bot_lead (${leadBot.socketId}) for ${data.name}`);
           }
         } catch (error) {
@@ -55,7 +61,7 @@ class WebSocketHandler {
           console.log(`📩 Frontend connected: ${JSON.stringify(eventData)}`);
           const leadBot = this.bots.get('bot_lead');
           if (leadBot) {
-            this.io.to(leadBot.socketId).emit('frontend_connected', eventData);
+            leadBot.socket.emit('frontend_connected', eventData);
             console.log(`📤 Forwarded frontend_connected to bot_lead (${leadBot.socketId})`);
           } else {
             this.pendingEvents.push({ event: 'frontend_connected', eventData, target: 'bot_lead' });
@@ -72,7 +78,7 @@ class WebSocketHandler {
           console.log(`🔄 Reset_user from ${socket.id}: ${JSON.stringify(eventData)}`);
           const leadBot = this.bots.get('bot_lead');
           if (leadBot) {
-            this.io.to(leadBot.socketId).emit('reset_user', eventData);
+            leadBot.socket.emit('reset_user', eventData);
             console.log(`📤 Forwarded reset_user to bot_lead (${leadBot.socketId})`);
           } else {
             this.pendingEvents.push({ event: 'reset_user', eventData, target: 'bot_lead' });
@@ -94,7 +100,7 @@ class WebSocketHandler {
             const targetBot = this.bots.get(data.target || 'bot_lead');
             const eventData = { ...data, ip: socket.handshake.address };
             if (targetBot) {
-              this.io.to(targetBot.socketId).emit('message', eventData);
+              targetBot.socket.emit('message', eventData);
               console.log(`📤 Sent message to ${targetBot.name} (${targetBot.socketId})`);
             } else {
               this.pendingEvents.push({ event: 'message', eventData, target: data.target || 'bot_lead' });
@@ -107,39 +113,60 @@ class WebSocketHandler {
         }
       });
 
-      socket.on('command', (data) => {
+      socket.on('test', (data, callback) => {
+        console.log(`📥 Test event received from ${socket.id}: ${JSON.stringify(data)}`);
+        socket.emit('test_response', { text: "Test acknowledged", from: "websocket_server" });
+        if (callback) callback({ status: "success", message: "Test received" });
+      });
+
+      socket.on('command', (data, callback) => {
         try {
           if (!data.target || !data.command) throw new Error("Missing target or command");
-          console.log(`🚀 Command received: ${JSON.stringify(data)}`);
+          console.log(`🚀 Command received from ${socket.id}: ${JSON.stringify(data)}`);
+          console.log(`Current registered bots: ${Array.from(this.bots.keys())}`);
           const targetBot = this.bots.get(data.target);
           const eventData = { ...data, ip: socket.handshake.address };
           if (targetBot) {
-            this.io.to(targetBot.socketId).emit('command', eventData);
+            targetBot.socket.emit('command', eventData);
             console.log(`📤 Sent command to ${targetBot.name} (${targetBot.socketId})`);
+            socket.emit('message', { text: "Command received and routed", from: "websocket_server" });
+            if (callback) callback({ status: "success", message: "Command routed" });
           } else {
             this.pendingEvents.push({ event: 'command', eventData, target: data.target });
-            console.warn(`⚠️ Queued command for ${data.target}`);
+            console.warn(`⚠️ Queued command for ${data.target} - target not found`);
+            this.io.emit('command', eventData); // Broadcast as fallback
+            console.log(`📤 Broadcast command as fallback: ${JSON.stringify(eventData)}`);
+            if (callback) callback({ status: "queued", message: "Command queued, target not found" });
           }
         } catch (error) {
           console.error("❌ Error in command handler:", error.message);
+          socket.emit("error", { message: `Command error: ${error.message}` });
+          if (callback) callback({ status: "error", message: error.message });
         }
       });
 
-      socket.on('commandResponse', (data) => {
+      socket.on('taskResult', (data) => {
         try {
-          if (!data.target) throw new Error("Missing target");
-          console.log(`✅ CommandResponse: ${JSON.stringify(data)}`);
-          const targetBot = this.bots.get(data.target);
+          console.log(`📩 TaskResult received from ${socket.id}: ${JSON.stringify(data)}`);
+          const targetFrontend = data.frontendId;
           const eventData = { ...data, ip: socket.handshake.address };
-          if (targetBot) {
-            this.io.to(targetBot.socketId).emit('commandResponse', eventData);
-            console.log(`📤 Sent commandResponse to ${targetBot.name} (${targetBot.socketId})`);
+          if (targetFrontend) {
+            for (const [_, bot] of this.bots) {
+              if (bot.socketId === targetFrontend) {
+                bot.socket.emit('taskResult', eventData);
+                console.log(`📤 Sent taskResult to frontend ${targetFrontend} (${bot.socketId})`);
+                return;
+              }
+            }
+            console.warn(`⚠️ No frontend found for taskResult: ${targetFrontend}`);
+            this.io.emit('taskResult', eventData);
+            console.log(`📤 Broadcast taskResult as fallback: ${JSON.stringify(eventData)}`);
           } else {
-            this.pendingEvents.push({ event: 'commandResponse', eventData, target: data.target });
-            console.warn(`⚠️ Queued commandResponse for ${data.target}`);
+            console.warn(`⚠️ No frontendId specified in taskResult`);
+            this.io.emit('taskResult', eventData);
           }
         } catch (error) {
-          console.error("❌ Error in commandResponse:", error.message);
+          console.error("❌ Error in taskResult handler:", error.message);
         }
       });
 
@@ -150,7 +177,7 @@ class WebSocketHandler {
           const targetBot = this.bots.get(data.target || 'bot_lead');
           const eventData = { ...data, ip: socket.handshake.address };
           if (targetBot) {
-            this.io.to(targetBot.socketId).emit('taskResponse', eventData);
+            targetBot.socket.emit('taskResponse', eventData);
             console.log(`📤 Sent taskResponse to ${targetBot.name} (${targetBot.socketId})`);
           } else {
             this.pendingEvents.push({ event: 'taskResponse', eventData, target: data.target || 'bot_lead' });
@@ -158,6 +185,24 @@ class WebSocketHandler {
           }
         } catch (error) {
           console.error("❌ Error in taskResponse:", error.message);
+        }
+      });
+
+      socket.on('commandResponse', (data) => {
+        try {
+          if (!data.target) throw new Error("Missing target");
+          console.log(`✅ CommandResponse: ${JSON.stringify(data)}`);
+          const targetBot = this.bots.get(data.target);
+          const eventData = { ...data, ip: socket.handshake.address };
+          if (targetBot) {
+            targetBot.socket.emit('commandResponse', eventData);
+            console.log(`📤 Sent commandResponse to ${targetBot.name} (${targetBot.socketId})`);
+          } else {
+            this.pendingEvents.push({ event: 'commandResponse', eventData, target: data.target });
+            console.warn(`⚠️ Queued commandResponse for ${data.target}`);
+          }
+        } catch (error) {
+          console.error("❌ Error in commandResponse:", error.message);
         }
       });
 

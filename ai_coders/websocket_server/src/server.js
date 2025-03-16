@@ -59,16 +59,23 @@ io.on('connection', (socket) => {
     console.log(`📤 Frontend connected: ID ${data.frontendId}, User: ${data.userName}, IP: ${data.ip}`);
   });
 
+  // Updated: Route frontend messages to bot_lead if no target specified
   socket.on('message', (data) => {
     console.log(`📩 Message from ${socket.id}:`, data);
     if (data.target === 'bot_lead') {
       io.to('bot_lead').emit('message', data);
-    } else if (socket.role === 'lead') {
+    } else if (data.target === 'bot_frontend' && data.frontendId) {
+      io.to(data.frontendId).emit('message', data);
+    } else if (socket.role === 'lead' && data.frontendId) {
       io.to(data.frontendId).emit('message', data);
     } else if (socket.role === 'backend') {
       io.to('bot_lead').emit('message', data);
+    } else if (socket.role === 'frontend') {
+      // Forward frontend messages (e.g., task_response) to bot_lead
+      io.to('bot_lead').emit('message', data);
     } else {
-      io.emit('message', { ...data, from: socket.role === 'frontend' ? data.user : 'Server' });
+      console.warn(`Unhandled message from ${socket.id}:`, data);
+      socket.emit('message', { text: 'Error: Message target unclear', type: 'error', from: 'Server' });
     }
   });
 

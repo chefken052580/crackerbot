@@ -7,14 +7,13 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
   useEffect(() => {
     if (message.type === "progress") {
       setProgress(message.progress);
-      setDisplayText(`${message.text.split('—')[0]}—${progress}%`);
+      setDisplayText(message.text); // No percentage appended, handled by bar
     }
   }, [message.progress, message.text, message.type]);
 
   const getMessageStyle = (type) => {
     if (type === "progress") {
-      const colorIntensity = Math.floor((progress / 100) * 255);
-      return `${colorScheme.progress} font-mono text-[rgb(${colorIntensity},${255 - colorIntensity},0)]`;
+      return `${colorScheme.progress} font-mono`;
     }
     return colorScheme[type] || `${colorScheme.text} ${colorScheme.chatBg}`;
   };
@@ -23,28 +22,12 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
     const extension = fileName.split('.').pop().toLowerCase();
     let blob;
 
-    if (typeof fileContent === 'string' && !fileContent.match(/^[A-Za-z0-9+/=]+$/)) {
-      alert(`Cannot download ${fileName}: ${fileContent}`);
-      return;
-    }
-
-    if (extension === 'zip') {
-      try {
-        const byteCharacters = atob(fileContent);
-        console.log('Base64 decoded length:', byteCharacters.length);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        blob = new Blob([byteArray], { type: 'application/zip' });
-        console.log('Zip Blob size:', blob.size);
-      } catch (e) {
-        console.error('Error decoding base64 zip:', e.message);
-        alert('Failed to decode zip file—check console for details!');
-        return;
+    try {
+      const byteCharacters = atob(fileContent);
+      const byteNumbers = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
-    } else {
       const mimeTypes = {
         'html': 'text/html',
         'js': 'application/javascript',
@@ -73,7 +56,7 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
         'toml': 'application/toml',
         'jsx': 'text/jsx',
         'vue': 'text/x-vue',
-        'Dockerfile': 'text/x-dockerfile',
+        'dockerfile': 'text/x-dockerfile',
         'txt': 'text/plain',
         'pdf': 'application/pdf',
         'csv': 'text/csv',
@@ -85,19 +68,17 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
         'webp': 'image/webp',
         'mp4': 'video/mp4',
         'mp3': 'audio/mpeg',
-        'wav': 'audio/wav'
+        'wav': 'audio/wav',
+        'zip': 'application/zip'
       };
       const mimeType = mimeTypes[extension] || 'application/octet-stream';
-      try {
-        blob = ['png', 'jpg', 'gif', 'svg', 'webp', 'pdf', 'mp4', 'mp3', 'wav'].includes(extension)
-          ? new Blob([Uint8Array.from(atob(fileContent), c => c.charCodeAt(0))], { type: mimeType })
-          : new Blob([fileContent], { type: mimeType });
-      } catch (e) {
-        console.error(`Error creating blob for ${extension}:`, e.message);
-        alert(`Failed to download ${fileName}—check console! Likely not a binary file.`);
-        return;
-      }
+      blob = new Blob([byteNumbers], { type: mimeType });
+    } catch (e) {
+      console.error(`Error decoding base64 for ${fileName}: ${e.message}`);
+      alert(`Failed to download ${fileName}: Invalid file content. Check console for details.`);
+      return;
     }
+
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -123,17 +104,17 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
         {message.type === "progress" ? (
           <>
             {displayText}
-            <div className="w-full bg-gray-700 rounded-full h-2.5 mt-1">
+            <div className="w-full bg-gray-700 rounded-full h-3 mt-1 overflow-hidden">
               <div
-                className="bg-neon-green h-2.5 rounded-full transition-all duration-500"
-                style={{ width: `${progress}%` }}
+                className="h-3 bg-gradient-to-r from-neon-green via-neon-yellow to-neon-red transition-all duration-500 ease-in-out"
+                style={{ width: `${progress}%`, animation: progress < 100 ? 'pulse 1.5s infinite' : 'none' }}
               ></div>
             </div>
           </>
         ) : message.type === "download" || (message.type === "success" && message.fileContent) ? (
           <>
             {message.text}
-            {onPreview && (
+            {onPreview && message.fileContent && (
               <button
                 onClick={() => onPreview(message.fileContent)}
                 className={`${colorScheme.accent} underline hover:text-neon-green ml-2`}
@@ -142,13 +123,15 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
                 Preview
               </button>
             )}
-            <button
-              onClick={() => handleDownloadClick(message.fileName || `${message.taskId || 'file'}.html`, message.fileContent)}
-              className={`${colorScheme.accent} underline hover:text-neon-green ml-2`}
-              aria-label={`Download ${message.fileName || 'file'}`}
-            >
-              Download {message.fileName}
-            </button>
+            {message.fileContent && (
+              <button
+                onClick={() => handleDownloadClick(message.fileName || `${message.taskId || 'file'}.${message.type === 'zip' ? 'zip' : 'txt'}`, message.fileContent)}
+                className={`${colorScheme.accent} underline hover:text-neon-green ml-2`}
+                aria-label={`Download ${message.fileName || 'file'}`}
+              >
+                Download {message.fileName || 'file'}
+              </button>
+            )}
           </>
         ) : (message.type === "question" || message.type === "success") && options.length > 0 ? (
           <>

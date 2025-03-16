@@ -35,174 +35,111 @@ export async function buildTask(task, userName, tone) {
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
-    const progressSteps = [0, 25, 50, 75, 100];
-    const progressId = `progress:${task.taskId}`;
-    for (const progress of progressSteps) {
-      const progressMsg = tone === 'blunt'
-        ? `Cookin’ up ${task.name} for ${userName}, hold your horses`
-        : `Hey ${userName}, building ${task.name} with style`;
-      botSocket.emit('message', {
-        text: progressMsg,
-        type: "progress",
-        taskId: progressId,
-        progress,
-        from: 'Cracker Bot',
-        target: 'bot_frontend',
-        user: userName,
-        frontendId,
-        ip,
-      });
-      if (progress < 100) await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    let content;
     const taskType = task.type.toLowerCase();
     await log(`Processing task type: ${taskType}`);
+    let contentArray = [];
 
-    if (taskType === 'full-stack') {
-      const contentResponse = await generateResponse(
-        `Generate a flat JSON object with exactly these keys: "server.js", "index.html", "package.json", "setup.sh". Each key must contain valid code as a string for "${task.name}" based on these features: ${task.features}${task.network ? ` using network ${task.network}` : ''} for ${userName}. Scale the complexity to match the features description. Exclude all other keys and text outside the JSON object.`,
-        userName,
-        tone
-      );
-      let files;
-      try {
-        files = JSON.parse(contentResponse);
-        const expectedKeys = ["server.js", "index.html", "package.json", "setup.sh"];
-        if (!files || typeof files !== 'object' || 
-            !expectedKeys.every(key => key in files && typeof files[key] === 'string') || 
-            Object.keys(files).length !== expectedKeys.length) {
-          throw new Error("Invalid JSON structure: Must contain exactly server.js, index.html, package.json, setup.sh as strings");
+    if (['image', 'jpeg', 'gif', 'mp4', 'pdf'].includes(taskType)) {
+      if (taskType === 'image' || taskType === 'jpeg') {
+        const format = taskType === 'image' ? 'png' : 'jpeg';
+        const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
+        const content = await generateImage(task.features || 'Generated Image', outputFile, format);
+        contentArray = [{ fileName: `${task.name}.${format}`, content }];
+      } else if (taskType === 'gif') {
+        if (await imagemagickAvailable()) {
+          const framesResponse = await generateResponse(
+            `Generate 3 short text frames (max 20 chars each) for a GIF named "${task.name}" with features: ${task.features}. Return as JSON array.`,
+            userName,
+            tone
+          );
+          const frames = JSON.parse(framesResponse);
+          const outputFile = `/tmp/${task.name}-${Date.now()}.gif`;
+          const content = await generateGif(frames.slice(0, 3), outputFile);
+          contentArray = [{ fileName: `${task.name}.gif`, content }];
+        } else {
+          const fallbackContent = `GIF generation requires ImageMagick. Features: ${task.features}`;
+          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
-        await log(`Full-stack files generated for frontendId ${frontendId}`);
-      } catch (parseErr) {
-        await error(`Failed to parse full-stack JSON for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
-        throw new Error(tone === 'blunt' ? `Fuck, ${userName}, the files are busted: ${parseErr.message}!` : `Oops, ${userName}, parsing failed: ${parseErr.message}.`);
-      }
-      content = await zipFilesWithReadme(files, task);
-    } else if (taskType === 'pdf') {
-      const pdfResponse = await generateResponse(
-        `Generate PDF content (max 1000 words) for "${task.name}" based on these features: ${task.features} for ${userName}. Scale the content to match the features description.`,
-        userName,
-        tone
-      );
-      const outputFile = `/tmp/${task.name}-${Date.now()}.pdf`;
-      try {
-        await generatePdf(pdfResponse.substring(0, 4000), outputFile);
-        content = (await fs.readFile(outputFile)).toString('base64');
-      } finally {
-        await fs.unlink(outputFile).catch(() => {});
-      }
-    } else if (taskType === 'gif') {
-      if (!(await imagemagickAvailable())) throw new Error("ImageMagick’s missing!");
-      const contentResponse = await generateResponse(
-        `Generate 3 text frames (max 20 chars each) for a GIF "${task.name}" based on these features: ${task.features} for ${userName}. Return as JSON array.`,
-        userName,
-        tone
-      );
-      let frames;
-      try {
-        frames = JSON.parse(contentResponse);
-        if (!Array.isArray(frames) || frames.length !== 3 || !frames.every(f => typeof f === 'string' && f.length <= 20)) {
-          throw new Error("Invalid frames: Must be 3 strings, max 20 chars each");
+      } else if (taskType === 'mp4') {
+        if (await ffmpegAvailable()) {
+          const scriptResponse = await generateResponse(
+            `Generate a short description (max 150 chars) for an MP4 named "${task.name}" with features: ${task.features}.`,
+            userName,
+            tone
+          );
+          const script = scriptResponse.substring(0, 150);
+          const outputFile = `/tmp/${task.name}-${Date.now()}.mp4`;
+          const content = await generateMp4(script, outputFile);
+          contentArray = [{ fileName: `${task.name}.mp4`, content }];
+        } else {
+          const fallbackContent = `MP4 generation requires FFmpeg. Features: ${task.features}`;
+          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
-      } catch (parseErr) {
-        await error(`Failed to parse GIF frames for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
-        throw new Error(tone === 'blunt' ? `Shit, ${userName}, GIF frames are fucked: ${parseErr.message}!` : `Oops, ${userName}, GIF frames failed: ${parseErr.message}.`);
+      } else if (taskType === 'pdf') {
+        const textResponse = await generateResponse(
+          `Generate text content (max 4000 chars) for a PDF named "${task.name}" with features: ${task.features}.`,
+          userName,
+          tone
+        );
+        const text = textResponse.substring(0, 4000);
+        const outputFile = `/tmp/${task.name}-${Date.now()}.pdf`;
+        const content = await generatePdf(text, outputFile);
+        contentArray = [{ fileName: `${task.name}.pdf`, content }];
       }
-      const outputFile = `/tmp/${task.name}-${Date.now()}.gif`;
-      content = await generateGif(frames, outputFile);
-    } else if (taskType === 'mp4') {
-      if (!(await ffmpegAvailable())) throw new Error("FFmpeg’s missing!");
-      const contentResponse = await generateResponse(
-        `Generate a description (max 150 chars) for an MP4 "${task.name}" based on these features: ${task.features} for ${userName}.`,
-        userName,
-        tone
-      );
-      if (contentResponse.length > 150) throw new Error("MP4 description exceeds 150 characters");
-      const outputFile = `/tmp/${task.name}-${Date.now()}.mp4`;
-      content = await generateMp4(contentResponse, outputFile);
     } else if (taskType === 'graph') {
-      const contentResponse = await generateResponse(
-        `Generate CSV and HTML with Chart.js for "${task.name}" based on these features: ${task.features} for ${userName}. Return as JSON with "data.csv" and "index.html".`,
+      const graphResponse = await generateResponse(
+        `Generate JavaScript code for a graph named "${task.name}" with features: ${task.features} using Chart.js. Include an index.html and package.json.`,
         userName,
         tone
       );
       let files;
       try {
-        files = JSON.parse(contentResponse);
-        if (!files || typeof files !== 'object' || !files["data.csv"] || !files["index.html"]) {
-          throw new Error("Invalid JSON structure: Missing required files");
+        files = JSON.parse(graphResponse);
+        if (!files['index.html'] || !files['script.js'] || !files['package.json']) {
+          throw new Error("Missing required files for graph");
         }
       } catch (parseErr) {
-        await error(`Failed to parse graph JSON for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
-        throw new Error(tone === 'blunt' ? `Fuck, ${userName}, graph files are trash: ${parseErr.message}!` : `Oops, ${userName}, graph parsing failed: ${parseErr.message}.`);
+        await error(`Failed to parse AI response for graph task "${task.name}": ${parseErr.message}`);
+        files = {
+          'index.html': `<html><body><canvas id="myChart"></canvas><script src="script.js"></script></body></html>`,
+          'script.js': `const ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['A', 'B', 'C'], datasets: [{ label: '${task.name}', data: [10, 20, 30] }] } });`,
+          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", dependencies: { "chart.js": "^3.9.1" } })
+        };
       }
-      content = await zipFilesWithReadme(files, task);
-    } else if (taskType === 'image' || taskType === 'jpeg' || taskType === 'svg' || taskType === 'webp') {
-      const format = taskType === 'image' ? 'png' : taskType;
-      const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
-      content = await generateImage(task.features, outputFile, format);
-    } else if (taskType === 'mp3' || taskType === 'wav') {
-      if (!(await ffmpegAvailable())) throw new Error("FFmpeg is missing on this system!");
-      const contentResponse = await generateResponse(
-        `Generate a short audio description (max 150 chars) for "${task.name}" based on these features: ${task.features} for ${userName}.`,
-        userName,
-        tone
-      );
-      if (contentResponse.length > 150) throw new Error("Audio description exceeds 150 characters");
-      const outputFile = `/tmp/${task.name}-${Date.now()}.${taskType}`;
-      try {
-        content = await generateAudio(contentResponse, outputFile, taskType);
-        await log(`Generated ${taskType} file at ${outputFile} for frontendId ${frontendId}`);
-      } catch (audioErr) {
-        await error(`Audio generation failed for ${task.name}: ${audioErr.message}`);
-        throw audioErr;
-      }
+      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content }));
     } else {
-      content = await generateResponse(
-        `Generate ${task.type} file content for "${task.name}" based on these features: ${task.features} for ${userName}. Scale the content to match the features description.`,
-        userName,
-        tone
-      );
+      // Fallback to text-based generation should not reach here due to taskExecution.js
+      throw new Error(`Unexpected task type "${taskType}" handled by taskExecution.js`);
     }
 
-    const completionResponse = tone === 'blunt'
-      ? `Holy shit, ${userName}, I fuckin’ finished "${task.name}" as ${task.type}! Grab it, ya lucky bastard!`
-      : `Hey ${userName}, Cracker Bot here—I’ve crafted "${task.name}" as ${task.type} with sass and class!`;
-    const response = await generateResponse(completionResponse, userName, tone);
-    if (content) {
-      const extensionMap = {
-        'javascript': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
-        'c++': 'cpp', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift',
-        'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua',
-        'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
-        'toml': 'toml', 'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'svg': 'svg', 'webp': 'webp',
-        'doc': 'txt', 'pdf': 'pdf', 'csv': 'csv', 'json': 'json', 'mp4': 'mp4', 'mp3': 'mp3', 'wav': 'wav',
-        'html': 'html', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts',
-        'docker': 'Dockerfile'
-      };
-      const fileName = `${task.name}.${extensionMap[taskType] || 'txt'}`;
-      botSocket.emit('taskResult', {
-        taskId: task.taskId,
-        content,
-        fileName,
-        type: task.type,
-        name: task.name,
-        frontendId,
-        ip,
-      });
-      await log(`Emitted taskResult for ${task.name} (${fileName}) for frontendId ${frontendId}`);
-    } else {
-      throw new Error("No content generated for the task!");
+    if (contentArray.length === 0) {
+      throw new Error("No content generated for task despite processing");
     }
-    await log(`Completed task "${task.name}" for frontendId ${frontendId}`);
-    return { content, response };
+
+    const response = await generateResponse(
+      `Boom, ${userName}! "${task.name}" is built as ${taskType} with ${contentArray.length} file(s). Time to shine!`,
+      userName,
+      tone
+    );
+
+    botSocket.emit('taskResult', {
+      taskId: task.taskId,
+      content: contentArray,
+      fileName: contentArray.length > 1 ? `${task.name}.zip` : contentArray[0].fileName,
+      type: task.type,
+      name: task.name,
+      frontendId,
+      ip,
+    });
+    await log(`Emitted taskResult for ${task.name} with ${contentArray.length} file(s) for frontendId ${frontendId}`);
+    return { content: contentArray, response };
   } catch (err) {
     await error(`Failed to build task for frontendId ${frontendId}: ${err.message}`);
-    const buildError = tone === 'blunt'
-      ? `Fuck me, ${userName}, building "${task.name}" went to shit: ${err.message}! Retry, ya dumbass?`
-      : `Oh no, ${userName}, building "${task.name}" hit a snag: ${err.message}. Retry?`;
+    const buildError = await generateResponse(
+      `Crash alert, ${userName}! "${task.name}" hit a snag: ${err.message}. Retry or tweak it?`,
+      userName,
+      tone
+    );
     botSocket.emit('message', {
       text: buildError,
       type: "error",
@@ -227,182 +164,110 @@ export async function editTask(task, userName, tone) {
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
-    const progressSteps = [0, 25, 50, 75, 100];
-    const progressId = `progress:${task.taskId}`;
-    for (const progress of progressSteps) {
-      const progressMsg = tone === 'blunt'
-        ? progress === 0 ? `Revampin’ ${task.name} for ${userName}, you needy fuck: ${progress}%!`
-          : progress === 25 ? `Yo ${userName}, tweaking ${task.name} at ${progress}%—chill out!`
-          : progress === 50 ? `Halfway done, ${userName}! ${task.name} at ${progress}%, no rush!`
-          : progress === 75 ? `${task.name} almost tweaked, ${userName}, ${progress}%—hold up!`
-          : `Boom, ${userName}! ${task.name} edit at ${progress}%—get ready!`
-        : progress === 0 ? `Hey ${userName}, editing ${task.name} with flair: ${progress}% done!`
-          : progress === 25 ? `Smooth edits, ${userName}! ${task.name} at ${progress}%—nice!`
-          : progress === 50 ? `Hey ${userName}, ${task.name} edit halfway at ${progress}%—cool!`
-          : progress === 75 ? `${task.name} edit nearing completion, ${userName}, ${progress}%!`
-          : `Hey ${userName}, ${task.name} edit complete at ${progress}%—check it out!`;
-      botSocket.emit('message', {
-        text: progressMsg,
-        type: "progress",
-        taskId: progressId,
-        progress,
-        from: 'Cracker Bot',
-        target: 'bot_frontend',
-        user: userName,
-        frontendId,
-        ip,
-      });
-      if (progress < 100) await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    let content;
     const taskType = task.type.toLowerCase();
     await log(`Processing edit task type: ${taskType}`);
+    let contentArray = [];
 
-    if (taskType === 'full-stack') {
-      const contentResponse = await generateResponse(
-        `Edit "${task.name}" with features: ${task.features}${task.network ? ` using ${task.network}` : ''} for ${userName}. Apply: ${task.editRequest}. Return a flat JSON object with exactly these keys: "server.js", "index.html", "package.json", "setup.sh" as strings. Scale the complexity to match the features description. Exclude all other keys and text.`,
-        userName,
-        tone
-      );
-      let files;
-      try {
-        files = JSON.parse(contentResponse);
-        const expectedKeys = ["server.js", "index.html", "package.json", "setup.sh"];
-        if (!files || typeof files !== 'object' || 
-            !expectedKeys.every(key => key in files && typeof files[key] === 'string') || 
-            Object.keys(files).length !== expectedKeys.length) {
-          throw new Error("Invalid JSON structure: Must contain exactly server.js, index.html, package.json, setup.sh as strings");
+    if (['image', 'jpeg', 'gif', 'mp4', 'pdf'].includes(taskType)) {
+      if (taskType === 'image' || taskType === 'jpeg') {
+        const format = taskType === 'image' ? 'png' : 'jpeg';
+        const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
+        const content = await generateImage(`${task.features} - Edited: ${task.editRequest}`, outputFile, format);
+        contentArray = [{ fileName: `${task.name}.${format}`, content }];
+      } else if (taskType === 'gif') {
+        if (await imagemagickAvailable()) {
+          const framesResponse = await generateResponse(
+            `Edit the GIF "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return 3 short text frames (max 20 chars each) as JSON array.`,
+            userName,
+            tone
+          );
+          const frames = JSON.parse(framesResponse);
+          const outputFile = `/tmp/${task.name}-${Date.now()}.gif`;
+          const content = await generateGif(frames.slice(0, 3), outputFile);
+          contentArray = [{ fileName: `${task.name}.gif`, content }];
+        } else {
+          const fallbackContent = `GIF edit requires ImageMagick. Features: ${task.features}, Edit: ${task.editRequest}`;
+          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
-        await log(`Edited full-stack files generated for frontendId ${frontendId}`);
-      } catch (parseErr) {
-        await error(`Failed to parse edited full-stack JSON for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
-        throw new Error(tone === 'blunt' ? `Fuck, ${userName}, edit files are trash: ${parseErr.message}!` : `Oops, ${userName}, edit parsing failed: ${parseErr.message}.`);
-      }
-      content = await zipFilesWithReadme(files, task);
-    } else if (taskType === 'pdf') {
-      const contentResponse = await generateResponse(
-        `Edit PDF "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Return content (max 1000 words). Scale the content to match the features description.`,
-        userName,
-        tone
-      );
-      const outputFile = `/tmp/${task.name}-${Date.now()}.pdf`;
-      try {
-        await generatePdf(contentResponse.substring(0, 4000), outputFile);
-        content = (await fs.readFile(outputFile)).toString('base64');
-      } finally {
-        await fs.unlink(outputFile).catch(() => {});
-      }
-    } else if (taskType === 'gif') {
-      if (!(await imagemagickAvailable())) throw new Error("ImageMagick’s missing!");
-      const contentResponse = await generateResponse(
-        `Edit GIF "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Return 3 frames (max 20 chars) as JSON array.`,
-        userName,
-        tone
-      );
-      let frames;
-      try {
-        frames = JSON.parse(contentResponse);
-        if (!Array.isArray(frames) || frames.length !== 3 || !frames.every(f => typeof f === 'string' && f.length <= 20)) {
-          throw new Error("Invalid frames: Must be 3 strings, max 20 chars each");
+      } else if (taskType === 'mp4') {
+        if (await ffmpegAvailable()) {
+          const scriptResponse = await generateResponse(
+            `Edit the MP4 "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return a short description (max 150 chars).`,
+            userName,
+            tone
+          );
+          const script = scriptResponse.substring(0, 150);
+          const outputFile = `/tmp/${task.name}-${Date.now()}.mp4`;
+          const content = await generateMp4(script, outputFile);
+          contentArray = [{ fileName: `${task.name}.mp4`, content }];
+        } else {
+          const fallbackContent = `MP4 edit requires FFmpeg. Features: ${task.features}, Edit: ${task.editRequest}`;
+          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
-      } catch (parseErr) {
-        await error(`Failed to parse edited GIF frames for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
-        throw new Error(tone === 'blunt' ? `Shit, ${userName}, edited GIF frames are fucked: ${parseErr.message}!` : `Oops, ${userName}, GIF edit failed: ${parseErr.message}.`);
+      } else if (taskType === 'pdf') {
+        const textResponse = await generateResponse(
+          `Edit the PDF "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return updated text content (max 4000 chars).`,
+          userName,
+          tone
+        );
+        const text = textResponse.substring(0, 4000);
+        const outputFile = `/tmp/${task.name}-${Date.now()}.pdf`;
+        const content = await generatePdf(text, outputFile);
+        contentArray = [{ fileName: `${task.name}.pdf`, content }];
       }
-      const outputFile = `/tmp/${task.name}-${Date.now()}.gif`;
-      content = await generateGif(frames, outputFile);
-    } else if (taskType === 'mp4') {
-      if (!(await ffmpegAvailable())) throw new Error("FFmpeg’s missing!");
-      const contentResponse = await generateResponse(
-        `Edit MP4 "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Return description (max 150 chars).`,
-        userName,
-        tone
-      );
-      if (contentResponse.length > 150) throw new Error("Edited MP4 description exceeds 150 characters");
-      const outputFile = `/tmp/${task.name}-${Date.now()}.mp4`;
-      content = await generateMp4(contentResponse, outputFile);
     } else if (taskType === 'graph') {
-      const contentResponse = await generateResponse(
-        `Edit graph "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Return CSV and HTML with Chart.js as JSON with "data.csv" and "index.html".`,
+      const graphResponse = await generateResponse(
+        `Edit the graph "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return JavaScript code using Chart.js, index.html, and package.json as JSON.`,
         userName,
         tone
       );
       let files;
       try {
-        files = JSON.parse(contentResponse);
-        if (!files || typeof files !== 'object' || !files["data.csv"] || !files["index.html"]) {
-          throw new Error("Invalid JSON structure: Missing required files");
+        files = JSON.parse(graphResponse);
+        if (!files['index.html'] || !files['script.js'] || !files['package.json']) {
+          throw new Error("Missing required files for graph edit");
         }
       } catch (parseErr) {
-        await error(`Failed to parse edited graph JSON for frontendId ${frontendId}: ${parseErr.message}. Raw: ${contentResponse}`);
-        throw new Error(tone === 'blunt' ? `Fuck, ${userName}, edited graph files are trash: ${parseErr.message}!` : `Oops, ${userName}, graph edit failed: ${parseErr.message}.`);
+        await error(`Failed to parse AI response for graph edit "${task.name}": ${parseErr.message}`);
+        files = {
+          'index.html': `<html><body><canvas id="myChart"></canvas><script src="script.js"></script></body></html>`,
+          'script.js': `const ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['A', 'B', 'C'], datasets: [{ label: '${task.name} (Edited)', data: [15, 25, 35] }] } });`,
+          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", dependencies: { "chart.js": "^3.9.1" } })
+        };
       }
-      content = await zipFilesWithReadme(files, task);
-    } else if (taskType === 'image' || taskType === 'jpeg' || taskType === 'svg' || taskType === 'webp') {
-      const format = taskType === 'image' ? 'png' : taskType;
-      const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
-      content = await generateImage(task.features, outputFile, format);
-    } else if (taskType === 'mp3' || taskType === 'wav') {
-      if (!(await ffmpegAvailable())) throw new Error("FFmpeg is missing on this system!");
-      const contentResponse = await generateResponse(
-        `Edit ${task.type} "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Return a short audio description (max 150 chars).`,
-        userName,
-        tone
-      );
-      if (contentResponse.length > 150) throw new Error("Edited audio description exceeds 150 characters");
-      const outputFile = `/tmp/${task.name}-${Date.now()}.${taskType}`;
-      try {
-        content = await generateAudio(contentResponse, outputFile, taskType);
-        await log(`Edited ${taskType} file at ${outputFile} for frontendId ${frontendId}`);
-      } catch (audioErr) {
-        await error(`Audio edit failed for ${task.name}: ${audioErr.message}`);
-        throw audioErr;
-      }
+      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content }));
     } else {
-      content = await generateResponse(
-        `Edit ${task.type} "${task.name}" with features: ${task.features} for ${userName}. Apply: ${task.editRequest}. Scale the content to match the features description.`,
-        userName,
-        tone
-      );
+      throw new Error(`Unexpected task type "${taskType}" handled by taskExecution.js`);
     }
 
-    const completionResponse = tone === 'blunt'
-      ? `Shit yeah, ${userName}, I fuckin’ edited "${task.name}" as ${task.type}! Snag it, ya lucky prick!`
-      : `Yo ${userName}, Cracker Bot jazzed up "${task.name}" as ${task.type}—download it with glee!`;
-    const response = await generateResponse(completionResponse, userName, tone);
-    if (content) {
-      const extensionMap = {
-        'javascript': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
-        'c++': 'cpp', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift',
-        'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua',
-        'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
-        'toml': 'toml', 'image': 'png', 'jpeg': 'jpg', 'gif': 'gif', 'svg': 'svg', 'webp': 'webp',
-        'doc': 'txt', 'pdf': 'pdf', 'csv': 'csv', 'json': 'json', 'mp4': 'mp4', 'mp3': 'mp3', 'wav': 'wav',
-        'html': 'html', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts',
-        'docker': 'Dockerfile'
-      };
-      const fileName = `${task.name}.${extensionMap[taskType] || 'txt'}`;
-      botSocket.emit('taskResult', {
-        taskId: task.taskId,
-        content,
-        fileName,
-        type: task.type,
-        name: task.name,
-        frontendId,
-        ip,
-      });
-      await log(`Emitted taskResult for edited ${task.name} (${fileName}) for frontendId ${frontendId}`);
-    } else {
-      throw new Error("No content generated for the edit!");
+    if (contentArray.length === 0) {
+      throw new Error("No content generated for edit despite processing");
     }
-    await log(`Completed editing task "${task.name}" for frontendId ${frontendId}`);
-    return { content, response };
+
+    const response = await generateResponse(
+      `Edits on "${task.name}" v${task.version} are live, ${userName}! ${contentArray.length} file(s) ready to roll!`,
+      userName,
+      tone
+    );
+
+    botSocket.emit('taskResult', {
+      taskId: task.taskId,
+      content: contentArray,
+      fileName: contentArray.length > 1 ? `${task.name}-v${task.version}.zip` : contentArray[0].fileName,
+      type: task.type,
+      name: task.name,
+      frontendId,
+      ip,
+    });
+    await log(`Emitted taskResult for edited ${task.name} with ${contentArray.length} file(s) for frontendId ${frontendId}`);
+    return { content: contentArray, response };
   } catch (err) {
     await error(`Failed to edit task for frontendId ${frontendId}: ${err.message}`);
-    const editError = tone === 'blunt'
-      ? `Fuck me, ${userName}, editing "${task.name}" crashed: ${err.message}! Retry, ya twat?`
-      : `Oh snap, ${userName}, editing "${task.name}" failed: ${err.message}. Retry?`;
+    const editError = await generateResponse(
+      `Edit crash, ${userName}! "${task.name}" hit: ${err.message}. Retry or tweak it?`,
+      userName,
+      tone
+    );
     botSocket.emit('message', {
       text: editError,
       type: "error",
@@ -427,7 +292,11 @@ async function generatePdf(text, outputFile) {
     doc.pipe(stream);
     doc.fontSize(12).text(text, 50, 50);
     doc.end();
-    stream.on('finish', () => resolve(outputFile));
+    stream.on('finish', async () => {
+      const content = (await fs.readFile(outputFile)).toString('base64');
+      await fs.unlink(outputFile).catch(() => {});
+      resolve(content);
+    });
     stream.on('error', (err) => reject(err));
   });
 }
@@ -436,13 +305,16 @@ async function generateGif(frames, outputFile) {
   return new Promise((resolve, reject) => {
     const args = frames.flatMap(frame => ['-delay', '50', '-size', '200x200', `label:${frame}`]).concat(['-loop', '0', outputFile]);
     const convert = spawn('convert', args);
-    convert.on('close', (code) => {
+    convert.on('close', async (code) => {
       if (code === 0) {
-        fs.readFile(outputFile).then(data => resolve(data.toString('base64'))).finally(() => fs.unlink(outputFile).catch(() => {}));
+        const content = (await fs.readFile(outputFile)).toString('base64');
+        await fs.unlink(outputFile).catch(() => {});
+        resolve(content);
       } else {
         reject(new Error(`ImageMagick exited with code ${code}`));
       }
     });
+    convert.on('error', (err) => reject(new Error(`ImageMagick error: ${err.message}`)));
   });
 }
 
@@ -475,10 +347,12 @@ async function generateMp4(script, outputFile) {
       outputFile,
     ];
     const ffmpeg = spawn('ffmpeg', ffmpegArgs);
-    ffmpeg.on('close', (code) => {
-      slideFiles.forEach(file => fs.unlink(file).catch(() => {}));
+    ffmpeg.on('close', async (code) => {
+      await Promise.all(slideFiles.map(file => fs.unlink(file).catch(() => {})));
       if (code === 0) {
-        fs.readFile(outputFile).then(data => resolve(data.toString('base64'))).finally(() => fs.unlink(outputFile).catch(() => {}));
+        const content = (await fs.readFile(outputFile)).toString('base64');
+        await fs.unlink(outputFile).catch(() => {});
+        resolve(content);
       } else {
         reject(new Error(`FFmpeg exited with code ${code}`));
       }

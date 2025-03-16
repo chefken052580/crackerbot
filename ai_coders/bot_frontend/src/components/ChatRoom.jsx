@@ -32,7 +32,6 @@ const colorSchemes = {
     accent: "text-neon-yellow",
     bubble: "bg-purple-600 hover:bg-yellow-400 text-white font-semibold",
   },
-  // ... (other color schemes unchanged)
 };
 
 const ChatRoom = () => {
@@ -44,8 +43,9 @@ const ChatRoom = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isTyping, setIsTyping] = useState({});
   const [taskPending, setTaskPending] = useState(null);
-  const [currentTask, setCurrentTask] = useState({});
-  const [progressMessage, setProgressMessage] = useState(null); // Single progress message
+  const [currentTask, setCurrentTask] = useState(null);
+  const [progressMessage, setProgressMessage] = useState(null);
+  const [editMode, setEditMode] = useState(null);
   const [colorScheme, setColorScheme] = useState(localStorage.getItem('colorScheme') || "neon");
   const [playSound, setPlaySound] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
@@ -111,47 +111,48 @@ const ChatRoom = () => {
         taskName: data.taskName,
         taskType: data.taskType,
         taskFeatures: data.taskFeatures,
-        progress: data.progress, // Include progress if present
+        progress: data.progress,
       };
 
       if (data.type === "progress") {
         setProgressMessage((prev) => ({
-          ...prev,
           ...newMessage,
-          id: data.taskId, // Use taskId to identify this progress message
+          id: data.taskId,
         }));
-        if (data.progress === 100) setTimeout(() => setProgressMessage(null), 2000);
+        if (data.progress === 100) {
+          setCurrentTask((prev) => prev ? { ...prev, status: 'building_complete' } : null);
+        }
+      } else if (data.type === "question" && data.taskId) {
+        setMessages((prev) => [...prev, newMessage]);
+        setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
+        setCurrentTask({
+          taskId: data.taskId,
+          name: data.taskName || "Pending",
+          type: data.taskType || "Pending",
+          features: data.taskFeatures || "Pending",
+          step: data.text.includes("task name") || data.text.includes("call this") ? "name" :
+                data.text.includes("type") || data.text.includes("should this be") ? "type" :
+                data.text.includes("features") || data.text.includes("want in it") ? "features" :
+                data.text.includes("Should we shoot") ? "choice" : "name",
+          status: 'pending'
+        });
+        setEditMode(null);
+      } else if (data.type === "success" && data.options && data.user !== "Guest") {
+        setMessages((prev) => [...prev, newMessage]);
+        setTaskPending(null);
+      } else if (data.type === "download") {
+        setMessages((prev) => [...prev, newMessage]);
+        setProgressMessage(null);
+        setTaskPending(null);
+        setCurrentTask((prev) => prev ? { ...prev, status: 'completed' } : null);
+        setEditMode(data.taskId);
+      } else if (data.type === "error" && data.taskId) {
+        setMessages((prev) => [...prev, newMessage]);
+        setProgressMessage(null);
+        setCurrentTask(null);
+        setEditMode(null);
       } else {
         setMessages((prev) => [...prev, newMessage]);
-        if (data.type === "question" && data.taskId) {
-          setTaskPending({ taskId: data.taskId, question: data.text });
-          setCurrentTask((prev) => ({
-            ...prev,
-            [data.taskId]: {
-              ...prev[data.taskId],
-              name: data.taskName || prev[data.taskId]?.name,
-              type: data.taskType || prev[data.taskId]?.type,
-              features: data.taskFeatures || prev[data.taskId]?.features,
-              step: data.text.includes("task name") || data.text.includes("call this") ? "name" :
-                    data.text.includes("type") || data.text.includes("should this be") ? "type" :
-                    data.text.includes("features") || data.text.includes("want in it") ? "features" :
-                    data.text.includes("Should we shoot") ? "choice" : prev[data.taskId]?.step || "name"
-            }
-          }));
-        } else if (data.type === "task_response" && data.taskId) {
-          setCurrentTask((prev) => {
-            const current = prev[data.taskId] || {};
-            if (current.step === "name") {
-              return { ...prev, [data.taskId]: { ...current, name: data.text, step: "type" } };
-            } else if (current.step === "type") {
-              return { ...prev, [data.taskId]: { ...current, type: data.text, step: "features" } };
-            } else if (current.step === "features") {
-              return { ...prev, [data.taskId]: { ...current, features: data.text, step: "building" } };
-            }
-            return prev;
-          });
-          setTaskPending(null);
-        }
       }
 
       if (data.user && data.user !== "Guest") {
@@ -244,6 +245,7 @@ const ChatRoom = () => {
         localStorage.setItem('userName', messageText.trim());
         messageData.user = messageText.trim();
         console.log("ChatRoom: Set userName in localStorage from task response:", messageText.trim());
+        setTaskPending(null);
       }
     } else if (messageText.startsWith("/")) {
       messageData.type = "command";
@@ -262,12 +264,14 @@ const ChatRoom = () => {
     const value = e.target.value;
     setInput(value);
     if (value.startsWith("/") && !taskPending) {
-      const filtered = commands.filter(cmd => cmd.command.startsWith(value.split(' ')[0]));
+      const query = value.split(' ')[0].toLowerCase();
+      const filtered = commands.filter(cmd => cmd.command.toLowerCase().startsWith(query));
       setFilteredCommands(filtered);
       setShowCommands(filtered.length > 0);
       setCommandIndex(filtered.length > 0 ? 0 : -1);
     } else {
       setShowCommands(false);
+      setCommandIndex(-1);
     }
   };
 
@@ -277,6 +281,8 @@ const ChatRoom = () => {
       if (showCommands && commandIndex >= 0) {
         const selectedCommand = filteredCommands[commandIndex].command + " ";
         setInput(selectedCommand);
+        setShowCommands(false);
+        setCommandIndex(-1);
       } else {
         sendMessage(input);
       }
@@ -357,8 +363,9 @@ const ChatRoom = () => {
       localStorage.removeItem('userName');
       setMessages([]);
       setTaskPending(null);
-      setCurrentTask({});
+      setCurrentTask(null);
       setProgressMessage(null);
+      setEditMode(null);
       socketRef.current.disconnect();
       socketRef.current.connect();
       setMessages((prev) => [...prev, { 
@@ -404,7 +411,9 @@ const ChatRoom = () => {
   return (
     <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text}`}>
       <div className="flex-shrink-0 p-4 flex justify-between items-center">
-        <h2 className={`text-2xl font-bold ${currentScheme.accent}`}>Cracker Bot Chat Room</h2>
+        <h2 className={`text-2xl font-bold ${currentScheme.accent}`}>
+          Cracker Bot Chat Room {editMode ? "(Edit Mode)" : ""}
+        </h2>
         <div className="flex space-x-2">
           <select
             value={colorScheme}
@@ -458,9 +467,9 @@ const ChatRoom = () => {
       </div>
 
       <div className="flex-1 flex items-center justify-center">
-        <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4`}>
+        <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? 'border-2 border-neon-yellow' : ''}`}>
           <div className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}>
-            {messages.map((msg, index) => (
+            {messages.filter(msg => msg.type !== "progress" || (msg.type === "progress" && msg.progress < 100)).map((msg, index) => (
               <div key={index}>
                 <ChatMessage
                   message={msg}
@@ -484,11 +493,11 @@ const ChatRoom = () => {
             <div ref={chatEndRef} />
           </div>
 
-          {taskPending && currentTask[taskPending.taskId] && (
+          {currentTask && (
             <div className={`text-gray-400 my-2`}>
-              Task: {currentTask[taskPending.taskId].name || "Pending"} | 
-              Type: {currentTask[taskPending.taskId].type || "Pending"} | 
-              Features: {currentTask[taskPending.taskId].features || "Pending"}
+              Task: {currentTask.name} | 
+              Type: {currentTask.type} | 
+              Features: {currentTask.features || "Pending"}
             </div>
           )}
 
@@ -497,7 +506,7 @@ const ChatRoom = () => {
               ref={commandsRef}
               tabIndex={0}
               onKeyDown={handleKeyDown}
-              className={`relative ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10 max-h-40 overflow-y-auto`}
+              className={`absolute ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10 max-h-40 overflow-y-auto`}
             >
               {filteredCommands.map((cmd, idx) => (
                 <div
@@ -518,7 +527,7 @@ const ChatRoom = () => {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={taskPending ? `Answer: ${taskPending.question}` : "Type your message or /command..."}
+              placeholder={taskPending ? `Answer: ${taskPending.question}` : editMode ? "Edit or add more..." : "Type your message or /command..."}
               className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-gray-600 ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-${currentScheme.accent.split('-')[1]}`}
             />
             <button
