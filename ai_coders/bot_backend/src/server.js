@@ -14,17 +14,27 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || "https://visually-sterling-spider.ngrok-free.app" }));
+// Dynamic CORS configuration
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ["https://visually-sterling-spider.ngrok-free.app"];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+}));
 app.use(express.json());
 
 app.get('/health', async (req, res) => {
-  console.log('Healthcheck requested');
+  console.log(`[${new Date().toISOString()}] Healthcheck requested`);
   await log('Healthcheck requested');
   res.status(200).send('bot_backend is healthy!');
 });
 
 botSocket.on('command', async (data) => {
-  console.log(`${BOT_NAME} received command:`, data.command, data.args);
+  console.log(`[${new Date().toISOString()}] ${BOT_NAME} received command:`, data.command, data.args);
   await log(`Received command: ${JSON.stringify(data)}`);
   if (data.command === 'buildTask' || data.command === 'editTask') {
     await handleTask(data);
@@ -34,7 +44,7 @@ botSocket.on('command', async (data) => {
 });
 
 botSocket.onAny(async (event, ...args) => {
-  console.log(`${BOT_NAME} received event: ${event}`, args);
+  console.log(`[${new Date().toISOString()}] ${BOT_NAME} received event: ${event}`, args);
   await log(`${BOT_NAME} received event: ${event} with args: ${JSON.stringify(args)}`);
 });
 
@@ -49,6 +59,19 @@ setInterval(async () => {
 async function handleTask(data) {
   const { command, args } = data;
   const { task: taskData, userName, tone } = args;
+
+  // Input validation
+  if (!taskData || !taskData.taskId || !taskData.type) {
+    await error(`Invalid task data: missing taskId or type for command ${command}`);
+    botSocket.emit('taskResult', {
+      taskId: taskData?.taskId || 'unknown',
+      error: 'Invalid task data: missing taskId or type',
+      frontendId: taskData?.frontendId || 'unknown',
+      ip: args.ip,
+    });
+    return;
+  }
+
   await log(`Handling task: ${command} for taskId ${taskData.taskId}`);
   let result;
 
@@ -65,33 +88,33 @@ async function handleTask(data) {
 
     if (result && result.content) {
       let finalContent, finalFileName;
-      const contentArray = Array.isArray(result.content) ? result.content : [{ fileName: `${taskData.name}.${taskData.type || 'txt'}`, content: result.content }];
+      const contentArray = Array.isArray(result.content) ? result.content : [{ fileName: `${taskData.name || 'unnamed'}.${taskData.type || 'txt'}`, content: result.content }];
       if (contentArray.length > 1) {
-        const files = Object.fromEntries(contentArray.map(item => [item.fileName, item.content]));
+        const files = Object.fromEntries(contentArray.map(item => [item.fileName, Buffer.from(item.content, 'base64')])); // Decode base64 to Buffer
         finalContent = await zipFilesWithReadme(files, taskData);
-        finalFileName = `${taskData.name}-v${taskData.version || 1}.zip`;
+        finalFileName = `${taskData.name || 'unnamed'}-v${taskData.version || 1}.zip`;
       } else {
-        finalContent = contentArray[0].content;
+        finalContent = contentArray[0].content; // Already base64
         finalFileName = contentArray[0].fileName;
       }
 
       await log(`Task result prepared: ${finalFileName} for frontendId ${taskData.frontendId}`);
       botSocket.emit('taskResult', {
         taskId: taskData.taskId,
-        content: Buffer.isBuffer(finalContent) ? finalContent.toString('base64') : finalContent,
+        content: Buffer.isBuffer(finalContent) ? finalContent.toString('base64') : finalContent, // Ensure base64
         fileName: finalFileName,
         type: taskData.type || 'text',
         name: taskData.name || 'unnamed',
         frontendId: taskData.frontendId,
         ip: args.ip,
       });
-      console.log(`Task result emitted for frontendId ${taskData.frontendId}: ${finalFileName}`);
+      console.log(`[${new Date().toISOString()}] Task result emitted for frontendId ${taskData.frontendId}: ${finalFileName}`);
       await log(`Task result emitted for frontendId ${taskData.frontendId}: ${finalFileName}`);
     } else {
       throw new Error(result?.error || 'No content generated');
     }
   } catch (err) {
-    console.error(`Task failed for frontendId ${taskData.frontendId}: ${err.message}`);
+    console.error(`[${new Date().toISOString()}] Task failed for frontendId ${taskData.frontendId}: ${err.message}`);
     await error(`Task failed: ${err.message} for frontendId ${taskData.frontendId}`);
     botSocket.emit('taskResult', {
       taskId: taskData.taskId,
@@ -103,7 +126,7 @@ async function handleTask(data) {
 }
 
 server.listen(PORT, async () => {
-  console.log(`bot_backend server running on port ${PORT}`);
+  console.log(`[${new Date().toISOString()}] bot_backend server running on port ${PORT}`);
   await log(`bot_backend server running on port ${PORT}`);
-  await log('server.js version 2025-03-15-3 loaded');
+  await log('server.js version 2025-03-16-1 loaded');
 });

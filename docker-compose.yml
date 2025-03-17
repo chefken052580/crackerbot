@@ -11,7 +11,7 @@ services:
       - crackerbot-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 30s  # Updated from 10s
       timeout: 5s
       retries: 5
 
@@ -30,11 +30,11 @@ services:
         condition: service_healthy
     networks:
       - crackerbot-network
-    volumes:
-      - ./ai_coders/websocket_server:/websocket_server
+    # volumes:
+    #   - ./ai_coders/websocket_server:/websocket_server  # Kept removed as per previous update
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
-      interval: 10s
+      interval: 30s  # Updated from 10s
       timeout: 5s
       retries: 5
     logging:
@@ -74,7 +74,7 @@ services:
       - bot_lead_logs:/bot_lead/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-      interval: 10s
+      interval: 30s  # Updated from 10s
       timeout: 5s
       retries: 5
     logging:
@@ -137,7 +137,7 @@ services:
       - crackerbot-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 10s
+      interval: 30s  # Updated from 10s
       timeout: 5s
       retries: 5
     logging:

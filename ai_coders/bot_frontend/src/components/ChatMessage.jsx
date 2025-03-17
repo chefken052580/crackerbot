@@ -3,11 +3,19 @@ import React, { useEffect, useState } from 'react';
 const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
   const [progress, setProgress] = useState(message.type === "progress" ? message.progress : 0);
   const [displayText, setDisplayText] = useState(message.text);
+  const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
     if (message.type === "progress") {
       setProgress(message.progress);
-      setDisplayText(message.text); // No percentage appended, handled by bar
+      setDisplayText(message.text);
+      // Hide progress message when it reaches 100% (cleanup)
+      if (message.progress === 100) {
+        const timeout = setTimeout(() => setIsVisible(false), 1000); // Delay to allow visibility before hiding
+        return () => clearTimeout(timeout);
+      }
+    } else {
+      setIsVisible(true); // Ensure non-progress messages are always visible
     }
   }, [message.progress, message.text, message.type]);
 
@@ -97,6 +105,9 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
     parseOptions(message.text, message.options) : [];
   const displayUser = message.from || message.user || message.userId || "Admin";
 
+  // Don’t render if progress message is no longer visible
+  if (!isVisible) return null;
+
   return (
     <div className={`p-2 mb-2 rounded-md ${getMessageStyle(message.type)} break-words whitespace-pre-wrap flex justify-between items-start`}>
       <div>
@@ -110,6 +121,24 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
                 style={{ width: `${progress}%`, animation: progress < 100 ? 'pulse 1.5s infinite' : 'none' }}
               ></div>
             </div>
+          </>
+        ) : message.downloadUrl ? ( // Handle downloadUrl from ChatRoom.jsx taskResult
+          <>
+            {message.text}{' '}
+            <button
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = message.downloadUrl;
+                link.download = message.fileName || `${message.taskName || 'file'}.${message.taskType || 'txt'}`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              className={`${colorScheme.accent} underline hover:text-neon-green ml-2`}
+              aria-label={`Download ${message.fileName || 'file'}`}
+            >
+              Download {message.fileName || 'file'}
+            </button>
           </>
         ) : message.type === "download" || (message.type === "success" && message.fileContent) ? (
           <>
@@ -125,7 +154,7 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
             )}
             {message.fileContent && (
               <button
-                onClick={() => handleDownloadClick(message.fileName || `${message.taskId || 'file'}.${message.type === 'zip' ? 'zip' : 'txt'}`, message.fileContent)}
+                onClick={() => handleDownloadClick(message.fileName || `${message.taskId || 'file'}.${message.taskType || 'txt'}`, message.fileContent)}
                 className={`${colorScheme.accent} underline hover:text-neon-green ml-2`}
                 aria-label={`Download ${message.fileName || 'file'}`}
               >

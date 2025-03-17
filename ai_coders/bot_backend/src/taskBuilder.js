@@ -12,31 +12,50 @@ let JSZip;
 try {
   JSZip = require('jszip');
 } catch (e) {
-  console.error('Failed to load jszip:', e.message);
+  console.error(`[${new Date().toISOString()}] Failed to load jszip:`, e.message);
   process.exit(1);
 }
 
+/** Checks if FFmpeg is available on the system */
 const ffmpegAvailable = () => new Promise((resolve) => {
   const ffmpeg = spawn('ffmpeg', ['-version']);
   ffmpeg.on('error', () => resolve(false));
   ffmpeg.on('close', (code) => resolve(code === 0));
 });
 
+/** Checks if ImageMagick is available on the system */
 const imagemagickAvailable = () => new Promise((resolve) => {
   const convert = spawn('convert', ['-version']);
   convert.on('error', () => resolve(false));
   convert.on('close', (code) => resolve(code === 0));
 });
 
-export async function buildTask(task, userName, tone) {
+/**
+ * Builds a new task based on the provided type and features
+ * @param {Object} task - Task object with taskId, type, name, features, etc.
+ * @param {string} userName - Name of the user requesting the task
+ * @param {string} tone - Tone for AI responses
+ * @param {string} requestId - Unique request identifier
+ * @param {string} leadId - Lead identifier
+ * @returns {Object} Result containing content or error
+ */
+export async function buildTask(task, userName, tone, requestId, leadId) {
   const frontendId = task.frontendId || botSocket.id;
   const ip = task.ip || 'unknown';
+
+  // Validate required task fields
+  if (!task || !task.taskId || !task.type) {
+    const errMsg = `Missing required task fields: taskId or type for requestId ${requestId}`;
+    await error(errMsg);
+    throw new Error(errMsg);
+  }
+
   await log(`Building task: ${JSON.stringify(task)} for ${userName} with frontendId ${frontendId}`);
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
     const taskType = task.type.toLowerCase();
-    await log(`Processing task type: ${taskType}`);
+    await log(`Processing task type: ${taskType} for taskId ${task.taskId}`);
     let contentArray = [];
 
     if (['image', 'jpeg', 'gif', 'mp4', 'pdf'].includes(taskType)) {
@@ -57,7 +76,7 @@ export async function buildTask(task, userName, tone) {
           const content = await generateGif(frames.slice(0, 3), outputFile);
           contentArray = [{ fileName: `${task.name}.gif`, content }];
         } else {
-          const fallbackContent = `GIF generation requires ImageMagick. Features: ${task.features}`;
+          const fallbackContent = Buffer.from(`GIF generation requires ImageMagick. Features: ${task.features}`).toString('base64');
           contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
       } else if (taskType === 'mp4') {
@@ -72,7 +91,7 @@ export async function buildTask(task, userName, tone) {
           const content = await generateMp4(script, outputFile);
           contentArray = [{ fileName: `${task.name}.mp4`, content }];
         } else {
-          const fallbackContent = `MP4 generation requires FFmpeg. Features: ${task.features}`;
+          const fallbackContent = Buffer.from(`MP4 generation requires FFmpeg. Features: ${task.features}`).toString('base64');
           contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
       } else if (taskType === 'pdf') {
@@ -106,10 +125,9 @@ export async function buildTask(task, userName, tone) {
           'package.json': JSON.stringify({ name: task.name, version: "1.0.0", dependencies: { "chart.js": "^3.9.1" } })
         };
       }
-      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content }));
+      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content: Buffer.from(content).toString('base64') }));
     } else {
-      // Fallback to text-based generation should not reach here due to taskExecution.js
-      throw new Error(`Unexpected task type "${taskType}" handled by taskExecution.js`);
+      throw new Error(`Unexpected task type "${taskType}" handled by taskBuilder.js`);
     }
 
     if (contentArray.length === 0) {
@@ -130,8 +148,10 @@ export async function buildTask(task, userName, tone) {
       name: task.name,
       frontendId,
       ip,
+      requestId,
+      leadId,
     });
-    await log(`Emitted taskResult for ${task.name} with ${contentArray.length} file(s) for frontendId ${frontendId}`);
+    await log(`Emitted taskResult for ${task.name} with ${contentArray.length} file(s) for frontendId ${frontendId} with requestId ${requestId}`);
     return { content: contentArray, response };
   } catch (err) {
     await error(`Failed to build task for frontendId ${frontendId}: ${err.message}`);
@@ -152,20 +172,39 @@ export async function buildTask(task, userName, tone) {
       taskName: task.name,
       taskType: task.type,
       taskFeatures: task.features,
+      requestId,
+      leadId,
     });
     return { error: buildError };
   }
 }
 
-export async function editTask(task, userName, tone) {
+/**
+ * Edits an existing task based on the provided edit request
+ * @param {Object} task - Task object with taskId, type, name, features, editRequest, etc.
+ * @param {string} userName - Name of the user requesting the edit
+ * @param {string} tone - Tone for AI responses
+ * @param {string} requestId - Unique request identifier
+ * @param {string} leadId - Lead identifier
+ * @returns {Object} Result containing content or error
+ */
+export async function editTask(task, userName, tone, requestId, leadId) {
   const frontendId = task.frontendId || botSocket.id;
   const ip = task.ip || 'unknown';
+
+  // Validate required task fields
+  if (!task || !task.taskId || !task.type) {
+    const errMsg = `Missing required task fields: taskId or type for requestId ${requestId}`;
+    await error(errMsg);
+    throw new Error(errMsg);
+  }
+
   await log(`Editing task: ${JSON.stringify(task)} for ${userName} with frontendId ${frontendId}`);
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
     const taskType = task.type.toLowerCase();
-    await log(`Processing edit task type: ${taskType}`);
+    await log(`Processing edit task type: ${taskType} for taskId ${task.taskId}`);
     let contentArray = [];
 
     if (['image', 'jpeg', 'gif', 'mp4', 'pdf'].includes(taskType)) {
@@ -186,7 +225,7 @@ export async function editTask(task, userName, tone) {
           const content = await generateGif(frames.slice(0, 3), outputFile);
           contentArray = [{ fileName: `${task.name}.gif`, content }];
         } else {
-          const fallbackContent = `GIF edit requires ImageMagick. Features: ${task.features}, Edit: ${task.editRequest}`;
+          const fallbackContent = Buffer.from(`GIF edit requires ImageMagick. Features: ${task.features}, Edit: ${task.editRequest}`).toString('base64');
           contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
       } else if (taskType === 'mp4') {
@@ -201,7 +240,7 @@ export async function editTask(task, userName, tone) {
           const content = await generateMp4(script, outputFile);
           contentArray = [{ fileName: `${task.name}.mp4`, content }];
         } else {
-          const fallbackContent = `MP4 edit requires FFmpeg. Features: ${task.features}, Edit: ${task.editRequest}`;
+          const fallbackContent = Buffer.from(`MP4 edit requires FFmpeg. Features: ${task.features}, Edit: ${task.editRequest}`).toString('base64');
           contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
         }
       } else if (taskType === 'pdf') {
@@ -235,9 +274,9 @@ export async function editTask(task, userName, tone) {
           'package.json': JSON.stringify({ name: task.name, version: "1.0.0", dependencies: { "chart.js": "^3.9.1" } })
         };
       }
-      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content }));
+      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content: Buffer.from(content).toString('base64') }));
     } else {
-      throw new Error(`Unexpected task type "${taskType}" handled by taskExecution.js`);
+      throw new Error(`Unexpected task type "${taskType}" handled by taskBuilder.js`);
     }
 
     if (contentArray.length === 0) {
@@ -258,8 +297,10 @@ export async function editTask(task, userName, tone) {
       name: task.name,
       frontendId,
       ip,
+      requestId,
+      leadId,
     });
-    await log(`Emitted taskResult for edited ${task.name} with ${contentArray.length} file(s) for frontendId ${frontendId}`);
+    await log(`Emitted taskResult for edited ${task.name} with ${contentArray.length} file(s) for frontendId ${frontendId} with requestId ${requestId}`);
     return { content: contentArray, response };
   } catch (err) {
     await error(`Failed to edit task for frontendId ${frontendId}: ${err.message}`);
@@ -280,11 +321,14 @@ export async function editTask(task, userName, tone) {
       taskName: task.name,
       taskType: task.type,
       taskFeatures: task.features,
+      requestId,
+      leadId,
     });
     return { error: editError };
   }
 }
 
+/** Generates a PDF file from text content */
 async function generatePdf(text, outputFile) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument();
@@ -293,23 +337,32 @@ async function generatePdf(text, outputFile) {
     doc.fontSize(12).text(text, 50, 50);
     doc.end();
     stream.on('finish', async () => {
-      const content = (await fs.readFile(outputFile)).toString('base64');
-      await fs.unlink(outputFile).catch(() => {});
-      resolve(content);
+      try {
+        const content = (await fs.readFile(outputFile)).toString('base64');
+        await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+        resolve(content);
+      } catch (err) {
+        reject(err);
+      }
     });
     stream.on('error', (err) => reject(err));
   });
 }
 
+/** Generates a GIF from an array of text frames using ImageMagick */
 async function generateGif(frames, outputFile) {
   return new Promise((resolve, reject) => {
     const args = frames.flatMap(frame => ['-delay', '50', '-size', '200x200', `label:${frame}`]).concat(['-loop', '0', outputFile]);
     const convert = spawn('convert', args);
     convert.on('close', async (code) => {
       if (code === 0) {
-        const content = (await fs.readFile(outputFile)).toString('base64');
-        await fs.unlink(outputFile).catch(() => {});
-        resolve(content);
+        try {
+          const content = (await fs.readFile(outputFile)).toString('base64');
+          await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+          resolve(content);
+        } catch (err) {
+          reject(err);
+        }
       } else {
         reject(new Error(`ImageMagick exited with code ${code}`));
       }
@@ -318,6 +371,7 @@ async function generateGif(frames, outputFile) {
   });
 }
 
+/** Generates an MP4 video from a script using FFmpeg */
 async function generateMp4(script, outputFile) {
   const slideTexts = script.split('. ').slice(0, 3);
   const slideFiles = [];
@@ -348,11 +402,15 @@ async function generateMp4(script, outputFile) {
     ];
     const ffmpeg = spawn('ffmpeg', ffmpegArgs);
     ffmpeg.on('close', async (code) => {
-      await Promise.all(slideFiles.map(file => fs.unlink(file).catch(() => {})));
+      await Promise.all(slideFiles.map(file => fs.unlink(file).catch((err) => log(`Failed to delete ${file}: ${err.message}`))));
       if (code === 0) {
-        const content = (await fs.readFile(outputFile)).toString('base64');
-        await fs.unlink(outputFile).catch(() => {});
-        resolve(content);
+        try {
+          const content = (await fs.readFile(outputFile)).toString('base64');
+          await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+          resolve(content);
+        } catch (err) {
+          reject(err);
+        }
       } else {
         reject(new Error(`FFmpeg exited with code ${code}`));
       }
@@ -361,6 +419,7 @@ async function generateMp4(script, outputFile) {
   });
 }
 
+/** Generates an image (PNG or JPEG) from a description */
 async function generateImage(description, outputFile, format) {
   const canvas = createCanvas(200, 200);
   const ctx = canvas.getContext('2d');
@@ -372,86 +431,6 @@ async function generateImage(description, outputFile, format) {
   ctx.fillText(description.slice(0, 20), 100, 100);
   await fs.writeFile(outputFile, canvas.toBuffer(`image/${format}`));
   const content = (await fs.readFile(outputFile)).toString('base64');
-  await fs.unlink(outputFile).catch(() => {});
+  await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
   return content;
-}
-
-async function generateAudio(description, outputFile, format) {
-  const tempWav = `/tmp/temp-${Date.now()}.wav`;
-  const canvas = createCanvas(640, 480);
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, 640, 480);
-  ctx.fillStyle = 'white';
-  ctx.font = '24px DejaVu Sans';
-  ctx.textAlign = 'center';
-  ctx.fillText(description.slice(0, 20), 320, 240);
-  const tempImage = `/tmp/audio-slide-${Date.now()}.png`;
-  await fs.writeFile(tempImage, canvas.toBuffer('image/png'));
-
-  return new Promise((resolve, reject) => {
-    const ffmpegArgs = [
-      '-loop', '1',
-      '-i', tempImage,
-      '-f', 'lavfi',
-      '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-      '-c:v', 'libx264',
-      '-c:a', format === 'mp3' ? 'mp3' : 'pcm_s16le',
-      '-shortest',
-      '-t', '5',
-      '-y',
-      format === 'mp3' ? outputFile : tempWav
-    ];
-    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
-    let errorOutput = '';
-    ffmpeg.stderr.on('data', (data) => errorOutput += data.toString());
-    ffmpeg.on('close', async (code) => {
-      await fs.unlink(tempImage).catch(() => {});
-      if (code === 0) {
-        if (format === 'wav') {
-          const ffmpegWavArgs = [
-            '-i', tempWav,
-            '-c:a', 'pcm_s16le',
-            '-y',
-            outputFile
-          ];
-          const wavConvert = spawn('ffmpeg', ffmpegWavArgs);
-          let wavErrorOutput = '';
-          wavConvert.stderr.on('data', (data) => wavErrorOutput += data.toString());
-          wavConvert.on('close', async (wavCode) => {
-            await fs.unlink(tempWav).catch(() => {});
-            if (wavCode === 0) {
-              const content = (await fs.readFile(outputFile)).toString('base64');
-              await fs.unlink(outputFile).catch(() => {});
-              resolve(content);
-            } else {
-              reject(new Error(`FFmpeg WAV conversion failed with code ${wavCode}: ${wavErrorOutput}`));
-            }
-          });
-          wavConvert.on('error', (err) => reject(new Error(`FFmpeg WAV error: ${err.message}`)));
-        } else {
-          const content = (await fs.readFile(outputFile)).toString('base64');
-          await fs.unlink(outputFile).catch(() => {});
-          resolve(content);
-        }
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}: ${errorOutput}`));
-      }
-    });
-    ffmpeg.on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)));
-  });
-}
-
-async function zipFilesWithReadme(files, task) {
-  const zip = new JSZip();
-  for (const [fileName, content] of Object.entries(files)) {
-    if (typeof content === 'string' || Buffer.isBuffer(content)) {
-      zip.file(fileName, content);
-    } else {
-      await error(`Skipping invalid file content for "${fileName}": ${JSON.stringify(content)}`);
-    }
-  }
-  const readme = `<html><body><h1>${task.name}</h1><p>Features: ${task.features}</p><footer>Generated by Cracker Bot - <a href="https://github.com/chefken052580/cracker-bot">GitHub</a></footer></body></html>`;
-  zip.file('readme.html', readme);
-  return await zip.generateAsync({ type: "nodebuffer" });
 }

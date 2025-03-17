@@ -1,40 +1,43 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { mkdirSync, existsSync } from 'fs';
+import { createWriteStream } from 'fs';
 
 const logDir = process.env.LOG_DIR || './logs';
-const logFile = path.join(logDir, 'bot_backend.log'); // Changed to bot_backend.log
+const logFile = path.join(logDir, `bot_backend_${new Date().toISOString().split('T')[0]}.log`); // Daily logs
 
 if (!existsSync(logDir)) {
   mkdirSync(logDir, { recursive: true });
 }
 
-export async function log(message) {
-  const logMessage = `[${new Date().toISOString()}] INFO: ${message}\n`;
+const logStream = createWriteStream(logFile, { flags: 'a' });
+
+export async function log(message, level = 'INFO') {
+  const logMessage = `[${new Date().toISOString()}] ${level}: ${message}\n`;
   try {
-    await fs.appendFile(logFile, logMessage);
-    console.log(logMessage.trim());
+    logStream.write(logMessage);
+    if (level === 'ERROR') {
+      console.error(logMessage.trim());
+    } else if (level === 'WARN') {
+      console.warn(logMessage.trim());
+    } else {
+      console.log(logMessage.trim());
+    }
   } catch (err) {
-    console.error('Error writing to log:', err);
+    console.error('Critical error writing to log:', err);
+    // Optionally, add retry logic or external alerts here
   }
 }
 
 export async function error(message) {
-  const logMessage = `[${new Date().toISOString()}] ERROR: ${message}\n`;
-  try {
-    await fs.appendFile(logFile, logMessage);
-    console.error(logMessage.trim());
-  } catch (err) {
-    console.error('Critical error writing to log:', err);
-  }
+  await log(message, 'ERROR');
 }
 
 export async function warn(message) {
-  const logMessage = `[${new Date().toISOString()}] WARN: ${message}\n`;
-  try {
-    await fs.appendFile(logFile, logMessage);
-    console.warn(logMessage.trim());
-  } catch (err) {
-    console.error('Error writing warning to log:', err);
-  }
+  await log(message, 'WARN');
 }
+
+// Example usage:
+// await log('Server started');
+// await error('Failed to connect');
+// await warn('Resource usage high');

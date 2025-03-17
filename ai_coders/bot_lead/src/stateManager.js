@@ -23,37 +23,80 @@ export async function delegateTask(botSocketArg, botName, command, args) {
     throw new Error('WebSocket not connected');
   }
 
-  const taskData = { type: 'command', target: botName, command, args: { ...args, frontendId } };
-  await log(`Delegating task to ${botName}: ${JSON.stringify(taskData)}`);
-  console.log(`[${new Date().toISOString()}] Emitting command to WebSocket server: ${JSON.stringify(taskData)}`);
+  // Generate a unique requestId and include leadId (socket ID of bot_lead)
+  const requestId = Date.now().toString(); // Simple unique identifier
+  const taskData = {
+    type: 'message',
+    commandFlag: true, // Flag to identify as a command
+    target: botName,
+    command,
+    args: { ...args, frontendId, requestId, leadId: socket.id },
+  };
+
+  // Log task delegation with requestId and leadId
+  await log(`Delegating task to ${botName} with requestId ${requestId} and leadId ${socket.id}: ${JSON.stringify(taskData)}`);
+  console.log(`[${new Date().toISOString()}] Emitting command as message to WebSocket server: ${JSON.stringify(taskData)}`);
+  console.log(`[${new Date().toISOString()}] Socket state - connected: ${socket.connected}, id: ${socket.id}, transport: ${socket.io.engine.transport.name}`);
 
   return new Promise((resolve, reject) => {
-    socket.emit('command', taskData, (ack) => {
-      if (ack && ack.status === 'success') {
-        console.log(`[${new Date().toISOString()}] Command acknowledged by server: ${JSON.stringify(ack)}`);
-        log(`Command acknowledged by server: ${JSON.stringify(ack)}`);
-      } else {
-        console.error(`[${new Date().toISOString()}] Command acknowledgment failed: ${JSON.stringify(ack)}`);
-        reject(new Error(`Command acknowledgment failed: ${ack?.message || 'No response'}`));
-      }
-    });
-    console.log(`[${new Date().toISOString()}] Command emitted to ${botName} via socket ${socket.id}`);
+    let attempts = 0;
+    const maxAttempts = 3;
+    let callbackReceived = false;
 
-    socket.once('taskResult', async (data) => {
-      console.log(`[${new Date().toISOString()}] Received taskResult: ${JSON.stringify(data)}`);
-      if (!data.error) {
-        await log(`Task ${command} completed by ${botName} for frontendId ${frontendId}`);
-        resolve(data);
-      } else {
-        await error(`Task ${command} failed for frontendId ${frontendId}: ${data.error}`);
-        reject(new Error(data.error));
-      }
-    });
+    const emitCommand = () => {
+      attempts++;
+      console.log(`[${new Date().toISOString()}] Attempt ${attempts}/${maxAttempts} to emit command as message to ${botName}, socket.connected: ${socket.connected}`);
 
-    setTimeout(async () => {
-      await error(`Task ${command} delegation to ${botName} timed out for frontendId ${frontendId}`);
-      reject(new Error('Task delegation timeout after 30s'));
-    }, 30000); // 30s timeout
+      socket.emit('message', taskData, (ack) => {
+        callbackReceived = true;
+        if (ack && ack.status === 'success') {
+          console.log(`[${new Date().toISOString()}] Command-as-message acknowledged by server: ${JSON.stringify(ack)}`);
+          log(`Command-as-message acknowledged by server: ${JSON.stringify(ack)}`);
+        } else {
+          console.error(`[${new Date().toISOString()}] Command-as-message acknowledgment failed: ${JSON.stringify(ack)}`);
+          if (attempts >= maxAttempts) {
+            reject(new Error(`Command-as-message acknowledgment failed after ${maxAttempts} attempts: ${ack?.message || 'No response'}`));
+          }
+        }
+      });
+      console.log(`[${new Date().toISOString()}] Command-as-message emitted to ${botName} via socket ${socket.id}`);
+
+      if (attempts < maxAttempts && !callbackReceived) {
+        setTimeout(() => {
+          if (!callbackReceived) {
+            console.log(`[${new Date().toISOString()}] No callback received for attempt ${attempts}, retrying...`);
+            emitCommand();
+          }
+        }, 5000);
+      }
+    };
+
+    emitCommand();
+
+    // Listen for taskResult with matching requestId
+    const taskResultHandler = (data) => {
+      console.log(`[${new Date().toISOString()}] Received taskResult for requestId ${data.requestId}: ${JSON.stringify(data)}`);
+      if (data.requestId === requestId) {
+        socket.off('taskResult', taskResultHandler); // Clean up listener
+        if (!data.error) {
+          log(`Task ${command} completed by ${botName} for frontendId ${frontendId} with requestId ${requestId}`);
+          resolve(data);
+        } else {
+          error(`Task ${command} failed for frontendId ${frontendId} with requestId ${requestId}: ${data.error}`);
+          reject(new Error(data.error));
+        }
+      }
+    };
+
+    socket.on('taskResult', taskResultHandler);
+
+    setTimeout(() => {
+      if (!callbackReceived) {
+        socket.off('taskResult', taskResultHandler); // Clean up on timeout
+        error(`Task ${command} delegation to ${botName} timed out for frontendId ${frontendId} after ${maxAttempts} attempts with requestId ${requestId}`);
+        reject(new Error('Task delegation timeout after 30s'));
+      }
+    }, 30000);
   });
 }
 
@@ -73,9 +116,12 @@ export async function updateTaskStatus(taskId, status) {
 
 (async () => {
   try {
-    await log('stateManager.js version 2025-03-15-2 loaded');
+    await log('stateManager.js version 2025-03-17-1 loaded'); // Version bump for this update
     const stored = await redisClient.get('lastGeneratedTask');
-    if (stored) lastGeneratedTask = JSON.parse(stored);
+    if (stored) {
+      lastGeneratedTask = JSON.parse(stored);
+      await log(`Loaded lastGeneratedTask from Redis: ${lastGeneratedTask.name}`);
+    }
   } catch (err) {
     await error(`Failed to load lastGeneratedTask: ${err.message}`);
   }

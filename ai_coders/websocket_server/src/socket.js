@@ -1,5 +1,7 @@
 import { Server } from 'socket.io';
 
+console.log(`[${new Date().toISOString()}] Loaded socket.js with commandFlag handling`);
+
 class WebSocketHandler {
   constructor(httpServer) {
     this.io = new Server(httpServer, {
@@ -28,7 +30,7 @@ class WebSocketHandler {
       console.log(`🔗 [${new Date().toISOString()}] New client connected: ID ${socket.id}, IP: ${socket.handshake.address}`);
 
       socket.onAny((event, ...args) => {
-        console.log(`📥 [${new Date().toISOString()}] Received event from ${socket.id}: ${event}, args: ${JSON.stringify(args)}`);
+        console.log(`📥 [${new Date().toISOString()}] Received event from ${socket.id}: ${event}, args: ${JSON.stringify(args)}, socket.connected: ${socket.connected}`);
       });
 
       socket.on('register', (data) => {
@@ -90,27 +92,58 @@ class WebSocketHandler {
         }
       });
 
-      socket.on('message', (data) => {
+      socket.on('message', (data, callback) => {
         try {
+          console.log(`📩 [${new Date().toISOString()}] Raw message data:`, data);
+          console.log(`📩 [${new Date().toISOString()}] commandFlag value: ${data.commandFlag}, type: ${typeof data.commandFlag}`);
           if (!data || typeof data !== 'object') throw new Error("Invalid message format");
           console.log(`📩 [${new Date().toISOString()}] Message received: ${JSON.stringify(data)}`);
-          if (data.frontendId) {
-            this.io.to(data.frontendId).emit('message', { ...data, ip: socket.handshake.address });
-            console.log(`📤 [${new Date().toISOString()}] Sent message to frontendId ${data.frontendId}`);
-          } else {
-            const targetBot = this.bots.get(data.target || 'bot_lead');
-            const eventData = { ...data, ip: socket.handshake.address };
+
+          const eventData = { ...data, ip: socket.handshake.address };
+
+          // Handle commands disguised as messages
+          if (data.commandFlag) {
+            console.log(`🚀 [${new Date().toISOString()}] Command received as message from ${socket.clientName || socket.id}: ${JSON.stringify(data)}`);
+            const targetBot = this.bots.get(data.target);
             if (targetBot) {
-              targetBot.socket.emit('message', eventData);
-              console.log(`📤 [${new Date().toISOString()}] Sent message to ${targetBot.name} (${targetBot.socketId})`);
+              targetBot.socket.emit('command', eventData);
+              console.log(`📤 [${new Date().toISOString()}] Sent command to ${targetBot.name} (${targetBot.socketId})`);
+              if (callback) callback({ status: "success", message: "Command routed" });
             } else {
-              this.pendingEvents.push({ event: 'message', eventData, target: data.target || 'bot_lead' });
-              console.warn(`⚠️ [${new Date().toISOString()}] Queued message for ${data.target || 'bot_lead'}`);
+              this.pendingEvents.push({ event: 'command', eventData, target: data.target });
+              console.warn(`⚠️ [${new Date().toISOString()}] Queued command for ${data.target} - target not found`);
+              if (callback) callback({ status: "queued", message: "Command queued, target not found" });
+            }
+          } else {
+            // Regular message handling
+            const senderRole = this.bots.get(socket.clientName)?.role;
+            if (data.type === 'task_response' && senderRole === 'frontend') {
+              // Route frontend task responses to bot_lead
+              const leadBot = this.bots.get('bot_lead');
+              if (leadBot) {
+                leadBot.socket.emit('message', eventData);
+                console.log(`📤 [${new Date().toISOString()}] Sent task_response to bot_lead (${leadBot.socketId})`);
+              } else {
+                console.warn(`⚠️ [${new Date().toISOString()}] No bot_lead found for task_response from ${socket.clientName || socket.id}`);
+              }
+            } else if (data.frontendId) {
+              this.io.to(data.frontendId).emit('message', eventData);
+              console.log(`📤 [${new Date().toISOString()}] Sent message to frontendId ${data.frontendId}`);
+            } else {
+              const targetBot = this.bots.get(data.target || 'bot_lead');
+              if (targetBot) {
+                targetBot.socket.emit('message', eventData);
+                console.log(`📤 [${new Date().toISOString()}] Sent message to ${targetBot.name} (${targetBot.socketId})`);
+              } else {
+                console.warn(`⚠️ [${new Date().toISOString()}] Unhandled message from ${socket.clientName || socket.id}: ${JSON.stringify(data)}`);
+                socket.emit('message', { text: "Error: Message target unclear", type: "error", from: "Server" });
+              }
             }
           }
         } catch (error) {
           console.error(`❌ [${new Date().toISOString()}] Error in message handler:`, error.message);
           socket.emit("error", { message: `Message error: ${error.message}` });
+          if (callback) callback({ status: "error", message: error.message });
         }
       });
 
@@ -126,7 +159,7 @@ class WebSocketHandler {
           console.log(`🚀 [${new Date().toISOString()}] Command received from ${socket.clientName || socket.id}: ${JSON.stringify(data)}`);
           console.log(`Current registered bots: ${Array.from(this.bots.keys())}`);
           const targetBot = this.bots.get(data.target);
-          const eventData = { ...data, ip: socket.handshake.address, fromSocketId: socket.id }; // Add sender ID for tracking
+          const eventData = { ...data, ip: socket.handshake.address, fromSocketId: socket.id };
           if (targetBot) {
             targetBot.socket.emit('command', eventData);
             console.log(`📤 [${new Date().toISOString()}] Sent command to ${targetBot.name} (${targetBot.socketId})`);
@@ -135,7 +168,7 @@ class WebSocketHandler {
           } else {
             this.pendingEvents.push({ event: 'command', eventData, target: data.target });
             console.warn(`⚠️ [${new Date().toISOString()}] Queued command for ${data.target} - target not found`);
-            this.io.emit('command', eventData); // Broadcast as fallback
+            this.io.emit('command', eventData);
             console.log(`📤 [${new Date().toISOString()}] Broadcast command as fallback: ${JSON.stringify(eventData)}`);
             if (callback) callback({ status: "queued", message: "Command queued, target not found" });
           }
@@ -146,26 +179,49 @@ class WebSocketHandler {
         }
       });
 
+      socket.on('broadcast_command', (data) => {
+        console.log(`📡 [${new Date().toISOString()}] Broadcast command received from ${socket.clientName || socket.id}: ${JSON.stringify(data)}`);
+        const targetBot = this.bots.get(data.target);
+        const eventData = { ...data, ip: socket.handshake.address, fromSocketId: socket.id };
+        if (targetBot) {
+          targetBot.socket.emit('command', eventData);
+          console.log(`📤 [${new Date().toISOString()}] Forwarded broadcast command to ${targetBot.name} (${targetBot.socketId})`);
+        } else {
+          console.warn(`⚠️ [${new Date().toISOString()}] No target found for broadcast command: ${data.target}`);
+          this.io.emit('command', eventData);
+          console.log(`📤 [${new Date().toISOString()}] Broadcast command to all as last resort: ${JSON.stringify(eventData)}`);
+        }
+      });
+
       socket.on('taskResult', (data) => {
         try {
           console.log(`📩 [${new Date().toISOString()}] TaskResult received from ${socket.id}: ${JSON.stringify(data)}`);
-          const targetFrontend = data.frontendId;
+          const { leadId, frontendId } = data; // Extract leadId and frontendId from the payload
           const eventData = { ...data, ip: socket.handshake.address };
-          if (targetFrontend) {
-            for (const [_, bot] of this.bots) {
-              if (bot.socketId === targetFrontend) {
-                bot.socket.emit('taskResult', eventData);
-                console.log(`📤 [${new Date().toISOString()}] Sent taskResult to frontend ${targetFrontend} (${bot.socketId})`);
-                return;
-              }
+
+          // Route to bot_lead if leadId is provided
+          if (leadId) {
+            const leadSocket = this.io.sockets.sockets.get(leadId);
+            if (leadSocket) {
+              leadSocket.emit('taskResult', eventData);
+              console.log(`📤 [${new Date().toISOString()}] Sent taskResult to bot_lead (${leadId})`);
+            } else {
+              console.warn(`⚠️ [${new Date().toISOString()}] bot_lead socket not found for leadId: ${leadId}`);
             }
-            console.warn(`⚠️ [${new Date().toISOString()}] No frontend found for taskResult: ${targetFrontend}`);
-            this.io.to(targetFrontend).emit('taskResult', eventData); // Direct emit to frontendId
-            console.log(`📤 [${new Date().toISOString()}] Sent taskResult to room ${targetFrontend}: ${JSON.stringify(eventData)}`);
           } else {
-            console.warn(`⚠️ [${new Date().toISOString()}] No frontendId specified in taskResult`);
-            this.io.emit('taskResult', eventData);
-            console.log(`📤 [${new Date().toISOString()}] Broadcast taskResult as fallback: ${JSON.stringify(eventData)}`);
+            console.warn(`⚠️ [${new Date().toISOString()}] No leadId specified in taskResult from ${socket.id}`);
+          }
+
+          // Optionally route to frontend if frontendId is provided
+          if (frontendId) {
+            const frontendSocket = this.io.sockets.sockets.get(frontendId);
+            if (frontendSocket) {
+              frontendSocket.emit('taskResult', eventData);
+              console.log(`📤 [${new Date().toISOString()}] Sent taskResult to frontend (${frontendId})`);
+            } else {
+              this.io.to(frontendId).emit('taskResult', eventData);
+              console.log(`📤 [${new Date().toISOString()}] Sent taskResult to room ${frontendId}`);
+            }
           }
         } catch (error) {
           console.error(`❌ [${new Date().toISOString()}] Error in taskResult handler:`, error.message);
