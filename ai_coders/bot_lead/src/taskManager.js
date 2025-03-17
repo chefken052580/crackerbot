@@ -103,104 +103,97 @@ export async function initTaskManager(botSocketArg) {
     }
   });
 
-  // In taskManager.js, update the taskResult handler (already present, just verifying)
-socket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip, error: taskError, requestId, leadId }) => {
-  try {
-    await log(`Received taskResult for taskId ${taskId}, frontendId ${frontendId}, content length: ${content ? content.length : 'null'}`);
-    const taskData = await redisClient.hGet('tasks', taskId);
-    if (!taskData) {
-      await error(`No task data found for taskId ${taskId} in taskResult`);
-      return;
-    }
-    const task = JSON.parse(taskData);
-    const userKey = `user:frontend:${frontendId}:name`;
-    const stateKey = `taskState:${frontendId}`;
-    const userName = await redisClient.get(userKey) || task.user || 'Guest';
-    const tone = await redisClient.get(`user:frontend:${frontendId}:tone`) || DEFAULT_TONE;
+  socket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip, error: taskError, requestId, leadId }) => {
+    try {
+      await log(`Received taskResult for taskId ${taskId}, frontendId ${frontendId}, content length: ${content ? content.length : 'null'}`);
+      const taskData = await redisClient.hGet('tasks', taskId);
+      if (!taskData) {
+        await error(`No task data found for taskId ${taskId} in taskResult`);
+        return;
+      }
+      const task = JSON.parse(taskData);
+      const userKey = `user:frontend:${frontendId}:name`;
+      const stateKey = `taskState:${frontendId}`;
+      const userName = await redisClient.get(userKey) || task.user || 'Guest';
+      const tone = await redisClient.get(`user:frontend:${frontendId}:tone`) || DEFAULT_TONE;
 
-    if (taskError) {
-      const errorMsg = await generateResponse(
-        `Oof, ${userName}, "${name}" hit a snag: ${taskError}. Wanna retry or tweak it?`,
+      if (taskError) {
+        const errorMsg = await generateResponse(
+          `Oof, ${userName}, "${name}" hit a snag: ${taskError}. Wanna retry or tweak it?`,
+          userName,
+          tone
+        );
+        socket.emit('message', {
+          text: errorMsg,
+          type: 'error',
+          taskId,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          frontendId,
+          ip,
+          user: userName,
+          taskName: name,
+          taskType: type,
+          taskFeatures: task.features,
+          options: ["Retry", "Edit description"],
+        });
+        await redisClient.hDel('tasks', taskId);
+        return;
+      }
+
+      setLastGeneratedTask({ content, fileName, type, name });
+
+      const downloadMsg = await generateResponse(
+        `Boom, ${userName}! "${name}" (${type}) is ready—download this slick masterpiece now!`,
         userName,
         tone
       );
       socket.emit('message', {
-        text: errorMsg,
-        type: 'error',
+        text: downloadMsg,
+        type: 'download',
         taskId,
+        content, // Send raw base64 content to frontend
+        fileName,
         from: 'Cracker Bot',
         target: 'bot_frontend',
-        frontendId,
         ip,
         user: userName,
+        frontendId,
         taskName: name,
         taskType: type,
         taskFeatures: task.features,
-        options: ["Retry", "Edit description"],
       });
-      await redisClient.hDel('tasks', taskId);
-      return;
+
+      const reviewPrompt = await generateResponse(
+        `Yo ${userName}, "${name}" is live! What’s next—tweak it, juice it up, or call it a day?`,
+        userName,
+        tone
+      );
+      socket.emit('message', {
+        text: reviewPrompt,
+        type: "question",
+        taskId,
+        from: 'Cracker Bot',
+        target: 'bot_frontend',
+        ip,
+        user: userName,
+        options: ["Edit", "Add more", "Done"],
+        frontendId,
+        taskName: name,
+        taskType: type,
+        taskFeatures: task.features,
+      });
+
+      task.step = 'review';
+      task.status = 'pending';
+      task.user = userName;
+      await redisClient.hSet('tasks', taskId, JSON.stringify(task));
+      await redisClient.set(stateKey, JSON.stringify({ step: "review", taskId }));
+      await updateTaskStatus(taskId, 'pending_review');
+    } catch (err) {
+      await error(`Error handling taskResult for taskId ${taskId}: ${err.message}`);
     }
-
-    setLastGeneratedTask({ content, fileName, type, name });
-
-    // Adjust MIME type for PDF
-    const mimeType = type === 'pdf' ? 'application/pdf' : `text/${type}`;
-    const blob = new Blob([Buffer.from(content, 'base64')], { type: mimeType });
-    const downloadUrl = window.URL.createObjectURL(blob);
-
-    const downloadMsg = await generateResponse(
-      `Boom, ${userName}! "${name}" (${type}) is ready—download this slick masterpiece now!`,
-      userName,
-      tone
-    );
-    socket.emit('message', {
-      text: downloadMsg,
-      type: 'download',
-      taskId,
-      content,
-      downloadUrl,
-      fileName,
-      from: 'Cracker Bot',
-      target: 'bot_frontend',
-      ip,
-      user: userName,
-      frontendId,
-      taskName: name,
-      taskType: type,
-      taskFeatures: task.features,
-    });
-
-    const reviewPrompt = await generateResponse(
-      `Yo ${userName}, "${name}" is live! What’s next—tweak it, juice it up, or call it a day?`,
-      userName,
-      tone
-    );
-    socket.emit('message', {
-      text: reviewPrompt,
-      type: "question",
-      taskId,
-      from: 'Cracker Bot',
-      target: 'bot_frontend',
-      ip,
-      user: userName,
-      options: ["Edit", "Add more", "Done"],
-      frontendId,
-      taskName: name,
-      taskType: type,
-      taskFeatures: task.features,
-    });
-
-    task.step = 'review';
-    task.status = 'pending';
-    task.user = userName;
-    await redisClient.hSet('tasks', taskId, JSON.stringify(task));
-    await redisClient.set(stateKey, JSON.stringify({ step: "review", taskId }));
-    await updateTaskStatus(taskId, 'pending_review');
-  } catch (err) {
-    await error(`Error handling taskResult for taskId ${taskId}: ${err.message}`);
-  }
-});
+  });
 
   socket.on('message', (message) => {
     handleMessage(socket, message);
@@ -449,7 +442,7 @@ export async function handleMessage(botSocket, message) {
   }
 }
 
-async function processGeneralMessage(botSocket, text, userName, tone, ip, frontendId) {
+export async function processGeneralMessage(botSocket, text, userName, tone, ip, frontendId) {
   if (!text || text.trim() === '') {
     const errorMsg = await generateResponse(
       `Yo ${userName}, you ghosted me with nothing! Drop some words, fam—I’m here to code the slickest programs ever.`,
