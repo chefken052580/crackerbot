@@ -27,6 +27,7 @@ const colorSchemes = {
     error: "text-neon-red bg-gray-800",
     question: "text-[#ADD8E6] bg-gray-800",
     progress: "bg-gray-800",
+    download: "bg-purple-900 text-purple-200",
     button: "bg-neon-green hover:bg-neon-yellow",
     buttonText: "text-gray-900",
     accent: "text-neon-yellow",
@@ -47,11 +48,9 @@ const ChatRoom = () => {
   const [progressMessage, setProgressMessage] = useState(null);
   const [editMode, setEditMode] = useState(null);
   const [colorScheme, setColorScheme] = useState(localStorage.getItem('colorScheme') || "neon");
-  const [playSound, setPlaySound] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const chatEndRef = useRef(null);
-  const audioRef = useRef(new Audio('/ping.wav'));
   const socketRef = useRef(null);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
@@ -100,7 +99,7 @@ const ChatRoom = () => {
       setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
       const newMessage = {
         from: data.from || "Unknown",
-        user: data.user || "Guest",
+        user: data.user || localStorage.getItem('userName') || "Guest",
         text: data.text || "",
         type: data.type || "bot",
         fileName: data.fileName,
@@ -113,8 +112,9 @@ const ChatRoom = () => {
         taskType: data.taskType,
         taskFeatures: data.taskFeatures,
         progress: data.progress,
+        downloadUrl: data.downloadUrl,
       };
-    
+
       if (data.type === "progress") {
         setProgressMessage(() => ({
           ...newMessage,
@@ -134,7 +134,7 @@ const ChatRoom = () => {
           step:
             data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
             data.text.toLowerCase().includes("type") ? "type" :
-            data.text.toLowerCase().includes("features") || data.text.toLowerCase().includes("want in it") ? "features" :
+            data.text.toLowerCase().includes("description") ? "features" :
             data.text.toLowerCase().includes("shoot") ? "choice" : "confirm",
           status: "pending",
         }));
@@ -149,9 +149,9 @@ const ChatRoom = () => {
         setTaskPending(null);
         setCurrentTask((prev) => (prev ? { ...prev, status: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
         setEditMode(data.taskId);
-        if (data.content) {
+        if (data.downloadUrl) {
           const link = document.createElement("a");
-          link.href = `data:${data.taskType || "text/plain"};base64,${data.content}`;
+          link.href = data.downloadUrl;
           link.download = data.fileName || `${data.taskName || "unnamed"}.${data.taskType || "txt"}`;
           document.body.appendChild(link);
           link.click();
@@ -166,12 +166,11 @@ const ChatRoom = () => {
       } else {
         setMessages((prev) => [...prev, newMessage]);
       }
-    
+
       if (data.user && data.user !== "Guest") {
         localStorage.setItem("userName", data.user);
         console.log("ChatRoom: Updated userName in localStorage:", data.user);
       }
-      if (playSound && data.type !== "progress") audioRef.current.play().catch(() => console.log("ChatRoom: Audio play failed"));
     });
 
     socketRef.current.on("taskResult", (data) => {
@@ -198,7 +197,7 @@ const ChatRoom = () => {
       const newMessage = {
         from: "Cracker Bot",
         text: `Yo ${localStorage.getItem("userName") || "Guest"}, your "${name}" is ready! Click to download:`,
-        type: "success",
+        type: "download",
         fileName: fileName,
         downloadUrl: downloadUrl,
         taskId: taskId,
@@ -219,8 +218,6 @@ const ChatRoom = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
-      if (playSound) audioRef.current.play().catch(() => console.log("ChatRoom: Audio play failed"));
     });
 
     socketRef.current.on("typing", (data) => {
@@ -308,7 +305,76 @@ const ChatRoom = () => {
       frontendId: socketRef.current.id,
     };
 
-    if (currentTask && currentTask.status !== "completed") {
+    if (messageText.startsWith("/")) {
+      messageData.type = "command";
+      messageData.target = "bot_lead";
+      const commandParts = messageText.split(" ");
+      const command = commandParts[0].toLowerCase();
+
+      switch (command) {
+        case "/create":
+          messageData.text = "Build something epic!";
+          break;
+        case "/projects":
+          // Placeholder; server should handle listing projects
+          setMessages((prev) => [...prev, {
+            from: "Cracker Bot",
+            text: "Project listing not yet implemented. Use /create to start a new one!",
+            type: "system",
+            timestamp: new Date().toLocaleTimeString(),
+          }]);
+          setIsSending(false);
+          return;
+        case "/download":
+          // Placeholder; server should handle latest download
+          setMessages((prev) => [...prev, {
+            from: "Cracker Bot",
+            text: "Download latest not yet implemented server-side. Complete a task to download!",
+            type: "system",
+            timestamp: new Date().toLocaleTimeString(),
+          }]);
+          setIsSending(false);
+          return;
+        case "/reset_name":
+          localStorage.removeItem("userName");
+          socketRef.current.emit("reset_user", { userId: socketRef.current.id, ip: window.location.hostname });
+          setMessages((prev) => [...prev, {
+            from: "System",
+            text: "Name reset! Please enter a new name.",
+            type: "system",
+            timestamp: new Date().toLocaleTimeString(),
+          }]);
+          setCurrentTask({ taskId: `initial_name:${socketRef.current.id}`, step: "name", status: "pending" });
+          setIsSending(false);
+          return;
+        case "/tone":
+          const tone = commandParts[1] || "default";
+          messageData.text = `/tone ${tone}`;
+          break;
+        case "/guide":
+          setMessages((prev) => [...prev, {
+            from: "Cracker Bot",
+            text: "Available commands:\n" + commands.map(cmd => `${cmd.command}: ${cmd.description}`).join("\n"),
+            type: "system",
+            timestamp: new Date().toLocaleTimeString(),
+          }]);
+          setIsSending(false);
+          return;
+        case "/template":
+          const templateNum = commandParts[1] || "1";
+          messageData.text = `/template ${templateNum}`;
+          break;
+        default:
+          setMessages((prev) => [...prev, {
+            from: "Cracker Bot",
+            text: `Unknown command: ${command}. Try /guide for help!`,
+            type: "error",
+            timestamp: new Date().toLocaleTimeString(),
+          }]);
+          setIsSending(false);
+          return;
+      }
+    } else if (currentTask && currentTask.status !== "completed") {
       messageData.type = "task_response";
       messageData.taskId = currentTask.taskId;
       if (currentTask.step === "name" && !localStorage.getItem("userName")) {
@@ -328,12 +394,9 @@ const ChatRoom = () => {
         setCurrentTask((prev) => ({ ...prev, type: messageText, step: "features" }));
       } else if (currentTask.step === "features") {
         setCurrentTask((prev) => ({ ...prev, features: messageText, step: "confirm" }));
-      } else if (currentTask.step === "confirm" && messageText.toLowerCase() === "go") {
+      } else if (currentTask.step === "confirm" && messageText.toLowerCase() === "create file / project") {
         setCurrentTask((prev) => ({ ...prev, status: "building" }));
       }
-    } else if (messageText.startsWith("/")) {
-      messageData.type = "command";
-      messageData.target = "bot_lead";
     } else {
       messageData.type = "general_message";
     }
@@ -394,10 +457,18 @@ const ChatRoom = () => {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         console.error("ChatRoom: SpeechRecognition not supported in this browser.");
+        setMessages((prev) => [...prev, {
+          from: "System",
+          text: "Speech recognition not supported in this browser!",
+          type: "error",
+          timestamp: new Date().toLocaleTimeString(),
+        }]);
         return;
       }
       const recognition = new SpeechRecognition();
       recognitionRef.current = recognition;
+      recognition.continuous = false;
+      recognition.interimResults = false;
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         setInput(transcript);
@@ -406,47 +477,24 @@ const ChatRoom = () => {
       };
       recognition.onerror = (event) => {
         console.error("ChatRoom: Speech recognition error:", event.error);
+        setMessages((prev) => [...prev, {
+          from: "System",
+          text: `Speech recognition error: ${event.error}`,
+          type: "error",
+          timestamp: new Date().toLocaleTimeString(),
+        }]);
+        setIsRecording(false);
+      };
+      recognition.onend = () => {
         setIsRecording(false);
       };
       recognition.start();
       setIsRecording(true);
+      console.log("ChatRoom: Started speech recognition");
     } else {
       recognitionRef.current?.stop();
       setIsRecording(false);
-    }
-  };
-
-  const startVoiceToText = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.error("ChatRoom: SpeechRecognition not supported in this browser.");
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((result) => result[0].transcript)
-        .join("");
-      setInput(transcript);
-    };
-    recognition.onerror = (event) => {
-      console.error("ChatRoom: Voice-to-text error:", event.error);
-      setIsRecording(false);
-    };
-    recognition.onstart = () => setIsRecording(true);
-    recognition.start();
-  };
-
-  const stopVoiceToText = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-      if (input.trim()) {
-        sendMessage(input);
-      }
+      console.log("ChatRoom: Stopped speech recognition");
     }
   };
 
@@ -486,7 +534,7 @@ const ChatRoom = () => {
     } catch (e) {
       setMessages((prev) => [...prev, { 
         from: "System", 
-        text: "Preview failed—binary file!", 
+        text: "Preview failed—binary file or invalid content!",
         type: "error", 
         timestamp: new Date().toLocaleTimeString() 
       }]);
@@ -497,8 +545,6 @@ const ChatRoom = () => {
     setColorScheme(scheme);
     localStorage.setItem("colorScheme", scheme);
   };
-
-  const toggleSound = () => setPlaySound((prev) => !prev);
 
   const currentScheme = colorSchemes[colorScheme];
 
@@ -518,12 +564,6 @@ const ChatRoom = () => {
           >
             <option value="neon">Neon</option>
           </select>
-          <button
-            onClick={toggleSound}
-            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText}`}
-          >
-            {playSound ? "🔇" : "🔊"}
-          </button>
           <button
             onClick={toggleRecording}
             className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText}`}
@@ -619,10 +659,7 @@ const ChatRoom = () => {
               className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-gray-600 ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-${currentScheme.accent.split("-")[1]}`}
             />
             <button
-              onMouseDown={startVoiceToText}
-              onMouseUp={stopVoiceToText}
-              onTouchStart={startVoiceToText}
-              onTouchEnd={stopVoiceToText}
+              onClick={toggleRecording}
               className={`p-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-md shadow-lg transform transition-all duration-200 ${isRecording ? "scale-110 animate-pulse" : ""}`}
             >
               🎙️

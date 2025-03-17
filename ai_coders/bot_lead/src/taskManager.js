@@ -148,7 +148,8 @@ export async function initTaskManager(botSocketArg) {
         return;
       }
       const task = JSON.parse(taskData);
-      const userName = task.user || 'Guest';
+      const userKey = `user:frontend:${frontendId}:name`;
+      const userName = await redisClient.get(userKey) || task.user || 'Guest'; // Ensure persisted name
       const tone = await redisClient.get(`user:frontend:${frontendId}:tone`) || DEFAULT_TONE;
 
       if (taskError) {
@@ -165,6 +166,7 @@ export async function initTaskManager(botSocketArg) {
           target: 'bot_frontend',
           frontendId,
           ip,
+          user: userName,
           taskName: name,
           taskType: type,
           taskFeatures: task.features,
@@ -174,10 +176,8 @@ export async function initTaskManager(botSocketArg) {
         return;
       }
 
-      // Store the last generated task
       setLastGeneratedTask({ content, fileName, type, name });
 
-      // Send download message
       const downloadMsg = await generateResponse(
         `Boom, ${userName}! "${name}" (${type}) is ready—download this slick masterpiece now!`,
         userName,
@@ -199,13 +199,12 @@ export async function initTaskManager(botSocketArg) {
         taskFeatures: task.features,
       });
 
-      // Update task state to review
       task.step = 'review';
       task.status = 'pending';
+      task.user = userName; // Persist userName in task
       await redisClient.hSet('tasks', taskId, JSON.stringify(task));
       await updateTaskStatus(taskId, 'pending_review');
 
-      // Prompt for next action (edit/add more mode)
       const nextPrompt = await generateResponse(
         `Sick build, ${userName}! "${name}" is live. What’s next—more features, a tweak, or we calling it?`,
         userName,
@@ -275,6 +274,14 @@ export async function handleMessage(botSocket, message) {
   let tone = await redisClient.get(toneKey) || DEFAULT_TONE;
   let taskState = await redisClient.get(stateKey);
   taskState = taskState ? JSON.parse(taskState) : { step: "name", taskId: `initial_name:${frontendId}` };
+
+  // Handle reset_user explicitly
+  if (message.type === 'reset_user') {
+    await redisClient.del(userKey); // Clear name on reset
+    userName = 'Guest';
+    taskState = { step: "name", taskId: `initial_name:${frontendId}` };
+    await redisClient.set(stateKey, JSON.stringify(taskState));
+  }
 
   await log(`Processing message type: ${message.type || 'general_message'}, taskId: ${message.taskId || 'none'}, step: ${taskState.step}`);
 
@@ -369,7 +376,7 @@ export async function handleMessage(botSocket, message) {
         await redisClient.hSet('tasks', taskId, JSON.stringify({
           taskId,
           step: 'type',
-          user: userName,
+          user: userName, // Persist userName
           name: trimmedName.toLowerCase().replace(/\s+/g, '-'),
           status: 'pending',
           frontendId,
@@ -579,6 +586,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
   }
 
   const task = JSON.parse(taskData);
+  task.user = userName; // Ensure userName persists in task
 
   switch (task.step) {
     case 'name':
@@ -670,7 +678,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: task.type === 'full-stack' ? ["Network", "Features"] : ["Go", "Edit description"],
+        options: task.type === 'full-stack' ? ["Network", "Features"] : ["Type a detailed description of your project"],
         frontendId,
         taskName: task.name,
         taskType: task.type,
@@ -717,7 +725,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Go", "Edit description"],
+          options: ["Type a detailed description of your project"],
           frontendId,
           taskName: task.name,
           taskType: task.type,
@@ -742,7 +750,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Go", "Edit description"],
+        options: ["Type a detailed description of your project"],
         frontendId,
         taskName: task.name,
         taskType: task.type,
@@ -750,7 +758,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       break;
     case 'pending_features':
       const lowerAnswer = answer?.trim().toLowerCase();
-      if (lowerAnswer === 'go') {
+      if (lowerAnswer === "create file / project") {
         task.step = 'building';
         task.status = 'in_progress';
         task.frontendId = frontendId;
@@ -784,7 +792,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         }
 
         await delegateTask(botSocket, 'bot_backend', 'buildTask', { task, userName, tone, frontendId });
-      } else if (lowerAnswer === 'edit description') {
+      } else if (lowerAnswer === 'change description') {
         const editPrompt = await generateResponse(
           `Cool, ${userName}, let’s tweak the features for "${task.name}". What’s the new vibe you’re going for?`,
           userName,
@@ -798,7 +806,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Go", "Edit description"],
+          options: ["Type a detailed description of your project"],
           frontendId,
           taskName: task.name,
           taskType: task.type,
@@ -809,7 +817,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         task.status = 'pending';
         await redisClient.hSet('tasks', taskId, JSON.stringify(task));
         const confirmPrompt = await generateResponse(
-          `Got it, ${userName}! Features for "${task.name}": "${answer}". Ready to roll with this, or wanna tweak it more?`,
+          `Got it, ${userName}! Features for "${task.name}": "${answer}". Ready to roll with this, or tweak it more?`,
           userName,
           tone
         );
@@ -821,7 +829,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Go", "Edit description"],
+          options: ["Create File / Project", "Change Description"],
           frontendId,
           taskName: task.name,
           taskType: task.type,
@@ -849,7 +857,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Go", "Edit description"],
+          options: ["Type a detailed description of your project"],
           frontendId,
           taskName: task.name,
           taskType: task.type,
