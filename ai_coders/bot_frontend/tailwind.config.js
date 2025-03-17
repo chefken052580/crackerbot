@@ -1,18 +1,34 @@
+/** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
     "./index.html",
     "./src/**/*.{js,jsx,ts,tsx}",
     "./bot_frontend/**/*.{js,jsx,ts,tsx}",
   ],
+  safelist: [
+    'animate-matrix-fall',  // Ensures the animation class is always included
+  ],
   theme: {
     extend: {
       colors: {
-        "neon-green": "#39ff14",
-        "neon-yellow": "#f5f50a", // Updated to match index.css
-        "neon-blue": "#00ffff",
-        "gray-900": "#1a1a1a",
-        "gray-800": "#333333",
-        "gray-700": "#4d4d4d",
+        'neon-yellow': '#ffea00',
+        'neon-green': '#00ff9f',
+        'neon-blue': '#00ddeb',
+        'neon-purple': '#d900ff',
+        'neon-red': '#ff004d',
+        'cyber-pink': '#ff007a',
+        'cyber-cyan': '#00e5ff',
+        'cyber-purple': '#7a00ff',
+        'retro-orange': '#ff8c00',
+        'retro-green': '#008000',
+        'retro-blue': '#0000ff',
+        'pastel-purple': '#9b59b6',
+        'pastel-teal': '#00cec9',
+        'pastel-pink': '#ff85a2',
+        'pastel-blue': '#74b9ff',
+        'matrix-green': '#00ff00', // Bright green for that Matrix glow
+        'matrix-dark': '#0a0f0a', // Darker green-black background
+        'matrix-shadow': '#1a2b1a', // Subtle green tint for depth
       },
       fontSize: {
         'xl': ['1.25rem', { lineHeight: '1.75rem' }],
@@ -35,6 +51,18 @@ module.exports = {
       },
       spacing: {
         '4': '1rem',
+      },
+      // Add your custom animation
+      animation: {
+        'matrix-fall': 'matrix-fall 1.5s ease-in-out infinite',
+      },
+      // Define the keyframes for the animation
+      keyframes: {
+        'matrix-fall': {
+          '0%': { transform: 'translateY(-100%)', opacity: '0' },
+          '50%': { opacity: '1' },
+          '100%': { transform: 'translateY(0)', opacity: '0.7' },
+        },
       },
     },
   },

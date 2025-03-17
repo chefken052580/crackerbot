@@ -10,7 +10,28 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Theme-specific body styles */
+body.neon {
   @apply bg-gray-900 text-gray-300;
+}
+
+body.cyberpunk {
+  @apply bg-black text-cyan-300;
+}
+
+body.retro {
+  @apply bg-stone-200 text-stone-800;
+}
+
+body.pastel {
+  @apply bg-pink-100 text-gray-700;
+}
+
+body.matrix {
+  @apply bg-matrix-dark text-matrix-green font-mono;
+  background-image: linear-gradient(to bottom, rgba(10, 15, 10, 0.9), rgba(10, 15, 10, 1));
 }
 
 code {
@@ -18,15 +39,9 @@ code {
     monospace;
 }
 
-/* Custom Neon Colors */
-/* These are now defined in tailwind.config.js, so we don't need them here */
-
-/* Additional utilities for your UI */
-/* No longer using @apply for Tailwind utilities */
-
 /* Button styles */
 .button {
-  @apply px-4 py-2 rounded-md text-gray-900 transition;
+  @apply px-4 py-2 rounded-md transition;
 }
 
 /* Sidebar styles */
@@ -44,8 +59,40 @@ code {
   @apply absolute top-0 left-0 w-full py-2 px-4 bg-gray-800 border-b border-gray-700 text-center;
 }
 
+/* Custom animations for user messages */
 @keyframes pulse {
-  0% { opacity: 0.7; }
-  50% { opacity: 1; }
-  100% { opacity: 0.7; }
+  0% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+  100% { opacity: 0.7; transform: scale(1); }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* User message enhancements */
+.user-message {
+  @apply transition-all duration-300;
+}
+
+/* Theme-specific user message styles */
+.neon .user-message {
+  @apply text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform rotate-1;
+}
+
+.cyberpunk .user-message {
+  @apply text-cyber-pink bg-gray-800 shadow-md border-2 border-cyber-pink rounded-md p-2 transform -rotate-1 animate-pulse;
+}
+
+.retro .user-message {
+  @apply text-retro-orange bg-stone-100 shadow-inner border-2 border-retro-orange rounded-sm p-2 font-mono;
+}
+
+.pastel .user-message {
+  @apply text-pastel-purple bg-pink-200 shadow-md border-2 border-pastel-purple rounded-full p-2 transform skew-y-2 animate-bounce;
+}
+
+.matrix .user-message {
+  @apply text-matrix-green bg-matrix-dark shadow-lg border-2 border-matrix-green rounded-sm p-2 font-mono animate-matrix-fall;
 }

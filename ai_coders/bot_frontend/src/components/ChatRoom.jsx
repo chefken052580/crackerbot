@@ -1,3 +1,4 @@
+// ai_coders/bot_frontend/src/components/ChatRoom.jsx
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
@@ -19,7 +20,7 @@ const colorSchemes = {
     bg: "bg-gray-900",
     chatBg: "bg-gray-800",
     text: "text-gray-300",
-    user: "text-neon-yellow bg-gray-700",
+    user: "text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform animate-pulse",
     bot: "text-neon-green bg-gray-800",
     system: "text-neon-blue bg-gray-900 italic",
     command: "text-neon-purple bg-gray-700",
@@ -32,6 +33,78 @@ const colorSchemes = {
     buttonText: "text-gray-900",
     accent: "text-neon-yellow",
     bubble: "bg-purple-600 hover:bg-yellow-400 text-white font-semibold",
+  },
+  cyberpunk: {
+    bg: "bg-black",
+    chatBg: "bg-gray-900",
+    text: "text-cyan-300",
+    user: "text-cyber-pink bg-gray-800 shadow-md border-2 border-cyber-pink rounded-md p-2 transform animate-pulse",
+    bot: "text-cyber-cyan bg-gray-900",
+    system: "text-cyber-purple bg-black italic",
+    command: "text-yellow-400 bg-gray-800",
+    success: "text-green-400 bg-gray-900",
+    error: "text-red-500 bg-gray-900",
+    question: "text-teal-300 bg-gray-900",
+    progress: "bg-gray-900",
+    download: "bg-indigo-800 text-indigo-200",
+    button: "bg-cyan-500 hover:bg-cyan-600",
+    buttonText: "text-black",
+    accent: "text-cyber-pink",
+    bubble: "bg-indigo-600 hover:bg-pink-500 text-white font-semibold",
+  },
+  retro: {
+    bg: "bg-stone-200",
+    chatBg: "bg-stone-300",
+    text: "text-stone-800",
+    user: "text-retro-orange bg-stone-100 shadow-inner border-2 border-retro-orange rounded-sm p-2 font-mono",
+    bot: "text-retro-green bg-stone-200",
+    system: "text-retro-blue bg-stone-300 italic",
+    command: "text-purple-600 bg-stone-100",
+    success: "text-green-600 bg-stone-200",
+    error: "text-red-600 bg-stone-200",
+    question: "text-blue-500 bg-stone-200",
+    progress: "bg-stone-300",
+    download: "bg-yellow-600 text-yellow-100",
+    button: "bg-orange-500 hover:bg-orange-600",
+    buttonText: "text-white",
+    accent: "text-retro-orange",
+    bubble: "bg-green-600 hover:bg-orange-500 text-white font-semibold",
+  },
+  pastel: {
+    bg: "bg-pink-100",
+    chatBg: "bg-white",
+    text: "text-gray-700",
+    user: "text-pastel-purple bg-pink-200 shadow-md border-2 border-pastel-purple rounded-full p-2 transform skew-y-2 animate-bounce",
+    bot: "text-pastel-teal bg-blue-100",
+    system: "text-indigo-500 bg-white italic",
+    command: "text-pastel-pink bg-pink-100",
+    success: "text-green-500 bg-green-100",
+    error: "text-red-500 bg-red-100",
+    question: "text-pastel-blue bg-blue-100",
+    progress: "bg-white",
+    download: "bg-yellow-300 text-yellow-800",
+    button: "bg-teal-400 hover:bg-teal-500",
+    buttonText: "text-white",
+    accent: "text-pastel-purple",
+    bubble: "bg-pink-400 hover:bg-purple-400 text-white font-semibold",
+  },
+  matrix: {
+    bg: "bg-matrix-dark",
+    chatBg: "bg-matrix-shadow",
+    text: "text-matrix-green",
+    user: "text-matrix-green bg-matrix-dark shadow-lg border-2 border-matrix-green rounded-sm p-2 font-mono animate-matrix-fall",
+    bot: "text-matrix-green bg-matrix-shadow",
+    system: "text-matrix-green bg-matrix-dark italic opacity-75",
+    command: "text-matrix-green bg-matrix-shadow",
+    success: "text-matrix-green bg-matrix-shadow",
+    error: "text-red-500 bg-matrix-shadow",
+    question: "text-matrix-green bg-matrix-shadow",
+    progress: "bg-matrix-shadow",
+    download: "bg-matrix-dark text-matrix-green border border-matrix-green",
+    button: "bg-matrix-green hover:bg-green-700",
+    buttonText: "text-black",
+    accent: "text-matrix-green",
+    bubble: "bg-matrix-shadow hover:bg-matrix-green text-matrix-green font-semibold",
   },
 };
 
@@ -50,11 +123,16 @@ const ChatRoom = () => {
   const [colorScheme, setColorScheme] = useState(localStorage.getItem('colorScheme') || "neon");
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [postTaskOptions, setPostTaskOptions] = useState(null); // Added for clickable bubbles
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
   const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    document.body.className = colorScheme;
+  }, [colorScheme]);
 
   useEffect(() => {
     console.log("ChatRoom: Mounting component...");
@@ -97,9 +175,10 @@ const ChatRoom = () => {
     socketRef.current.on("message", (data) => {
       console.log("ChatRoom: Message received:", data);
       setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
+      const userName = localStorage.getItem('userName') || "Guest";
       const newMessage = {
-        from: data.from || "Unknown",
-        user: data.user || localStorage.getItem('userName') || "Guest",
+        from: data.from || "Cracker Bot",
+        user: data.user || userName,
         text: data.text || "",
         type: data.type || "bot",
         fileName: data.fileName,
@@ -121,7 +200,7 @@ const ChatRoom = () => {
           id: data.taskId,
         }));
         if (data.progress === 100) {
-          setCurrentTask((prev) => (prev ? { ...prev, status: "building_complete" } : null));
+          setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
         }
       } else if (data.type === "question" && data.taskId) {
         setMessages((prev) => [...prev, newMessage]);
@@ -136,9 +215,10 @@ const ChatRoom = () => {
             data.text.toLowerCase().includes("type") ? "type" :
             data.text.toLowerCase().includes("description") ? "features" :
             data.text.toLowerCase().includes("shoot") ? "choice" : "confirm",
-          status: "pending",
+          taskStatus: "pending",
         }));
         setEditMode(null);
+        setPostTaskOptions(null); // Clear post-task options if new question arrives
       } else if (data.type === "success" && data.options) {
         setMessages((prev) => [...prev, newMessage]);
         setTaskPending(null);
@@ -147,8 +227,9 @@ const ChatRoom = () => {
         setMessages((prev) => [...prev, newMessage]);
         setProgressMessage(null);
         setTaskPending(null);
-        setCurrentTask((prev) => (prev ? { ...prev, status: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
+        setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
         setEditMode(data.taskId);
+        setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures }); // Set post-task options
         if (data.downloadUrl) {
           const link = document.createElement("a");
           link.href = data.downloadUrl;
@@ -176,6 +257,7 @@ const ChatRoom = () => {
     socketRef.current.on("taskResult", (data) => {
       console.log("ChatRoom: TaskResult received:", data);
       const { taskId, content, fileName, type, name, frontendId } = data;
+      const userName = localStorage.getItem('userName') || "Guest";
 
       let decodedContent;
       try {
@@ -196,7 +278,8 @@ const ChatRoom = () => {
 
       const newMessage = {
         from: "Cracker Bot",
-        text: `Yo ${localStorage.getItem("userName") || "Guest"}, your "${name}" is ready! Click to download:`,
+        user: userName,
+        text: `Yo ${userName}, your "${name}" is ready! Click to download:`,
         type: "download",
         fileName: fileName,
         downloadUrl: downloadUrl,
@@ -209,8 +292,9 @@ const ChatRoom = () => {
       setMessages((prev) => [...prev, newMessage]);
       setProgressMessage(null);
       setTaskPending(null);
-      setCurrentTask((prev) => (prev ? { ...prev, status: "completed", name, type } : null));
+      setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name, type } : null));
       setEditMode(taskId);
+      setPostTaskOptions({ taskId, frontendId, taskName: name, taskType: type, taskFeatures: data.taskFeatures }); // Set post-task options
 
       const link = document.createElement("a");
       link.href = downloadUrl;
@@ -274,7 +358,7 @@ const ChatRoom = () => {
   useEffect(() => {
     console.log("ChatRoom: Scrolling to end due to messages or typing change");
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping, progressMessage]);
+  }, [messages, isTyping, progressMessage, postTaskOptions]);
 
   useEffect(() => {
     if (showCommands && commandsRef.current) {
@@ -305,6 +389,15 @@ const ChatRoom = () => {
       frontendId: socketRef.current.id,
     };
 
+    setMessages((prev) => [...prev, {
+      from: userName,
+      user: userName,
+      text: messageText.trim(),
+      type: "user",
+      timestamp: new Date().toLocaleTimeString(),
+      className: "user-message",
+    }]);
+
     if (messageText.startsWith("/")) {
       messageData.type = "command";
       messageData.target = "bot_lead";
@@ -316,9 +409,9 @@ const ChatRoom = () => {
           messageData.text = "Build something epic!";
           break;
         case "/projects":
-          // Placeholder; server should handle listing projects
           setMessages((prev) => [...prev, {
             from: "Cracker Bot",
+            user: userName,
             text: "Project listing not yet implemented. Use /create to start a new one!",
             type: "system",
             timestamp: new Date().toLocaleTimeString(),
@@ -326,9 +419,9 @@ const ChatRoom = () => {
           setIsSending(false);
           return;
         case "/download":
-          // Placeholder; server should handle latest download
           setMessages((prev) => [...prev, {
             from: "Cracker Bot",
+            user: userName,
             text: "Download latest not yet implemented server-side. Complete a task to download!",
             type: "system",
             timestamp: new Date().toLocaleTimeString(),
@@ -340,11 +433,12 @@ const ChatRoom = () => {
           socketRef.current.emit("reset_user", { userId: socketRef.current.id, ip: window.location.hostname });
           setMessages((prev) => [...prev, {
             from: "System",
+            user: userName,
             text: "Name reset! Please enter a new name.",
             type: "system",
             timestamp: new Date().toLocaleTimeString(),
           }]);
-          setCurrentTask({ taskId: `initial_name:${socketRef.current.id}`, step: "name", status: "pending" });
+          setCurrentTask({ taskId: `initial_name:${socketRef.current.id}`, step: "name", taskStatus: "pending" });
           setIsSending(false);
           return;
         case "/tone":
@@ -354,6 +448,7 @@ const ChatRoom = () => {
         case "/guide":
           setMessages((prev) => [...prev, {
             from: "Cracker Bot",
+            user: userName,
             text: "Available commands:\n" + commands.map(cmd => `${cmd.command}: ${cmd.description}`).join("\n"),
             type: "system",
             timestamp: new Date().toLocaleTimeString(),
@@ -367,6 +462,7 @@ const ChatRoom = () => {
         default:
           setMessages((prev) => [...prev, {
             from: "Cracker Bot",
+            user: userName,
             text: `Unknown command: ${command}. Try /guide for help!`,
             type: "error",
             timestamp: new Date().toLocaleTimeString(),
@@ -374,7 +470,7 @@ const ChatRoom = () => {
           setIsSending(false);
           return;
       }
-    } else if (currentTask && currentTask.status !== "completed") {
+    } else if (currentTask && currentTask.taskStatus !== "completed") {
       messageData.type = "task_response";
       messageData.taskId = currentTask.taskId;
       if (currentTask.step === "name" && !localStorage.getItem("userName")) {
@@ -395,7 +491,7 @@ const ChatRoom = () => {
       } else if (currentTask.step === "features") {
         setCurrentTask((prev) => ({ ...prev, features: messageText, step: "confirm" }));
       } else if (currentTask.step === "confirm" && messageText.toLowerCase() === "create file / project") {
-        setCurrentTask((prev) => ({ ...prev, status: "building" }));
+        setCurrentTask((prev) => ({ ...prev, taskStatus: "building" }));
       }
     } else {
       messageData.type = "general_message";
@@ -546,6 +642,66 @@ const ChatRoom = () => {
     localStorage.setItem("colorScheme", scheme);
   };
 
+  const handlePostTaskAction = (action) => {
+    if (!postTaskOptions) return;
+    const { taskId, frontendId, taskName, taskType, taskFeatures } = postTaskOptions;
+    const userName = localStorage.getItem("userName") || "Guest";
+    let messageData;
+
+    switch (action) {
+      case "Edit":
+        messageData = {
+          text: "Edit this project",
+          type: "task_response",
+          taskId,
+          frontendId,
+          user: userName,
+          userId: socketRef.current.id,
+          commandFlag: true,
+          target: "bot_lead",
+          taskName,
+          taskType,
+          taskFeatures,
+        };
+        break;
+      case "Add More":
+        messageData = {
+          text: "Add more features to this project",
+          type: "task_response",
+          taskId,
+          frontendId,
+          user: userName,
+          userId: socketRef.current.id,
+          commandFlag: true,
+          target: "bot_lead",
+          taskName,
+          taskType,
+          taskFeatures,
+        };
+        break;
+      case "Done":
+        messageData = {
+          text: "Done with this project",
+          type: "task_response",
+          taskId,
+          frontendId,
+          user: userName,
+          userId: socketRef.current.id,
+          commandFlag: true,
+          target: "bot_lead",
+          taskName,
+          taskType,
+          taskFeatures,
+        };
+        break;
+      default:
+        return;
+    }
+    socketRef.current.emit("message", messageData);
+    setPostTaskOptions(null);
+    setCurrentTask(null);
+  };
+
   const currentScheme = colorSchemes[colorScheme];
 
   console.log("ChatRoom: Rendering UI with colorScheme:", colorScheme);
@@ -563,6 +719,10 @@ const ChatRoom = () => {
             className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText}`}
           >
             <option value="neon">Neon</option>
+            <option value="cyberpunk">Cyberpunk</option>
+            <option value="retro">Retro</option>
+            <option value="pastel">Pastel</option>
+            <option value="matrix">Matrix</option>
           </select>
           <button
             onClick={toggleRecording}
@@ -597,7 +757,7 @@ const ChatRoom = () => {
       </div>
 
       <div className="flex-1 flex items-center justify-center">
-        <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? "border-2 border-neon-yellow" : ""}`}>
+        <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? "border-2 border-matrix-green" : ""}`}>
           <div className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}>
             {messages.filter((msg) => msg.type !== "progress" || (msg.type === "progress" && msg.progress < 100)).map((msg, index) => (
               <div key={index}>
@@ -645,6 +805,29 @@ const ChatRoom = () => {
                   <span className={`${currentScheme.accent} font-bold`}>{cmd.command}</span> - {cmd.description}
                 </div>
               ))}
+            </div>
+          )}
+
+          {postTaskOptions && (
+            <div className="flex justify-center space-x-4 mt-4">
+              <button
+                onClick={() => handlePostTaskAction("Edit")}
+                className={`px-4 py-2 rounded-full ${currentScheme.bubble}`}
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handlePostTaskAction("Add More")}
+                className={`px-4 py-2 rounded-full ${currentScheme.bubble}`}
+              >
+                Add More
+              </button>
+              <button
+                onClick={() => handlePostTaskAction("Done")}
+                className={`px-4 py-2 rounded-full ${currentScheme.bubble}`}
+              >
+                Done
+              </button>
             </div>
           )}
 

@@ -1,19 +1,28 @@
+// ai_coders/bot_backend/src/taskExecution.js
 import { openai } from './aiHelper.js';
-import { botSocket } from './socket.js';
+import { botSocket as socket } from './socket.js'; // Rename to avoid confusion
 import { zipFilesWithReadme } from './contentUtils.js';
 import { log, error } from './logger.js';
+import fs from 'node:fs'; // Correct ESM import for Node.js fs
+import PDFDocument from 'pdfkit';
 
 export function initializeTaskExecution() {
-  botSocket.on('command', async (data) => {
+  if (!socket) {
+    console.error(`[${new Date().toISOString()}] ERROR: WebSocket (botSocket) not initialized`);
+    process.exit(1); // Fatal error if socket isn’t available
+  }
+
+  socket.on('command', async (data) => {
     const { command, args } = data;
     const { task, requestId, leadId } = args;
 
     if (!task || !task.taskId || !task.type) {
       await error(`Invalid task data: missing taskId or type for requestId ${requestId}`);
-      botSocket.emit('taskResult', {
+      socket.emit('taskResult', {
         error: 'Invalid task data: missing taskId or type',
         requestId,
         leadId,
+        frontendId: task?.frontendId,
       });
       return;
     }
@@ -21,15 +30,16 @@ export function initializeTaskExecution() {
     try {
       let result;
       if (command === 'buildTask') {
-        result = await startBuildTask(botSocket, task);
+        result = await startBuildTask(task); // Pass task directly, rely on imported socket
       } else if (command === 'editTask') {
-        result = await editTask(botSocket, task);
+        result = await editTask(task);
       } else {
         await error(`Unknown command ${command} for requestId ${requestId}`);
-        botSocket.emit('taskResult', {
+        socket.emit('taskResult', {
           error: `Unknown command: ${command}`,
           requestId,
           leadId,
+          frontendId: task.frontendId,
         });
         return;
       }
@@ -50,7 +60,7 @@ export function initializeTaskExecution() {
         finalFileName = contentArray[0].fileName;
       }
 
-      botSocket.emit('taskResult', {
+      socket.emit('taskResult', {
         taskId: task.taskId,
         content: Buffer.isBuffer(finalContent) ? finalContent.toString('base64') : finalContent,
         fileName: finalFileName,
@@ -60,12 +70,12 @@ export function initializeTaskExecution() {
         ip: task.ip,
         error: result.error,
         requestId,
-        leadId,
+        leadId, // Ensure leadId is always included
       });
       await log(`Emitted taskResult for taskId ${task.taskId} to frontendId ${task.frontendId} with requestId ${requestId}`);
     } catch (err) {
       await error(`Error processing ${command} for taskId ${task.taskId}: ${err.message}`);
-      botSocket.emit('taskResult', {
+      socket.emit('taskResult', {
         taskId: task.taskId,
         error: `Task processing failed: ${err.message}`,
         frontendId: task.frontendId,
@@ -76,26 +86,25 @@ export function initializeTaskExecution() {
     }
   });
 
-  botSocket.on('connect', async () => {
+  socket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js version 2025-03-17-2 loaded'); // Version bump
-    botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
+    await log('taskExecution.js version 2025-03-17-5 loaded');
+    socket.emit('register', { name: 'bot_backend', role: 'backend' });
   });
 
-  botSocket.on('disconnect', () => {
+  socket.on('disconnect', () => {
     console.log(`[${new Date().toISOString()}] Backend bot disconnected from WebSocket server`);
   });
 
   console.log(`[${new Date().toISOString()}] Task execution initialized`);
 }
 
-export async function startBuildTask(botSocket, task) {
-  const { name, features, user, type, network, frontendId, ip, requestId, leadId } = task;
-  botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
+export async function startBuildTask(task) {
+  const { name, features, user, type, frontendId, ip, requestId, leadId } = task;
+  socket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
     await log(`Starting build for ${name} (${type}) for frontendId ${frontendId}`);
-    console.log(`[${new Date().toISOString()}] Starting build for ${name} (${type}) for frontendId ${frontendId}`);
     const extensionMap = {
       'javascript': 'js', 'js': 'js',
       'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java', 'c++': 'cpp',
@@ -104,24 +113,90 @@ export async function startBuildTask(botSocket, task) {
       'perl': 'pl', 'lua': 'lua', 'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql',
       'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md', 'toml': 'toml', 'full-stack': 'zip',
       'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts', 'docker': 'Dockerfile',
-      'doc': 'txt', 'csv': 'csv', 'json': 'json',
+      'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf',
     };
 
-    const aiTwistPrompt = `Based on the user's request "${features || 'basic functionality'}," add your own creative twist and additional features to make it uniquely impressive. Describe your enhancements briefly in the response.`;
+    const aiTwistPrompt = `Based on the user's request "${features || 'basic functionality'}," add your own creative twist and additional features to make it uniquely impressive. Return enhancements as a JSON object with "content" (the code) and "enhancements" (description of added features).`;
+
+    if (type === 'graph') {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: 'Return a JSON object with "content" (HTML code using Chart.js for a graph) and "enhancements" (description of added features).' },
+          { role: 'user', content: `Generate a detailed graph for "${name}" with features: ${features}. ${aiTwistPrompt}` },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 2000,
+      });
+
+      const { content, enhancements } = JSON.parse(response.choices[0].message.content.trim());
+      const files = {
+        'graph.html': Buffer.from(content),
+        'README.md': Buffer.from(`Generated graph for ${name} by ${user}\nEnhancements: ${enhancements || 'AI-added visuals'}`),
+      };
+      const zipContent = await zipFilesWithReadme(files, task);
+      return { content: zipContent, fileName: `${name}.zip`, frontendId, ip, requestId, leadId };
+    }
+
+    if (type === 'pdf') {
+      const doc = new PDFDocument();
+      const filePath = `/tmp/${name}-${task.taskId}.pdf`;
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: 'Return a JSON array of 5 objects, each with "name" (animal name) and "description" (brief text about the animal).' },
+          { role: 'user', content: `Generate descriptions for 5 different animals from Africa for a 3-page PDF named "${name}" with features: ${features}. ${aiTwistPrompt}` },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 1000,
+      });
+      const animals = JSON.parse(response.choices[0].message.content.trim());
+
+      doc.fontSize(16).text(`${name}: African Animals`, { align: 'center' });
+      doc.moveDown();
+      animals.slice(0, 2).forEach(animal => {
+        doc.fontSize(12).text(`${animal.name}: ${animal.description}`);
+        doc.moveDown();
+      });
+      doc.addPage();
+      doc.fontSize(16).text('More Amazing Creatures', { align: 'center' });
+      doc.moveDown();
+      animals.slice(2, 4).forEach(animal => {
+        doc.fontSize(12).text(`${animal.name}: ${animal.description}`);
+        doc.moveDown();
+      });
+      doc.addPage();
+      doc.fontSize(16).text('Final Safari Stop', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(12).text(`${animals[4].name}: ${animals[4].description}`);
+      doc.end();
+
+      await new Promise((resolve, reject) => {
+        stream.on('finish', resolve);
+        stream.on('error', reject);
+      });
+
+      const content = fs.readFileSync(filePath, { encoding: 'base64' });
+      fs.unlinkSync(filePath);
+      return { content: [{ fileName: `${name}.pdf`, content }], frontendId, ip, requestId, leadId };
+    }
 
     if (type === 'full-stack') {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
           { role: 'system', content: `Return a flat JSON object with "server.js", "index.html", "package.json", and "setup.sh" as keys and their respective code/content as string values.` },
-          { role: 'user', content: `Generate a full-stack app for "${name}" with features: ${features}${network ? ` using network ${network}` : ''}. ${aiTwistPrompt}` },
+          { role: 'user', content: `Generate a full-stack app for "${name}" with features: ${features}. ${aiTwistPrompt}` },
         ],
         response_format: { type: 'json_object' },
         max_tokens: 4000,
       });
       const files = JSON.parse(response.choices[0].message.content.trim());
       if (!files || typeof files !== 'object' || Object.keys(files).length < 3) {
-        throw new Error('Invalid project structure: Must include at least server.js, index.html, and package.json');
+        throw new Error('Invalid project structure');
       }
       files['server.js'] = files['server.js'] || 'console.log("Server running");';
       files['index.html'] = files['index.html'] || '<html><body><h1>Hello World</h1></body></html>';
@@ -131,7 +206,6 @@ export async function startBuildTask(botSocket, task) {
         fileName,
         content: Buffer.from(content).toString('base64'),
       }));
-      await log(`Generated full-stack content for ${name}: ${Object.keys(files).join(', ')} with AI twist`);
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
 
@@ -145,7 +219,6 @@ export async function startBuildTask(botSocket, task) {
     });
     const fileName = `${name}.${extensionMap[type.toLowerCase()] || 'txt'}`;
     const content = Buffer.from(response.choices[0].message.content.trim()).toString('base64');
-    await log(`Generated ${type} content for ${name}: ${content.slice(0, 50)}... with AI twist`);
     return { content: [{ fileName, content }], frontendId, ip, requestId, leadId };
   } catch (err) {
     await error(`Error in startBuildTask for taskId ${task.taskId}: ${err.message}`);
@@ -153,13 +226,12 @@ export async function startBuildTask(botSocket, task) {
   }
 }
 
-export async function editTask(botSocket, task) {
+export async function editTask(task) {
   const { name, features, type, editRequest, frontendId, ip, requestId, leadId } = task;
-  botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
+  socket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
     await log(`Starting edit for ${name} (${type}) with request: ${editRequest} for frontendId ${frontendId}`);
-    console.log(`[${new Date().toISOString()}] Starting edit for ${name} (${type}) with request: ${editRequest} for frontendId ${frontendId}`);
     const extensionMap = {
       'javascript': 'js', 'js': 'js',
       'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java', 'c++': 'cpp',
@@ -168,7 +240,7 @@ export async function editTask(botSocket, task) {
       'perl': 'pl', 'lua': 'lua', 'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql',
       'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md', 'toml': 'toml', 'full-stack': 'zip',
       'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts', 'docker': 'Dockerfile',
-      'doc': 'txt', 'csv': 'csv', 'json': 'json',
+      'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf',
     };
 
     const aiTwistPrompt = `Based on the original features "${features || 'basic functionality'}" and edit request "${editRequest}," add your own creative twist and additional features to enhance it uniquely. Describe your enhancements briefly in the response.`;
@@ -185,7 +257,7 @@ export async function editTask(botSocket, task) {
       });
       const files = JSON.parse(response.choices[0].message.content.trim());
       if (!files || typeof files !== 'object' || Object.keys(files).length < 3) {
-        throw new Error('Invalid project structure: Must include at least server.js, index.html, and package.json');
+        throw new Error('Invalid project structure');
       }
       files['server.js'] = files['server.js'] || 'console.log("Server running");';
       files['index.html'] = files['index.html'] || '<html><body><h1>Hello World</h1></body></html>';
@@ -195,7 +267,6 @@ export async function editTask(botSocket, task) {
         fileName,
         content: Buffer.from(content).toString('base64'),
       }));
-      await log(`Edited full-stack content for ${name}: ${Object.keys(files).join(', ')} with AI twist`);
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
 
@@ -209,7 +280,6 @@ export async function editTask(botSocket, task) {
     });
     const fileName = `${name}.${extensionMap[type.toLowerCase()] || 'txt'}`;
     const content = Buffer.from(response.choices[0].message.content.trim()).toString('base64');
-    await log(`Edited ${type} content for ${name}: ${content.slice(0, 50)}... with AI twist`);
     return { content: [{ fileName, content }], frontendId, ip, requestId, leadId };
   } catch (err) {
     await error(`Error in editTask for taskId ${task.taskId}: ${err.message}`);

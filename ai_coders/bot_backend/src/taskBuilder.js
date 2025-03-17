@@ -1,11 +1,12 @@
-import { log, error } from './logger.js';
-import { botSocket } from './socket.js';
-import fs from 'fs/promises';
+// bot_backend/src/taskBuilder.js
+import fsPromises from 'fs/promises'; // Promises API
+import fs from 'fs'; // Full fs module for streams
 import PDFDocument from 'pdfkit';
 import { createCanvas } from 'canvas';
 import { spawn } from 'child_process';
 import { createRequire } from 'module';
 import { generateResponse } from './aiHelper.js';
+import { log, error } from './logger.js';
 
 const require = createRequire(import.meta.url);
 let JSZip;
@@ -332,14 +333,14 @@ export async function editTask(task, userName, tone, requestId, leadId) {
 async function generatePdf(text, outputFile) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument();
-    const stream = fs.createWriteStream(outputFile);
+    const stream = fs.createWriteStream(outputFile); // Use fs (not fsPromises) for streams
     doc.pipe(stream);
     doc.fontSize(12).text(text, 50, 50);
     doc.end();
     stream.on('finish', async () => {
       try {
-        const content = (await fs.readFile(outputFile)).toString('base64');
-        await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+        const content = (await fsPromises.readFile(outputFile)).toString('base64'); // Use fsPromises for async read
+        await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
         resolve(content);
       } catch (err) {
         reject(err);
@@ -357,8 +358,8 @@ async function generateGif(frames, outputFile) {
     convert.on('close', async (code) => {
       if (code === 0) {
         try {
-          const content = (await fs.readFile(outputFile)).toString('base64');
-          await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+          const content = (await fsPromises.readFile(outputFile)).toString('base64');
+          await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
           resolve(content);
         } catch (err) {
           reject(err);
@@ -385,7 +386,7 @@ async function generateMp4(script, outputFile) {
     ctx.textAlign = 'center';
     ctx.fillText(slideTexts[i], 320, 240);
     const slideFile = `/tmp/slide-${Date.now()}-${i}.png`;
-    await fs.writeFile(slideFile, canvas.toBuffer('image/png'));
+    await fsPromises.writeFile(slideFile, canvas.toBuffer('image/png'));
     slideFiles.push(slideFile);
   }
   return new Promise((resolve, reject) => {
@@ -402,11 +403,11 @@ async function generateMp4(script, outputFile) {
     ];
     const ffmpeg = spawn('ffmpeg', ffmpegArgs);
     ffmpeg.on('close', async (code) => {
-      await Promise.all(slideFiles.map(file => fs.unlink(file).catch((err) => log(`Failed to delete ${file}: ${err.message}`))));
+      await Promise.all(slideFiles.map(file => fsPromises.unlink(file).catch((err) => log(`Failed to delete ${file}: ${err.message}`))));
       if (code === 0) {
         try {
-          const content = (await fs.readFile(outputFile)).toString('base64');
-          await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+          const content = (await fsPromises.readFile(outputFile)).toString('base64');
+          await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
           resolve(content);
         } catch (err) {
           reject(err);
@@ -429,8 +430,8 @@ async function generateImage(description, outputFile, format) {
   ctx.font = '16px DejaVu Sans';
   ctx.textAlign = 'center';
   ctx.fillText(description.slice(0, 20), 100, 100);
-  await fs.writeFile(outputFile, canvas.toBuffer(`image/${format}`));
-  const content = (await fs.readFile(outputFile)).toString('base64');
-  await fs.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+  await fsPromises.writeFile(outputFile, canvas.toBuffer(`image/${format}`));
+  const content = (await fsPromises.readFile(outputFile)).toString('base64');
+  await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
   return content;
 }

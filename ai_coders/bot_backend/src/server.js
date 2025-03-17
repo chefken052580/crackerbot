@@ -1,3 +1,4 @@
+// bot_backend/src/server.js
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -8,13 +9,10 @@ import { zipFilesWithReadme } from './contentUtils.js';
 import { log, error } from './logger.js';
 
 const BOT_NAME = "bot_backend";
-
 const app = express();
 const server = http.createServer(app);
-
 const PORT = process.env.PORT || 5000;
 
-// Dynamic CORS configuration
 const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ["https://visually-sterling-spider.ngrok-free.app"];
 app.use(cors({
   origin: (origin, callback) => {
@@ -58,16 +56,17 @@ setInterval(async () => {
 
 async function handleTask(data) {
   const { command, args } = data;
-  const { task: taskData, userName, tone } = args;
+  const { task: taskData, userName, tone, frontendId, requestId, leadId, ip } = args;
 
-  // Input validation
   if (!taskData || !taskData.taskId || !taskData.type) {
     await error(`Invalid task data: missing taskId or type for command ${command}`);
     botSocket.emit('taskResult', {
       taskId: taskData?.taskId || 'unknown',
       error: 'Invalid task data: missing taskId or type',
       frontendId: taskData?.frontendId || 'unknown',
-      ip: args.ip,
+      ip,
+      requestId,
+      leadId,
     });
     return;
   }
@@ -88,7 +87,7 @@ async function handleTask(data) {
 
     if (result && result.content) {
       let finalContent, finalFileName;
-      const contentArray = Array.isArray(result.content) ? result.content : [{ fileName: `${taskData.name || 'unnamed'}.${taskData.type || 'txt'}`, content: result.content }];
+      const contentArray = Array.isArray(result.content) ? result.content : [{ fileName: result.fileName || `${taskData.name || 'unnamed'}.${taskData.type || 'txt'}`, content: result.content }];
       if (contentArray.length > 1) {
         const files = Object.fromEntries(contentArray.map(item => [item.fileName, Buffer.from(item.content, 'base64')])); // Decode base64 to Buffer
         finalContent = await zipFilesWithReadme(files, taskData);
@@ -98,29 +97,33 @@ async function handleTask(data) {
         finalFileName = contentArray[0].fileName;
       }
 
-      await log(`Task result prepared: ${finalFileName} for frontendId ${taskData.frontendId}`);
+      await log(`Task result prepared: ${finalFileName} for frontendId ${frontendId}`);
       botSocket.emit('taskResult', {
         taskId: taskData.taskId,
-        content: Buffer.isBuffer(finalContent) ? finalContent.toString('base64') : finalContent, // Ensure base64
+        content: finalContent, // Already base64 from taskBuilder
         fileName: finalFileName,
-        type: taskData.type || 'text',
+        type: taskData.type,
         name: taskData.name || 'unnamed',
-        frontendId: taskData.frontendId,
-        ip: args.ip,
+        frontendId,
+        ip,
+        requestId,
+        leadId,
       });
-      console.log(`[${new Date().toISOString()}] Task result emitted for frontendId ${taskData.frontendId}: ${finalFileName}`);
-      await log(`Task result emitted for frontendId ${taskData.frontendId}: ${finalFileName}`);
+      console.log(`[${new Date().toISOString()}] Task result emitted for frontendId ${frontendId}: ${finalFileName}`);
+      await log(`Task result emitted for frontendId ${frontendId}: ${finalFileName}`);
     } else {
       throw new Error(result?.error || 'No content generated');
     }
   } catch (err) {
-    console.error(`[${new Date().toISOString()}] Task failed for frontendId ${taskData.frontendId}: ${err.message}`);
-    await error(`Task failed: ${err.message} for frontendId ${taskData.frontendId}`);
+    console.error(`[${new Date().toISOString()}] Task failed for frontendId ${frontendId}: ${err.message}`);
+    await error(`Task failed: ${err.message} for frontendId ${frontendId}`);
     botSocket.emit('taskResult', {
       taskId: taskData.taskId,
       error: `Failed to process task: ${err.message}`,
-      frontendId: taskData.frontendId,
-      ip: args.ip,
+      frontendId,
+      ip,
+      requestId,
+      leadId,
     });
   }
 }
