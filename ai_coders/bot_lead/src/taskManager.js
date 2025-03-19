@@ -17,14 +17,15 @@ const extensionMap = {
   'doc': 'txt', 'pdf': 'pdf', 'csv': 'csv', 'json': 'json', 'mp4': 'mp4', 'mp3': 'mp3', 'wav': 'wav'
 };
 
+// Initialize Task Manager with swagger
 export async function initTaskManager(botSocketArg) {
   const socket = botSocketArg || botSocket;
-  await log(`Task Manager initialized with WebSocket URL: ${socket.io.uri}`);
+  await log(`Task Manager fired up at ${socket.io.uri} - ready to drop coding bombs! 💣`);
 
   socket.on('connect_error', (err) => {
-    error(`Task Manager WebSocket connection failed: ${err.message}`);
+    error(`WebSocket glitch: ${err.message} - Cracker Bot’s tougher than that!`);
     socket.emit('message', {
-      text: `Whoops, hit a snag connecting: ${err.message}. Retrying...`,
+      text: `Connection snag: ${err.message}. Retrying with style...`,
       type: "error",
       from: 'Cracker Bot',
       target: 'bot_frontend',
@@ -32,9 +33,9 @@ export async function initTaskManager(botSocketArg) {
   });
 
   socket.on('reconnect', (attempt) => {
-    log(`Task Manager reconnected to WebSocket server after ${attempt} attempts`);
+    log(`Reconnected after ${attempt} rounds - Cracker Bot’s back in the game! 🎮`);
     socket.emit('message', {
-      text: `Back in action after ${attempt} tries! Let’s get coding.`,
+      text: `Back online after ${attempt} tries—let’s roll, fam!`,
       type: "system",
       from: 'Cracker Bot',
       target: 'bot_frontend',
@@ -42,13 +43,13 @@ export async function initTaskManager(botSocketArg) {
   });
 
   socket.on('reconnect_error', (err) => {
-    error(`Task Manager WebSocket reconnect failed: ${err.message}`);
+    error(`Reconnect fumbled: ${err.message} - we’ll crack it yet!`);
   });
 
   socket.on('disconnect', () => {
-    log('Task Manager disconnected from WebSocket server');
+    log('Task Manager’s chilling - WebSocket took a nap!');
     socket.emit('message', {
-      text: "Cracker Bot’s taking a quick nap—be back soon!",
+      text: "Cracker Bot’s taking five—back soon with the heat!",
       type: "system",
       from: 'Cracker Bot',
       target: 'bot_frontend',
@@ -62,11 +63,11 @@ export async function initTaskManager(botSocketArg) {
     let taskState = await redisClient.get(stateKey);
     taskState = taskState ? JSON.parse(taskState) : { step: "name", taskId: `initial_name:${frontendId}` };
 
-    await log(`New frontend connected (ID: ${frontendId}), checking name for ${userName}`);
+    await log(`Frontend ${frontendId} rolled in - ${userName}’s ready to vibe! 🎉`);
 
     if (!userName || userName === 'Guest') {
       const namePrompt = await generateResponse(
-        `Yo, Newbie! I’m Cracker Bot, the slickest coder around. What’s your name, fam? Type it below!`,
+        `Yo, fresh meat! I’m Cracker Bot, the slickest code slinger around. Drop your name and let’s get this party started!`,
         userName,
         DEFAULT_TONE
       );
@@ -78,14 +79,14 @@ export async function initTaskManager(botSocketArg) {
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Please type in your name below!"],
+        options: ["Drop your slick alias below!"],
         frontendId,
       });
     } else {
       taskState.step = "choice";
       await redisClient.set(stateKey, JSON.stringify(taskState));
       const welcome = await generateResponse(
-        `Smooth return, ${userName}! I’m Cracker Bot, ready to whip up epic programs. What’s our next play?`,
+        `Welcome back, ${userName}! Cracker Bot’s locked and loaded—let’s make some coding magic!`,
         userName,
         DEFAULT_TONE
       );
@@ -96,7 +97,7 @@ export async function initTaskManager(botSocketArg) {
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Shoot the shit", "Build something epic!"],
+        options: ["Chill and chat", "Drop a coding bomb!"],
         taskId: taskState.taskId,
         frontendId,
       });
@@ -105,10 +106,10 @@ export async function initTaskManager(botSocketArg) {
 
   socket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip, error: taskError, requestId, leadId }) => {
     try {
-      await log(`Received taskResult for taskId ${taskId}, frontendId ${frontendId}, content length: ${content ? content.length : 'null'}`);
+      await log(`Task ${taskId} dropped for ${frontendId} - ${content ? content.length : 'null'} chars of pure fire! 🔥`);
       const taskData = await redisClient.hGet('tasks', taskId);
       if (!taskData) {
-        await error(`No task data found for taskId ${taskId} in taskResult`);
+        await error(`Task ${taskId} ghosted us in taskResult - where’d it vanish?`);
         return;
       }
       const task = JSON.parse(taskData);
@@ -119,7 +120,7 @@ export async function initTaskManager(botSocketArg) {
 
       if (taskError) {
         const errorMsg = await generateResponse(
-          `Oof, ${userName}, "${name}" hit a snag: ${taskError}. Wanna retry or tweak it?`,
+          `Ouch, ${userName}! "${name}" crashed with: ${taskError}. Retry or remix it?`,
           userName,
           tone
         );
@@ -135,16 +136,30 @@ export async function initTaskManager(botSocketArg) {
           taskName: name,
           taskType: type,
           taskFeatures: task.features,
-          options: ["Retry", "Edit description"],
+          options: ["Retry", "Tweak the plan"],
         });
         await redisClient.hDel('tasks', taskId);
         return;
       }
 
-      setLastGeneratedTask({ content, fileName, type, name });
+      // Enhanced caching with full metadata
+      await cacheCompletedTask({
+        taskId,
+        frontendId,
+        name,
+        type,
+        fileName,
+        content,
+        user: userName,
+        features: task.features,
+        version: task.version || 1,
+        network: task.network,
+        editRequest: task.editRequest,
+      });
+      setLastGeneratedTask({ taskId, content, fileName, type, name, frontendId });
 
       const downloadMsg = await generateResponse(
-        `Boom, ${userName}! "${name}" (${type}) is ready—download this slick masterpiece now!`,
+        `Boom, ${userName}! "${name}" (${type}${task.version ? ` v${task.version}` : ''}) is a straight-up banger—grab this masterpiece now!`,
         userName,
         tone
       );
@@ -152,7 +167,7 @@ export async function initTaskManager(botSocketArg) {
         text: downloadMsg,
         type: 'download',
         taskId,
-        content, // Send raw base64 content to frontend
+        content,
         fileName,
         from: 'Cracker Bot',
         target: 'bot_frontend',
@@ -165,7 +180,7 @@ export async function initTaskManager(botSocketArg) {
       });
 
       const reviewPrompt = await generateResponse(
-        `Yo ${userName}, "${name}" is live! What’s next—tweak it, juice it up, or call it a day?`,
+        `Yo ${userName}, "${name}" is live and lit! What’s next—polish it, juice it up, or call it a wrap?`,
         userName,
         tone
       );
@@ -177,7 +192,7 @@ export async function initTaskManager(botSocketArg) {
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Edit", "Add more", "Done"],
+        options: ["Polish it up", "Stack more juice", "Wrap it up"],
         frontendId,
         taskName: name,
         taskType: type,
@@ -185,13 +200,13 @@ export async function initTaskManager(botSocketArg) {
       });
 
       task.step = 'review';
-      task.status = 'pending';
+      task.status = 'pending_review';
       task.user = userName;
       await redisClient.hSet('tasks', taskId, JSON.stringify(task));
       await redisClient.set(stateKey, JSON.stringify({ step: "review", taskId }));
       await updateTaskStatus(taskId, 'pending_review');
     } catch (err) {
-      await error(`Error handling taskResult for taskId ${taskId}: ${err.message}`);
+      await error(`Task ${taskId} result flopped: ${err.message} - Cracker Bot’s on it!`);
     }
   });
 
@@ -200,31 +215,32 @@ export async function initTaskManager(botSocketArg) {
   });
 
   socket.on('error', (err) => {
-    error(`WebSocket error: ${err.message}`);
+    error(`WebSocket hiccup: ${err.message} - we’ll bounce back slicker!`);
   });
 
   socket.on('reconnect_attempt', (attempt) => {
-    log(`Attempting to reconnect to WebSocket server, attempt #${attempt}`);
+    log(`Reconnect attempt #${attempt} - Cracker Bot’s too cool to quit!`);
   });
 
   if (socket.connected) {
     socket.emit('message', {
-      text: "Cracker Bot is live and ready to roll! Who’s in the house?",
+      text: "Cracker Bot’s in the house—ready to sling code with swagger! Who’s up?",
       type: "system",
       from: 'Cracker Bot',
       target: 'bot_frontend',
     });
   }
 
-  await log('Task Manager initialized with provided botSocket');
+  await log('Task Manager’s live and dripping with style!');
   return socket;
 }
 
+// Handle messages with flair and precision
 export async function handleMessage(botSocket, message) {
-  await log('Lead Bot Task Manager received: ' + JSON.stringify(message));
+  await log(`Lead Bot snagged a hot one: ${JSON.stringify(message)} - let’s roll!`);
 
   if (!botSocket || !botSocket.connected) {
-    await error('WebSocket not connected, cannot process message');
+    await error('WebSocket’s snoozing - can’t vibe with this message!');
     return;
   }
 
@@ -247,7 +263,7 @@ export async function handleMessage(botSocket, message) {
     await redisClient.set(stateKey, JSON.stringify(taskState));
   }
 
-  await log(`Processing message type: ${message.type || 'general_message'}, taskId: ${message.taskId || 'none'}, step: ${taskState.step}`);
+  await log(`Processing type: ${message.type || 'general_message'}, taskId: ${message.taskId || 'none'}, step: ${taskState.step} - Cracker Bot’s on it!`);
 
   if (message.type === 'command') {
     const commandParts = message.text.split(" ");
@@ -257,7 +273,7 @@ export async function handleMessage(botSocket, message) {
         taskState.step = "choice";
         await redisClient.set(stateKey, JSON.stringify(taskState));
         const createPrompt = await generateResponse(
-          `Hey ${userName}, ready to whip up something epic? What’s the plan?`,
+          `Yo ${userName}, let’s whip up something epic! What’s the game plan, fam?`,
           userName,
           tone
         );
@@ -268,8 +284,95 @@ export async function handleMessage(botSocket, message) {
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Shoot the shit", "Build something epic!"],
+          options: ["Chill and chat", "Drop a coding bomb!"],
           taskId: taskState.taskId,
+          frontendId,
+        });
+        break;
+      case "/projects":
+        const projects = await fetchProjects(userName);
+        const projectsMsg = await generateResponse(
+          `Here’s your slick project lineup, ${userName}:\n${projects}`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: projectsMsg,
+          type: "projects",
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          frontendId,
+        });
+        break;
+      case "/download":
+        const lastTask = await redisClient.get('lastGeneratedTask');
+        if (lastTask) {
+          const task = JSON.parse(lastTask);
+          if (task.frontendId === frontendId) {
+            const downloadMsg = await generateResponse(
+              `Snagging "${task.name}" for you, ${userName}! Here’s your latest banger—hot off the press!`,
+              userName,
+              tone
+            );
+            botSocket.emit('message', {
+              text: downloadMsg,
+              type: "download",
+              taskId: task.taskId,
+              content: task.content,
+              fileName: task.fileName,
+              from: 'Cracker Bot',
+              target: 'bot_frontend',
+              ip,
+              user: userName,
+              frontendId,
+              taskName: task.name,
+              taskType: task.type,
+              taskFeatures: task.features,
+            });
+          } else {
+            botSocket.emit('message', {
+              text: `No fresh task for you, ${userName}! Finish something dope to snag it.`,
+              type: "error",
+              from: 'Cracker Bot',
+              target: 'bot_frontend',
+              ip,
+              user: userName,
+              frontendId,
+            });
+          }
+        } else {
+          botSocket.emit('message', {
+            text: `Nada to download yet, ${userName}! Let’s cook up something fire first.`,
+            type: "error",
+            from: 'Cracker Bot',
+            target: 'bot_frontend',
+            ip,
+            user: userName,
+            frontendId,
+          });
+        }
+        break;
+      case "/reset_name":
+        await redisClient.del(userKey);
+        userName = 'Guest';
+        taskState.step = "name";
+        await redisClient.set(stateKey, JSON.stringify(taskState));
+        const resetPrompt = await generateResponse(
+          `Name wiped, ${userName}! I’m Cracker Bot—what’s your fresh alias gonna be?`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: resetPrompt,
+          type: "question",
+          taskId: taskState.taskId,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          options: ["Drop your new name below!"],
           frontendId,
         });
         break;
@@ -277,7 +380,7 @@ export async function handleMessage(botSocket, message) {
         const newTone = commandParts[1] || DEFAULT_TONE;
         await redisClient.set(toneKey, newTone);
         const toneMsg = await generateResponse(
-          `Tone set to ${newTone}, ${userName}! Let’s roll with it.`,
+          `Tone flipped to ${newTone}, ${userName}! Let’s vibe with it—how’s it feel?`,
           userName,
           newTone
         );
@@ -291,14 +394,32 @@ export async function handleMessage(botSocket, message) {
           frontendId,
         });
         break;
+      case "/guide":
+        const guideMsg = await generateResponse(
+          `Here’s the Cracker Bot playbook, ${userName}:\n/create: Kick off a project\n/projects: Scope your stash\n/download: Snag your latest gem\n/reset_name: Switch your alias\n/tone <vibe>: Set my flow (e.g., /tone sassy)\n/guide: Peek this list\n/template <num>: Roll with a preset`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: guideMsg,
+          type: "system",
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          frontendId,
+        });
+        break;
       case "/template":
         const templateNum = commandParts[1] || "1";
         const templatePrompt = await generateResponse(
-          `Starting with template ${templateNum}, ${userName}! What’s the project name?`,
+          `Rolling with template ${templateNum}, ${userName}! What’s this beast gonna be named?`,
           userName,
           tone
         );
         taskState.step = "project_name";
+        taskState.taskId = `template:${Date.now()}`;
+        taskState.template = templateNum;
         await redisClient.set(stateKey, JSON.stringify(taskState));
         botSocket.emit('message', {
           text: templatePrompt,
@@ -308,13 +429,13 @@ export async function handleMessage(botSocket, message) {
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Please name your new project"],
+          options: ["Name your new masterpiece!"],
           frontendId,
         });
         break;
       default:
         const errorMsg = await generateResponse(
-          `Yo ${userName}, "${command}" ain’t a thing! Hit /guide for the playbook.`,
+          `Yo ${userName}, "${command}" ain’t in my playbook! Hit /guide for the rundown.`,
           userName,
           tone
         );
@@ -332,103 +453,7 @@ export async function handleMessage(botSocket, message) {
   }
 
   if (message.type === 'task_response') {
-    const taskId = message.taskId;
-    if (taskState.step === "name" && taskId?.startsWith('initial_name:')) {
-      const newName = message.text?.trim();
-      if (newName && newName.length <= 20 && /^[a-zA-Z0-9_-]+$/.test(newName)) {
-        await redisClient.set(userKey, newName);
-        userName = newName;
-        taskState.step = "choice";
-        await redisClient.set(stateKey, JSON.stringify(taskState));
-        const welcome = await generateResponse(
-          `Smooth move, ${userName}! I’m Cracker Bot, the slickest coder this side of the matrix. What’s our next play?`,
-          userName,
-          tone
-        );
-        botSocket.emit('message', {
-          text: welcome,
-          type: "success",
-          from: 'Cracker Bot',
-          target: 'bot_frontend',
-          ip,
-          user: userName,
-          options: ["Shoot the shit", "Build something epic!"],
-          taskId: taskState.taskId,
-          frontendId,
-        });
-        await log(`Set name to ${userName} for frontendId ${frontendId} and sent welcome`);
-      } else {
-        const errorMsg = await generateResponse(
-          `Yo, "${message.text}" ain’t vibin’—keep it under 20 chars, alphanumeric with _ or -, and try again, ${userName}! What’s your name?`,
-          userName,
-          tone
-        );
-        botSocket.emit('message', {
-          text: errorMsg,
-          type: "question",
-          taskId: taskState.taskId,
-          from: 'Cracker Bot',
-          target: 'bot_frontend',
-          ip,
-          user: userName,
-          options: ["Please type in your name below!"],
-          frontendId,
-        });
-        await log(`Invalid name attempt: ${message.text} for frontendId ${frontendId}`);
-      }
-    } else if (taskState.step === "choice" && taskId === taskState.taskId) {
-      if (message.text.toLowerCase().includes("build")) {
-        const newTaskId = Date.now().toString();
-        taskState.taskId = newTaskId;
-        taskState.step = "project_name";
-        await redisClient.set(stateKey, JSON.stringify(taskState));
-        await redisClient.hSet('tasks', newTaskId, JSON.stringify({ taskId: newTaskId, step: 'name', user: userName, status: 'pending', frontendId }));
-        const namePrompt = await generateResponse(
-          `Aight ${userName}, let’s craft something epic! What’s this masterpiece gonna be called?`,
-          userName,
-          tone
-        );
-        botSocket.emit('message', {
-          text: namePrompt,
-          type: "question",
-          taskId: newTaskId,
-          from: 'Cracker Bot',
-          target: 'bot_frontend',
-          ip,
-          user: userName,
-          options: ["Please name your new project"],
-          frontendId,
-        });
-        await log(`Started new task ${newTaskId} for ${userName} with step 'name'`);
-      } else if (message.text.toLowerCase().includes("shoot")) {
-        taskState.step = "chat";
-        await redisClient.set(stateKey, JSON.stringify(taskState));
-        const userInfo = JSON.parse(await redisClient.get(userInfoKey) || '{}');
-        const chatPrompt = userInfo.favoriteTech
-          ? await generateResponse(
-              `Hey ${userName}, back for a chat? I’m Cracker Bot, still the slickest coder around with ${Object.keys(extensionMap).length} file types in my arsenal. What’s on your mind today?`,
-              userName,
-              tone
-            )
-          : await generateResponse(
-              `Cool, ${userName}! I’m Cracker Bot—I can code anything from full-stack apps to funky PDFs faster than you can blink. What’s your favorite tech stack?`,
-              userName,
-              tone
-            );
-        botSocket.emit('message', {
-          text: chatPrompt,
-          type: "question",
-          taskId: `chat:${Date.now()}`,
-          from: 'Cracker Bot',
-          target: 'bot_frontend',
-          ip,
-          user: userName,
-          frontendId,
-        });
-      }
-    } else {
-      await handleTaskResponse(botSocket, taskId, message.text, userName, tone, ip, userInfoKey, frontendId, stateKey, message.commandFlag, message.taskName, message.taskType, message.taskFeatures);
-    }
+    await handleTaskResponse(botSocket, message.taskId, message.text, userName, tone, ip, userInfoKey, frontendId, stateKey, taskState, message.commandFlag, message.taskName, message.taskType, message.taskFeatures, userKey);
     return;
   }
 
@@ -438,14 +463,15 @@ export async function handleMessage(botSocket, message) {
       await processGeneralMessage(botSocket, message.text, userName, tone, ip, frontendId);
       break;
     default:
-      await log(`Unhandled message type: ${messageType}`);
+      await log(`Unhandled vibe: ${messageType} - Cracker Bot’s scratching its head!`);
   }
 }
 
+// Process general messages with flair
 export async function processGeneralMessage(botSocket, text, userName, tone, ip, frontendId) {
   if (!text || text.trim() === '') {
     const errorMsg = await generateResponse(
-      `Yo ${userName}, you ghosted me with nothing! Drop some words, fam—I’m here to code the slickest programs ever.`,
+      `Yo ${userName}, you hit me with a blank! Drop some words—I’m here to sling the slickest code ever.`,
       userName,
       tone
     );
@@ -467,9 +493,10 @@ export async function processGeneralMessage(botSocket, text, userName, tone, ip,
 
   if (hasBuildIntent || text.toLowerCase() === "build something epic!") {
     const taskId = Date.now().toString();
-    await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'name', user: userName, initialInput: text, status: 'pending', frontendId }));
+    const stateKey = `taskState:${frontendId}`;
+    await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'project_name', user: userName, initialInput: text, status: 'pending', frontendId }));
     const namePrompt = await generateResponse(
-      `Alright ${userName}, let’s craft something epic! I’m Cracker Bot, your go-to for killer programs. What’s this masterpiece gonna be called?`,
+      `Let’s roll, ${userName}! I’m Cracker Bot, here to craft something legendary. What’s this beast gonna be called?`,
       userName,
       tone
     );
@@ -481,16 +508,18 @@ export async function processGeneralMessage(botSocket, text, userName, tone, ip,
       target: 'bot_frontend',
       ip,
       user: userName,
-      options: ["Please name your new project"],
+      options: ["Name your epic creation!"],
       frontendId,
     });
-    await log(`Started new task ${taskId} for ${userName} with step 'name'`);
+    await redisClient.set(stateKey, JSON.stringify({ step: "project_name", taskId }));
+    await log(`Kicked off task ${taskId} for ${userName} - project_name step locked in!`);
   } else {
     const taskId = `chat:${Date.now()}`;
+    const userInfoKey = `user:frontend:${frontendId}:info`;
     const userInfo = JSON.parse(await redisClient.get(userInfoKey) || '{}');
     if (!userInfo.favoriteTech) {
       botSocket.emit('message', {
-        text: `Yo ${userName}, I’m Cracker Bot—master of code and chaos! I can whip up full-stack apps, PDFs, even funky media files. What’s your favorite tech stack?`,
+        text: `Yo ${userName}, I’m Cracker Bot—code wizard extraordinaire! I sling full-stack, PDFs, media, you name it. What’s your go-to tech stack?`,
         type: "question",
         taskId,
         from: 'Cracker Bot',
@@ -501,7 +530,7 @@ export async function processGeneralMessage(botSocket, text, userName, tone, ip,
       });
     } else {
       botSocket.emit('message', {
-        text: `Hey ${userName}, back for more? I’m Cracker Bot, still rocking ${Object.keys(extensionMap).length} file types and counting. What’s on your mind today?`,
+        text: `Back for more, ${userName}? I’m Cracker Bot, packing ${Object.keys(extensionMap).length} file types and counting. What’s sparking today?`,
         type: "question",
         taskId,
         from: 'Cracker Bot',
@@ -515,10 +544,56 @@ export async function processGeneralMessage(botSocket, text, userName, tone, ip,
   }
 }
 
-async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip, userInfoKey, frontendId, stateKey, commandFlag, taskName, taskType, taskFeatures) {
+// Cache completed tasks with full metadata
+async function cacheCompletedTask(task) {
+  try {
+    const { taskId, frontendId, name, type, fileName, content, user, features, version, network, editRequest } = task;
+    const taskKey = `project:${user}:${taskId}`;
+    const taskData = JSON.stringify({
+      taskId,
+      frontendId,
+      name,
+      type,
+      fileName,
+      content,
+      user,
+      features: features || 'basic functionality',
+      version: version || 1,
+      network: network || null,
+      editRequest: editRequest || null,
+      timestamp: new Date().toISOString(),
+    });
+    await redisClient.set(taskKey, taskData);
+    await redisClient.set(`project:${user}:latest`, taskData); // Track latest for quick access
+    await log(`Cached task ${taskId} as ${taskKey} - locked and loaded with swagger!`);
+  } catch (err) {
+    await error(`Caching task ${task.taskId} flopped: ${err.message} - Cracker Bot’s debugging!`);
+  }
+}
+
+// Fetch projects with flair
+async function fetchProjects(user) {
+  try {
+    const keys = await redisClient.keys(`project:${user}:*`);
+    if (keys.length === 0) return "No projects yet—let’s cook something up!";
+    const projects = await Promise.all(keys.map(key => redisClient.get(key)));
+    const projectList = projects.map((data, index) => {
+      const task = JSON.parse(data);
+      return `${index + 1}. ${task.name} (${task.type}${task.version > 1 ? ` v${task.version}` : ''}) - ${task.timestamp}${task.features ? ` | Features: ${task.features.slice(0, 50)}${task.features.length > 50 ? '...' : ''}` : ''}`;
+    }).join('\n');
+    return projectList || "Nada in the stash—time to build some fire!";
+  } catch (err) {
+    await error(`Fetching projects for ${user} crashed: ${err.message}`);
+    return "Glitch fetching your stash—Cracker Bot’s on it!";
+  }
+}
+
+// Handle task responses with dynamic flow
+async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip, userInfoKey, frontendId, stateKey, taskState, commandFlag, taskName, taskType, taskFeatures, userKey) {
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   let stateUpdate;
+  const choice = answer?.trim().toLowerCase();
 
   if (taskId.startsWith("chat:")) {
     let userInfo = JSON.parse(await redisClient.get(userInfoKey) || '{}');
@@ -526,7 +601,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       userInfo.favoriteTech = answer;
       await redisClient.set(userInfoKey, JSON.stringify(userInfo));
       const nextQuestion = await generateResponse(
-        `Nice one, ${userName}! "${answer}" as your fave tech stack? I dig it. What’s your dream project to build with that?`,
+        `Dope pick, ${userName}! "${answer}" as your tech vibe? I’m feeling it. What’s your dream project with that?`,
         userName,
         tone
       );
@@ -544,7 +619,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       userInfo.dreamProject = answer;
       await redisClient.set(userInfoKey, JSON.stringify(userInfo));
       const nextQuestion = await generateResponse(
-        `"${answer}" sounds epic, ${userName}! What’s your coding superpower—something you’re a total beast at?`,
+        `"${answer}" is a vibe, ${userName}! What’s your coding superpower—your killer edge?`,
         userName,
         tone
       );
@@ -562,7 +637,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       userInfo.superpower = answer;
       await redisClient.set(userInfoKey, JSON.stringify(userInfo));
       const chatEnd = await generateResponse(
-        `Sick, ${userName}! With ${userInfo.favoriteTech}, a dream like "${userInfo.dreamProject}", and your "${answer}" superpower, we’re a dynamic duo. Ready to build something or keep vibin’?`,
+        `Sick combo, ${userName}! Rocking ${userInfo.favoriteTech}, dreaming "${userInfo.dreamProject}", and flexing "${answer}"—we’re unstoppable. Build or chill?`,
         userName,
         tone
       );
@@ -573,7 +648,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Shoot the shit", "Build something epic!"],
+        options: ["Chill and chat", "Drop a coding bomb!"],
         frontendId,
       });
     }
@@ -581,29 +656,111 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
   }
 
   const taskData = await redisClient.hGet('tasks', taskId);
-  if (!taskData) {
-    const errorMsg = await generateResponse(
-      `Yo ${userName}, I lost that task vibe! I’m Cracker Bot—let’s restart and build something dope from scratch.`,
-      userName,
-      tone
-    );
-    botSocket.emit('message', {
-      text: errorMsg,
-      type: "error",
-      from: 'Cracker Bot',
-      target: 'bot_frontend',
-      ip,
-      user: userName,
-      frontendId,
-    });
-    return;
-  }
+  const task = taskData ? JSON.parse(taskData) : { user: userName };
 
-  const task = JSON.parse(taskData);
-  task.user = userName;
-
-  switch (task.step) {
+  switch (taskState.step) {
     case 'name':
+      const newName = answer?.trim();
+      if (newName && newName.length <= 20 && /^[a-zA-Z0-9_-]+$/.test(newName)) {
+        await redisClient.set(userKey, newName);
+        userName = newName;
+        taskState.step = "choice";
+        await redisClient.set(stateKey, JSON.stringify(taskState));
+        const welcome = await generateResponse(
+          `Smooth as ice, ${userName}! I’m Cracker Bot—your code-slinging sidekick. What’s the next move?`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: welcome,
+          type: "success",
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          options: ["Chill and chat", "Drop a coding bomb!"],
+          taskId: taskState.taskId,
+          frontendId,
+        });
+        await log(`Tagged ${userName} for ${frontendId} - welcome vibes sent!`);
+      } else {
+        const errorMsg = await generateResponse(
+          `Yo, "${answer}" ain’t cutting it—keep it tight, under 20 chars, alphanumeric with _ or -, ${userName}! What’s your name?`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: errorMsg,
+          type: "question",
+          taskId: taskState.taskId,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          options: ["Drop your name below!"],
+          frontendId,
+        });
+      }
+      break;
+    case 'choice':
+      if (choice === "build something epic!" || choice === "drop a coding bomb!") {
+        const newTaskId = Date.now().toString();
+        await redisClient.hSet('tasks', newTaskId, JSON.stringify({ taskId: newTaskId, step: 'project_name', user: userName, status: 'pending', frontendId }));
+        stateUpdate = { step: "project_name", taskId: newTaskId };
+        await redisClient.set(stateKey, JSON.stringify(stateUpdate));
+        const namePrompt = await generateResponse(
+          `Let’s cook, ${userName}! I’m Cracker Bot—name this epic creation so we can roll!`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: namePrompt,
+          type: "question",
+          taskId: newTaskId,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          options: ["Name your masterpiece!"],
+          frontendId,
+        });
+        await log(`New task ${newTaskId} kicked off for ${userName} - project_name step!`);
+      } else if (choice === "shoot the shit" || choice === "chill and chat") {
+        const chatPrompt = await generateResponse(
+          `Vibin’ with you, ${userName}! Let’s kick back—what’s sparking your brain today?`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: chatPrompt,
+          type: "question",
+          taskId: `chat:${Date.now()}`,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          frontendId,
+        });
+      } else {
+        const errorMsg = await generateResponse(
+          `Yo ${userName}, "${answer}" ain’t clicking! Hit me with "Chill and chat" or "Drop a coding bomb!"`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: errorMsg,
+          type: "question",
+          taskId: taskState.taskId,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          options: ["Chill and chat", "Drop a coding bomb!"],
+          frontendId,
+        });
+      }
+      break;
+    case 'project_name':
       const trimmedName = answer?.trim();
       if (trimmedName && trimmedName.length <= 50 && /^[a-zA-Z0-9_-]+$/.test(trimmedName)) {
         task.name = trimmedName.toLowerCase().replace(/\s+/g, '-');
@@ -613,7 +770,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         stateUpdate = { step: "type", taskId };
         await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         const typePrompt = await generateResponse(
-          `Slick choice, ${userName}! "${task.name}" is locked in. Now, what type of program we droppin’? Pick your flavor—I’ve got the skills to make it pop.`,
+          `Locked in "${task.name}", ${userName}! Cracker Bot’s ready—what type of fire we dropping?`,
           userName,
           tone
         );
@@ -631,7 +788,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         });
       } else {
         const errorMsg = await generateResponse(
-          `Yo ${userName}, "${answer}" ain’t cutting it—keep it under 50 chars, alphanumeric with _ or -, and try again! What’s this project called?`,
+          `Yo ${userName}, "${answer}" ain’t vibin’—keep it under 50 chars, alphanumeric with _ or -, and hit me again! What’s it called?`,
           userName,
           tone
         );
@@ -643,7 +800,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Please name your new project"],
+          options: ["Name your project!"],
           frontendId,
           taskName: task.name,
         });
@@ -653,7 +810,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       task.type = answer?.trim().toLowerCase() || 'html';
       if (!extensionMap[task.type]) {
         const errorMsg = await generateResponse(
-          `Hold up, ${userName}, "${answer}" ain’t on the menu! I’m Cracker Bot—pick a slick type from the list.`,
+          `Hold up, ${userName}! "${answer}" ain’t on the menu—pick a slick type from my arsenal!`,
           userName,
           tone
         );
@@ -679,12 +836,12 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       await redisClient.set(stateKey, JSON.stringify(stateUpdate));
       const nextPrompt = task.type === 'full-stack'
         ? await generateResponse(
-            `Full-Stack vibes for "${task.name}", ${userName}? Smooth move! Network or features next—your call, fam.`,
+            `Full-stack "${task.name}", ${userName}? Dope! Network or features next—your call!`,
             userName,
             tone
           )
         : await generateResponse(
-            `${task.type.toUpperCase()} for "${task.name}", ${userName}? Too cool! Lay out the deets—what’s this program gonna do?`,
+            `${task.type.toUpperCase()} "${task.name}", ${userName}? Lit! Spill the deets—what’s it gonna do?`,
             userName,
             tone
           );
@@ -696,14 +853,13 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: task.type === 'full-stack' ? ["Network", "Features"] : ["Type a detailed description of your project"],
+        options: task.type === 'full-stack' ? ["Network", "Features"] : ["Drop the feature details!"],
         frontendId,
         taskName: task.name,
         taskType: task.type,
       });
       break;
     case 'network-or-features':
-      const choice = answer?.trim().toLowerCase() || 'features';
       if (choice === 'network') {
         task.step = 'network';
         task.status = 'pending';
@@ -711,7 +867,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         stateUpdate = { step: "network", taskId };
         await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         const networkPrompt = await generateResponse(
-          `Network it is, ${userName}! What’s the vibe for "${task.name}"—mainnet-beta, testnet, devnet, or none?`,
+          `Network vibes for "${task.name}", ${userName}! What’s the setup—mainnet-beta, testnet, devnet, or none?`,
           userName,
           tone
         );
@@ -735,7 +891,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         stateUpdate = { step: "pending_features", taskId };
         await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         const featuresPrompt = await generateResponse(
-          `Features locked in for "${task.name}", ${userName}! Spill the details—what’s this bad boy gonna do?`,
+          `Features for "${task.name}", ${userName}! Lay out the juice—what’s this beast packing?`,
           userName,
           tone
         );
@@ -747,7 +903,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Type a detailed description of your project"],
+          options: ["Drop the feature details!"],
           frontendId,
           taskName: task.name,
           taskType: task.type,
@@ -755,14 +911,14 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       }
       break;
     case 'network':
-      task.network = answer?.trim().toLowerCase() === 'none' ? null : answer?.trim().toLowerCase() || 'mainnet-beta';
+      task.network = choice === 'none' ? null : choice || 'mainnet-beta';
       task.step = 'pending_features';
       task.status = 'pending';
       await redisClient.hSet('tasks', taskId, JSON.stringify(task));
       stateUpdate = { step: "pending_features", taskId };
       await redisClient.set(stateKey, JSON.stringify(stateUpdate));
       const featuresPrompt = await generateResponse(
-        `"${task.name}" running on ${task.network || 'no network'}, ${userName}? Too smooth! Now, what features we packing in?`,
+        `"${task.name}" on ${task.network || 'no network'}, ${userName}? Smooth! What features we stacking?`,
         userName,
         tone
       );
@@ -774,14 +930,14 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Type a detailed description of your project"],
+        options: ["Drop the feature details!"],
         frontendId,
         taskName: task.name,
         taskType: task.type,
       });
       break;
     case 'pending_features':
-      const lowerAnswer = answer?.trim().toLowerCase();
+      const lowerAnswer = choice;
       if (lowerAnswer === "create file / project") {
         task.step = 'building';
         task.status = 'in_progress';
@@ -791,20 +947,20 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         await updateTaskStatus(taskId, 'in_progress');
 
-        const progressId = `progress:${taskId}`;
-        const progressSteps = [25, 50, 75, 100];
-        for (let i = 0; i < progressSteps.length; i++) {
+        const progressSteps = [
+          { percentage: 25, text: `Firing up "${task.name}", ${userName}! Strap in—it’s go time!` },
+          { percentage: 50, text: `Halfway there, ${userName}! "${task.name}"’s taking shape—pure heat!` },
+          { percentage: 75, text: `Almost locked, ${userName}! "${task.name}"’s getting that polish!` },
+          { percentage: 100, text: `Bam, ${userName}! "${task.name}" is live and dripping with swagger!` },
+        ];
+
+        for (const step of progressSteps) {
           await new Promise(resolve => setTimeout(resolve, 1000));
-          const progressMsg = await generateResponse(
-            `Cranking it up, ${userName}! "${task.name}" is building—hold tight, it’s getting slick!`,
-            userName,
-            tone
-          );
           botSocket.emit('message', {
-            text: progressMsg,
+            text: await generateResponse(step.text, userName, tone),
             type: "progress",
-            taskId: progressId,
-            progress: progressSteps[i],
+            taskId,
+            progress: step.percentage,
             from: 'Cracker Bot',
             target: 'bot_frontend',
             ip,
@@ -814,7 +970,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             taskType: task.type,
             taskFeatures: task.features,
           });
-          await log(`Sent progress update ${progressSteps[i]} for task ${taskId}`);
+          await log(`Progress update ${step.percentage}% dropped for task ${taskId}!`);
         }
 
         await delegateTask(botSocket, 'bot_backend', 'buildTask', { task, userName, tone, frontendId });
@@ -822,7 +978,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         stateUpdate = { step: "pending_features", taskId };
         await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         const editPrompt = await generateResponse(
-          `Cool, ${userName}, let’s tweak the features for "${task.name}". What’s the new vibe you’re going for?`,
+          `Remixing "${task.name}", ${userName}? Slick move! What’s the new flavor you’re cooking?`,
           userName,
           tone
         );
@@ -834,7 +990,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Type a detailed description of your project"],
+          options: ["Drop the new feature details!"],
           frontendId,
           taskName: task.name,
           taskType: task.type,
@@ -847,7 +1003,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         stateUpdate = { step: "pending_features", taskId };
         await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         const confirmPrompt = await generateResponse(
-          `Got it, ${userName}! Features for "${task.name}": "${answer}". Ready to roll with this, or tweak it more?`,
+          `Locked in, ${userName}! "${task.name}"’s got: "${answer}". Ready to roll or tweak it more?`,
           userName,
           tone
         );
@@ -868,8 +1024,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       }
       break;
     case 'review':
-      if (commandFlag) { // Handle bubble clicks
-        if (answer.toLowerCase() === "edit") {
+      if (commandFlag) {
+        if (choice === "edit" || choice === "polish it up") {
           task.step = 'edit';
           task.status = 'pending';
           await redisClient.hSet('tasks', taskId, JSON.stringify(task));
@@ -877,7 +1033,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
           await updateTaskStatus(taskId, 'in_progress');
           const editPrompt = await generateResponse(
-            `Tweaking "${taskName}", ${userName}? Too smooth! How we sharpening this gem?`,
+            `Polishing "${taskName}", ${userName}? Too slick! How we sharpening this gem?`,
             userName,
             tone
           );
@@ -894,7 +1050,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             taskType: taskType,
             taskFeatures: taskFeatures,
           });
-        } else if (answer.toLowerCase() === "add more") {
+        } else if (choice === "add more" || choice === "stack more juice") {
           task.step = 'pending_features';
           task.status = 'pending';
           await redisClient.hSet('tasks', taskId, JSON.stringify(task));
@@ -902,7 +1058,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
           await updateTaskStatus(taskId, 'in_progress');
           const morePrompt = await generateResponse(
-            `More juice for "${taskName}", ${userName}? Slick! What features we stacking on this beast?`,
+            `Juicing up "${taskName}", ${userName}? Dope! What’s the extra heat we’re stacking?`,
             userName,
             tone
           );
@@ -914,15 +1070,15 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             target: 'bot_frontend',
             ip,
             user: userName,
-            options: ["Type a detailed description of your project"],
+            options: ["Drop the new feature details!"],
             frontendId,
             taskName: taskName,
             taskType: taskType,
             taskFeatures: taskFeatures,
           });
-        } else if (answer.toLowerCase() === "done") {
+        } else if (choice === "done" || choice === "wrap it up") {
           const doneMsg = await generateResponse(
-            `"${taskName}" is a wrap, ${userName}! I’m Cracker Bot—this program’s a total banger. What’s next on the radar?`,
+            `"${taskName}" is sealed, ${userName}! Cracker Bot’s proud—this is a banger. What’s next, fam?`,
             userName,
             tone
           );
@@ -933,6 +1089,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             target: 'bot_frontend',
             ip,
             user: userName,
+            options: ["Chill and chat", "Drop a coding bomb!"],
             frontendId,
             taskName: taskName,
             taskType: taskType,
@@ -943,18 +1100,18 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           stateUpdate = { step: "choice", taskId: `initial_name:${frontendId}` };
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         }
-      } else { // Handle text input
+      } else {
         const reviewAnswer = answer?.trim().toLowerCase() || '';
         if (reviewAnswer.includes("edit") || reviewAnswer.includes("change") || reviewAnswer.includes("clean") || reviewAnswer.includes("modify")) {
           task.step = 'edit';
           task.status = 'pending';
-          task.editRequest = answer; // Capture the full edit request
+          task.editRequest = answer;
           await redisClient.hSet('tasks', taskId, JSON.stringify(task));
           stateUpdate = { step: "edit", taskId };
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
           await updateTaskStatus(taskId, 'in_progress');
           const editPrompt = await generateResponse(
-            `Tweaking "${task.name}", ${userName}? Too smooth! Lay out how we’re sharpening this gem.`,
+            `Remixing "${task.name}", ${userName}? Smooth! How we leveling this up?`,
             userName,
             tone
           );
@@ -979,7 +1136,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
           await updateTaskStatus(taskId, 'in_progress');
           const morePrompt = await generateResponse(
-            `More juice for "${task.name}", ${userName}? Slick! What features we stacking on this beast?`,
+            `Stacking more on "${task.name}", ${userName}? Lit! What’s the extra sauce?`,
             userName,
             tone
           );
@@ -991,15 +1148,15 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             target: 'bot_frontend',
             ip,
             user: userName,
-            options: ["Type a detailed description of your project"],
+            options: ["Drop the new feature details!"],
             frontendId,
             taskName: task.name,
             taskType: task.type,
             taskFeatures: task.features,
           });
-        } else if (reviewAnswer === "done") {
+        } else if (reviewAnswer === "done" || reviewAnswer === "wrap it up") {
           const doneMsg = await generateResponse(
-            `"${task.name}" is a wrap, ${userName}! I’m Cracker Bot—this program’s a total banger. What’s next on the radar?`,
+            `"${task.name}" is a wrap, ${userName}! Cracker Bot’s stoked—this is pure fire. What’s next?`,
             userName,
             tone
           );
@@ -1010,6 +1167,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             target: 'bot_frontend',
             ip,
             user: userName,
+            options: ["Chill and chat", "Drop a coding bomb!"],
             frontendId,
             taskName: task.name,
             taskType: task.type,
@@ -1020,9 +1178,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           stateUpdate = { step: "choice", taskId: `initial_name:${frontendId}` };
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
         } else {
-          // Echo back if not recognized, with options to clarify intent
           const reviewPrompt = await generateResponse(
-            `Yo ${userName}, I got "${answer}" but I’m not vibin’—did you mean to edit, add more, or wrap it up? Hit me with "edit", "add more", or "done".`,
+            `Yo ${userName}, "${answer}" ain’t clicking—edit, add more, or done? Pick your play!`,
             userName,
             tone
           );
@@ -1034,7 +1191,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             target: 'bot_frontend',
             ip,
             user: userName,
-            options: ["Edit", "Add more", "Done"],
+            options: ["Polish it up", "Stack more juice", "Wrap it up"],
             frontendId,
             taskName: task.name,
             taskType: task.type,
@@ -1053,23 +1210,63 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       await redisClient.set(stateKey, JSON.stringify(stateUpdate));
       await updateTaskStatus(taskId, 'in_progress');
       try {
-        const editResult = await delegateTask(botSocket, 'bot_backend', 'editTask', { task, userName, tone });
-        await log(`Edit task completed for taskId ${taskId}, editResult: ${JSON.stringify(editResult)}`);
+        const progressSteps = [
+          { percentage: 25, text: `Remixing "${task.name}", ${userName}! Kicking it into gear!` },
+          { percentage: 50, text: `Halfway, ${userName}! "${task.name}"’s getting a slick tweak!` },
+          { percentage: 75, text: `Almost there, ${userName}! "${task.name}"’s shining bright!` },
+          { percentage: 100, text: `Done, ${userName}! "${task.name}" v${task.version} is pure gold!` },
+        ];
+
+        for (const step of progressSteps) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          botSocket.emit('message', {
+            text: await generateResponse(step.text, userName, tone),
+            type: "progress",
+            taskId,
+            progress: step.percentage,
+            from: 'Cracker Bot',
+            target: 'bot_frontend',
+            ip,
+            user: userName,
+            frontendId,
+            taskName: task.name,
+            taskType: task.type,
+            taskFeatures: task.features,
+          });
+          await log(`Edit progress ${step.percentage}% sent for task ${taskId}!`);
+        }
+
+        const editResult = await delegateTask(botSocket, 'bot_backend', 'editTask', { task, userName, tone, frontendId });
+        await log(`Edit task ${taskId} wrapped: ${JSON.stringify(editResult)}`);
         if (editResult && editResult.content) {
           let finalContent, finalFileName;
           const fileExtension = extensionMap[task.type.toLowerCase()] || 'txt';
           const contentArray = Array.isArray(editResult.content) ? editResult.content : [{ fileName: `${task.name}.${fileExtension}`, content: editResult.content }];
           if (contentArray.length > 1) {
-            finalContent = await zipFilesWithReadme(Object.fromEntries(contentArray.map(item => [item.fileName, item.content])), task);
+            finalContent = await zipFilesWithReadme(Object.fromEntries(contentArray.map(item => [item.fileName, Buffer.from(item.content, 'base64')])), task);
             finalFileName = `${task.name}-v${task.version}.zip`;
           } else {
             finalContent = contentArray[0].content;
             finalFileName = contentArray[0].fileName || `${task.name}.${fileExtension}`;
           }
 
-          setLastGeneratedTask({ content: finalContent, fileName: finalFileName, type: task.type, name: task.name });
+          await cacheCompletedTask({
+            taskId,
+            frontendId,
+            name: task.name,
+            type: task.type,
+            fileName: finalFileName,
+            content: finalContent,
+            user: userName,
+            features: task.features,
+            version: task.version,
+            network: task.network,
+            editRequest: task.editRequest,
+          });
+          setLastGeneratedTask({ taskId, content: finalContent, fileName: finalFileName, type: task.type, name: task.name, frontendId });
+
           const editSuccess = await generateResponse(
-            `Edits on "${task.name}" v${task.version} are live, ${userName}! I’m Cracker Bot—this program’s sharper than ever. Download it!`,
+            `"${task.name}" v${task.version} is live, ${userName}! Cracker Bot nailed it—download this gem!`,
             userName,
             tone
           );
@@ -1088,7 +1285,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             taskFeatures: task.features,
           });
           const tweakPrompt = await generateResponse(
-            `${userName}, "${task.name}" got a glow-up! What’s next—more features, another edit, or we good?`,
+            `${userName}, "${task.name}" got a glow-up! What’s next—more juice, another tweak, or we good?`,
             userName,
             tone
           );
@@ -1100,24 +1297,24 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             target: 'bot_frontend',
             ip,
             user: userName,
-            options: ["Edit", "Add more", "Done"],
+            options: ["Polish it up", "Stack more juice", "Wrap it up"],
             frontendId,
             taskName: task.name,
             taskType: task.type,
             taskFeatures: task.features,
           });
           task.step = 'review';
-          task.status = 'pending';
+          task.status = 'pending_review';
           await redisClient.hSet('tasks', taskId, JSON.stringify(task));
           stateUpdate = { step: "review", taskId };
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
           await updateTaskStatus(taskId, 'pending_review');
         } else {
-          throw new Error(editResult?.error || 'No content returned from backend');
+          throw new Error(editResult?.error || 'Backend ghosted us—no content!');
         }
       } catch (e) {
         const errorMsg = await generateResponse(
-          `Edit crash, ${userName}! "${task.name}" hit: ${e.message}. I’m Cracker Bot—let’s retry this tweak.`,
+          `Edit tanked, ${userName}! "${task.name}" hit: ${e.message}. Cracker Bot’s ready to retry—your call!`,
           userName,
           tone
         );
@@ -1137,7 +1334,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       break;
     default:
       const lostMsg = await generateResponse(
-        `Lost the thread on "${taskId}", ${userName}! I’m Cracker Bot—what’s the next step for this program?`,
+        `Lost the plot on "${taskId}", ${userName}! Cracker Bot’s here—what’s the next move for this jam?`,
         userName,
         tone
       );

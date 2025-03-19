@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 
 const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
-  const [progress, setProgress] = useState(message.type === 'progress' ? message.progress : 0);
+  const [progress, setProgress] = useState(0); // Single progress state
   const [displayText, setDisplayText] = useState(message.text);
   const [isVisible, setIsVisible] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
@@ -111,7 +111,6 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
     : [];
   const displayUser = message.from || message.user || message.userId || 'Admin';
 
-  // Skip rendering if explicitly hidden (non-progress cases handled separately)
   if (!isVisible) return null;
 
   return (
@@ -136,72 +135,70 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
             </div>
             <div className="text-xs text-center mt-1">{progress}%</div>
           </>
-        ) : message.downloadUrl ? (
+        ) : (
           <>
-            {message.text}{' '}
-            <button
-              onClick={() => {
-                const link = document.createElement('a');
-                link.href = message.downloadUrl;
-                link.download = message.fileName || `${message.taskName || 'file'}.${message.taskType || 'txt'}`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
-              className={`${colorScheme.accent} underline hover:text-neon-green ml-2 px-2 py-1 rounded hover:bg-opacity-80 transition-all`}
-              aria-label={`Download ${message.fileName || 'file'}`}
-            >
-              Download {message.fileName || 'file'}
-            </button>
-          </>
-        ) : (message.type === 'download' || (isComplete && message.fileContent)) ? (
-          <div className="flex flex-col gap-2">
-            <div className="text-sm">{message.text}</div>
-            {onPreview && message.fileContent && (
+            <div className="text-sm">{displayText}</div>
+            {message.downloadUrl && (
               <button
-                onClick={() => onPreview(message.fileContent)}
-                className={`${colorScheme.accent} underline hover:text-neon-green px-3 py-1 rounded hover:bg-opacity-80 transition-transform transform hover:scale-105`}
-                aria-label={`Preview ${message.fileName || 'file'}`}
-              >
-                Preview
-              </button>
-            )}
-            {message.fileContent && (
-              <button
-                onClick={() =>
-                  handleDownloadClick(
-                    message.fileName || `${message.taskId || 'file'}.${message.taskType || 'txt'}`,
-                    message.fileContent
-                  )
-                }
-                className={`${colorScheme.accent} underline hover:text-neon-green px-3 py-1 rounded hover:bg-opacity-80 transition-transform transform hover:scale-105`}
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = message.downloadUrl;
+                  link.download = message.fileName || `${message.taskName || 'file'}.${message.taskType || 'txt'}`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className={`${colorScheme.accent} underline hover:text-neon-green ml-2 px-2 py-1 rounded hover:bg-opacity-80 transition-all`}
                 aria-label={`Download ${message.fileName || 'file'}`}
               >
                 Download {message.fileName || 'file'}
               </button>
             )}
-          </div>
-        ) : (message.type === 'question' || message.type === 'success') && options.length > 0 ? (
-          <>
-            <div className="text-sm">{message.text}</div>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {options.map((option, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => onOptionClick(option)}
-                  className={`${colorScheme.bubble} px-4 py-1 rounded-full text-sm cursor-pointer hover:bg-opacity-90 transition-all transform hover:scale-105`}
-                  aria-label={`Select ${option}`}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
+            {(message.type === 'download' || (isComplete && message.fileContent)) && (
+              <div className="flex flex-col gap-2">
+                {onPreview && message.fileContent && (
+                  <button
+                    onClick={() => onPreview(message.fileContent)}
+                    className={`${colorScheme.accent} underline hover:text-neon-green px-3 py-1 rounded hover:bg-opacity-80 transition-transform transform hover:scale-105`}
+                    aria-label={`Preview ${message.fileName || 'file'}`}
+                  >
+                    Preview
+                  </button>
+                )}
+                {message.fileContent && (
+                  <button
+                    onClick={() =>
+                      handleDownloadClick(
+                        message.fileName || `${message.taskId || 'file'}.${message.taskType || 'txt'}`,
+                        message.fileContent
+                      )
+                    }
+                    className={`${colorScheme.accent} underline hover:text-neon-green px-3 py-1 rounded hover:bg-opacity-80 transition-transform transform hover:scale-105`}
+                    aria-label={`Download ${message.fileName || 'file'}`}
+                  >
+                    Download {message.fileName || 'file'}
+                  </button>
+                )}
+              </div>
+            )}
+            {(message.type === 'question' || message.type === 'success') && options.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {options.map((option, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onOptionClick(option)}
+                    className={`${colorScheme.bubble} px-4 py-1 rounded-full text-sm cursor-pointer hover:bg-opacity-90 transition-all transform hover:scale-105`}
+                    aria-label={`Select ${option}`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
           </>
-        ) : (
-          <div className="text-sm">{message.text}</div>
         )}
       </div>
-      <span className="text-xs text-gray-400 mt-1">{message.timestamp}</span>
+      <span className="text-xs text-gray-400 mt-1">{message.timestamp || new Date().toLocaleTimeString()}</span>
     </div>
   );
 };
