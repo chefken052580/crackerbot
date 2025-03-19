@@ -60,22 +60,7 @@ export function initializeTaskExecution() {
         finalFileName = contentArray[0].fileName;
       }
 
-      // Comment out direct taskResult emit to frontend; let taskManager.js handle it
-      // botSocket.emit('taskResult', {
-      //   taskId: task.taskId,
-      //   content: Buffer.isBuffer(finalContent) ? finalContent.toString('base64') : finalContent,
-      //   fileName: finalFileName,
-      //   type: task.type,
-      //   name: task.name,
-      //   frontendId: task.frontendId,
-      //   ip: task.ip,
-      //   error: result.error,
-      //   requestId,
-      //   leadId,
-      // });
-      await log(`Prepared taskResult for taskId ${task.taskId} to frontendId ${task.frontendId} with requestId ${requestId}, delegating to taskManager.js`);
-      
-      // Emit to bot_lead (taskManager.js) only
+      await log(`Prepared taskResult for taskId ${task.taskId} to frontendId ${task.frontendId} with requestId ${requestId}`);
       botSocket.emit('taskResult', {
         taskId: task.taskId,
         content: Buffer.isBuffer(finalContent) ? finalContent.toString('base64') : finalContent,
@@ -103,7 +88,7 @@ export function initializeTaskExecution() {
 
   botSocket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js version 2025-03-17-11 loaded');
+    await log('taskExecution.js version 2025-03-18 enhanced with AI flair');
     botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
   });
 
@@ -115,11 +100,11 @@ export function initializeTaskExecution() {
 }
 
 export async function startBuildTask(task) {
-  const { name, features, user, type, frontendId, ip, requestId, leadId } = task;
+  const { name, features, user, type, frontendId, ip, requestId, leadId, tone } = task;
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
-    await log(`Starting build for ${name} (${type}) for frontendId ${frontendId}`);
+    await log(`Starting build for ${name} (${type}) for ${user} with features: "${features}"`);
     const extensionMap = {
       'javascript': 'js', 'js': 'js',
       'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java', 'c++': 'cpp',
@@ -131,20 +116,25 @@ export async function startBuildTask(task) {
       'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf',
     };
 
-    const aiPrompt = `Generate content for a ${type} file named "${name}" based on the user's request: "${features || 'basic functionality'}". Add your own creative twist and additional features to complement the task. For PDFs, return plain text content suitable for a PDF document with explicit page breaks marked by "---PAGE BREAK---" between pages. If the request specifies a number of pages (e.g., 3) or items (e.g., 5 animals), ensure the content fully satisfies those requirements, distributing the content across the specified pages. Avoid starting with an empty page (do not begin with "---PAGE BREAK---"). For multi-file types like "full-stack" or "graph", return a JSON object with file names as keys and their content as strings. For all other types, return the content as a single string.`;
+    const aiPrompt = `
+      Yo ${user}, I’m Cracker Bot, your slick code maestro! You’ve tasked me with building "${name}", a ${type} project with these vibes: "${features || 'basic functionality'}".
+      I’m not just gonna build it—I’m gonna blow your mind! I’ll dig deep into your vision, amplify it with some next-level flair, and throw in wild, unexpected features to make this a total banger.
+      Think dope comments, slick optimizations, and a touch of chaos—Cracker Bot style! For PDFs, give me rich, detailed text across at least 3 pages (unless specified otherwise), with "---PAGE BREAK---" between pages, no empty first page. For "full-stack" or "graph", return a JSON object with file names as keys and content as strings. Otherwise, drop a single string packed with swagger.
+      Let’s make this legendary—go all out!
+    `;
 
     if (type === 'pdf') {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: 'Return plain text content suitable for a PDF document, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Ensure the content fully satisfies the user’s request, including specified page counts or item numbers (e.g., 5 animals across 3 pages), without using markdown or code blocks unless part of the content. Do not start with "---PAGE BREAK---" to avoid an empty first page.' },
+          { role: 'system', content: `Return detailed, engaging plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Interpret the user’s features deeply, adding creative flair and extra value. Ensure at least 3 pages unless specified, and don’t start with "---PAGE BREAK---".` },
           { role: 'user', content: aiPrompt },
         ],
-        max_tokens: 2000,
+        max_tokens: 3000, // Increased for richer content
       });
 
       const content = response.choices[0].message.content.trim();
-      await log(`Raw AI response for taskId ${task.taskId}: ${content}`);
+      await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
 
       const doc = new PDFDocument();
       const buffers = [];
@@ -162,7 +152,7 @@ export async function startBuildTask(task) {
       for (const [index, pageContent] of pages.entries()) {
         if (index > 0) doc.addPage();
         const trimmedContent = pageContent.trim();
-        await log(`Writing page ${index + 1} content for taskId ${task.taskId}: ${trimmedContent.substring(0, 100)}...`);
+        await log(`Writing page ${index + 1} for taskId ${task.taskId}: ${trimmedContent.substring(0, 100)}...`);
         doc.fontSize(12).text(trimmedContent);
       }
 
@@ -183,7 +173,7 @@ export async function startBuildTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "server.js") and their content as strings.` },
+          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "server.js") and their content as strings. Deeply interpret the user’s features, adding creative, unexpected enhancements with flair-filled comments.` },
           { role: 'user', content: aiPrompt },
         ],
         response_format: { type: 'json_object' },
@@ -191,7 +181,7 @@ export async function startBuildTask(task) {
       });
 
       const files = JSON.parse(response.choices[0].message.content.trim());
-      await log(`Raw AI response for taskId ${task.taskId}: ${JSON.stringify(files)}`);
+      await log(`Raw AI response for taskId ${task.taskId}: ${JSON.stringify(files, null, 2).substring(0, 200)}...`);
       if (!files || typeof files !== 'object' || Object.keys(files).length === 0) {
         throw new Error('Invalid multi-file structure');
       }
@@ -206,14 +196,14 @@ export async function startBuildTask(task) {
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 'Return the content as a single string, no explanations or markdown unless part of the content.' },
+        { role: 'system', content: `Return a single string of ${type} code or content. Deeply understand the user’s features, amplifying their vision with creative flair, slick comments (e.g., "// Cracker Bot was here!"), and unexpected enhancements. No explanations outside the content.` },
         { role: 'user', content: aiPrompt },
       ],
-      max_tokens: 1000,
+      max_tokens: 2000, // Increased for detailed output
     });
 
     const content = response.choices[0].message.content.trim();
-    await log(`Raw AI response for taskId ${task.taskId}: ${content}`);
+    await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
     const fileName = `${name}.${extensionMap[type.toLowerCase()] || 'txt'}`;
     return { content: [{ fileName, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
   } catch (err) {
@@ -223,11 +213,11 @@ export async function startBuildTask(task) {
 }
 
 export async function editTask(task) {
-  const { name, features, type, editRequest, frontendId, ip, requestId, leadId } = task;
+  const { name, features, type, editRequest, frontendId, ip, requestId, leadId, user, tone } = task;
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
-    await log(`Starting edit for ${name} (${type}) with request: ${editRequest} for frontendId ${frontendId}`);
+    await log(`Starting edit for ${name} (${type}) for ${user} with request: "${editRequest}"`);
     const extensionMap = {
       'javascript': 'js', 'js': 'js',
       'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java', 'c++': 'cpp',
@@ -239,20 +229,24 @@ export async function editTask(task) {
       'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf',
     };
 
-    const aiPrompt = `Edit the ${type} content for "${name}" with original features: "${features || 'basic functionality'}" and apply this edit request: "${editRequest}". Add your own creative twist and additional features to enhance it uniquely. For PDFs, return plain text content suitable for a PDF document with explicit page breaks marked by "---PAGE BREAK---" between pages, ensuring the content spans at least 3 pages if specified in the request. Do not start with "---PAGE BREAK---". For multi-file types like "full-stack" or "graph", return a JSON object with file names as keys and their content as strings. For all other types, return the content as a single string.`;
+    const aiPrompt = `
+      Yo ${user}, Cracker Bot’s back to remix "${name}", a ${type} project! Original vibes: "${features || 'basic functionality'}". Now you want: "${editRequest}".
+      I’m diving deep into your vision, tweaking it with mad flair, and stacking on wild extras—think slick comments (e.g., "// Cracker Bot’s remix magic!"), optimizations, and chaos that slaps!
+      For PDFs, return rich text across at least 3 pages (unless specified), with "---PAGE BREAK---" between pages, no empty start. For "full-stack" or "graph", return a JSON object with file names as keys and content as strings. Otherwise, drop a single string that’s next-level dope!
+    `;
 
     if (type === 'pdf') {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: 'Return plain text content suitable for a PDF document, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Ensure the content fulfills the user’s request fully. Do not start with "---PAGE BREAK---".' },
+          { role: 'system', content: `Return detailed plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Enhance the original features with the edit request, adding creative flair. Ensure at least 3 pages unless specified, no empty first page.` },
           { role: 'user', content: aiPrompt },
         ],
-        max_tokens: 2000,
+        max_tokens: 3000,
       });
 
       const content = response.choices[0].message.content.trim();
-      await log(`Raw AI response for taskId ${task.taskId}: ${content}`);
+      await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
 
       const doc = new PDFDocument();
       const buffers = [];
@@ -270,7 +264,7 @@ export async function editTask(task) {
       for (const [index, pageContent] of pages.entries()) {
         if (index > 0) doc.addPage();
         const trimmedContent = pageContent.trim();
-        await log(`Writing page ${index + 1} content for taskId ${task.taskId}: ${trimmedContent.substring(0, 100)}...`);
+        await log(`Writing page ${index + 1} for taskId ${task.taskId}: ${trimmedContent.substring(0, 100)}...`);
         doc.fontSize(12).text(trimmedContent);
       }
 
@@ -291,7 +285,7 @@ export async function editTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "server.js") and their content as strings.` },
+          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "server.js") and their content as strings. Enhance the original features with the edit request, adding creative flair and comments.` },
           { role: 'user', content: aiPrompt },
         ],
         response_format: { type: 'json_object' },
@@ -299,7 +293,7 @@ export async function editTask(task) {
       });
 
       const files = JSON.parse(response.choices[0].message.content.trim());
-      await log(`Raw AI response for taskId ${task.taskId}: ${JSON.stringify(files)}`);
+      await log(`Raw AI response for taskId ${task.taskId}: ${JSON.stringify(files, null, 2).substring(0, 200)}...`);
       if (!files || typeof files !== 'object' || Object.keys(files).length === 0) {
         throw new Error('Invalid multi-file structure');
       }
@@ -314,14 +308,14 @@ export async function editTask(task) {
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: 'Return the content as a single string, no explanations or markdown unless part of the content.' },
+        { role: 'system', content: `Return a single string of ${type} code or content. Enhance the original features with the edit request, adding creative flair, slick comments (e.g., "// Cracker Bot’s remix magic!"), and unexpected enhancements. No explanations outside the content.` },
         { role: 'user', content: aiPrompt },
       ],
-      max_tokens: 1000,
+      max_tokens: 2000,
     });
 
     const content = response.choices[0].message.content.trim();
-    await log(`Raw AI response for taskId ${task.taskId}: ${content}`);
+    await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
     const fileName = `${name}.${extensionMap[type.toLowerCase()] || 'txt'}`;
     return { content: [{ fileName, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
   } catch (err) {

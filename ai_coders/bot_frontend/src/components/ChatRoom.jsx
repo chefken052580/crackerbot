@@ -151,7 +151,7 @@ const ChatRoom = () => {
       console.log("ChatRoom: WebSocket connected, ID:", socketRef.current.id);
       setMessages((prev) => [...prev, { 
         from: "System", 
-        text: "Connected to WebSocket", 
+        text: "Connected to Cracker Bot!", 
         type: "system", 
         timestamp: new Date().toLocaleTimeString() 
       }]);
@@ -192,20 +192,24 @@ const ChatRoom = () => {
         progress: data.progress,
       };
 
-      setMessages((prev) => {
-        const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
-        return exists ? prev : [...prev, newMessage];
-      });
-
+      // Filter out redundant progress messages from main list
       if (data.type === "progress") {
         setProgressMessage((prev) => ({
           ...newMessage,
           id: data.taskId,
         }));
         if (data.progress === 100) {
+          setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
           setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
         }
-      } else if (data.type === "question" && data.taskId) {
+      } else {
+        setMessages((prev) => {
+          const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
+          return exists ? prev : [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage];
+        });
+      }
+
+      if (data.type === "question" && data.taskId) {
         setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
         setCurrentTask((prev) => ({
           taskId: data.taskId,
@@ -214,11 +218,11 @@ const ChatRoom = () => {
           features: data.taskFeatures || prev?.features || "Pending",
           step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
                 data.text.toLowerCase().includes("type") ? "type" :
-                data.text.toLowerCase().includes("description") ? "features" :
-                data.text.toLowerCase().includes("shoot") ? "choice" : "confirm",
+                data.text.toLowerCase().includes("features") ? "features" :
+                data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
           taskStatus: "pending",
         }));
-        setEditMode(null);
+        setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
         setPostTaskOptions(null);
       } else if (data.type === "success" && data.options) {
         setTaskPending(null);
@@ -234,6 +238,7 @@ const ChatRoom = () => {
         setTaskPending(null);
         setCurrentTask(null);
         setEditMode(null);
+        setPostTaskOptions(null);
       }
 
       if (data.user && data.user !== "Guest") {
@@ -293,7 +298,7 @@ const ChatRoom = () => {
   }, []);
 
   useEffect(() => {
-    console.log("ChatRoom: Scrolling to end due to messages or typing change");
+    console.log("ChatRoom: Scrolling to end due to messages or state change");
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping, progressMessage, postTaskOptions]);
 
@@ -343,26 +348,14 @@ const ChatRoom = () => {
 
       switch (command) {
         case "/create":
-          messageData.text = "Build something epic!";
+          messageData.text = "Build-Something-Epic";
           break;
         case "/projects":
-          setMessages((prev) => [...prev, {
-            from: "Cracker Bot",
-            user: userName,
-            text: "Project listing not yet implemented. Use /create to start a new one!",
-            type: "system",
-            timestamp: new Date().toLocaleTimeString(),
-          }]);
+          socketRef.current.emit("message", messageData);
           setIsSending(false);
           return;
         case "/download":
-          setMessages((prev) => [...prev, {
-            from: "Cracker Bot",
-            user: userName,
-            text: "Download latest not yet implemented server-side. Complete a task to download!",
-            type: "system",
-            timestamp: new Date().toLocaleTimeString(),
-          }]);
+          socketRef.current.emit("message", messageData);
           setIsSending(false);
           return;
         case "/reset_name":
@@ -416,9 +409,9 @@ const ChatRoom = () => {
         console.log("ChatRoom: Set userName in localStorage from task response:", messageText.trim());
         setCurrentTask((prev) => ({ ...prev, step: "choice" }));
       } else if (currentTask.step === "choice") {
-        if (messageText.toLowerCase().includes("build")) {
+        if (messageText.toLowerCase() === "build-something-epic") {
           setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
-        } else if (messageText.toLowerCase().includes("shoot")) {
+        } else if (messageText.toLowerCase() === "chat") {
           setCurrentTask((prev) => ({ ...prev, step: "chat" }));
         }
       } else if (currentTask.step === "project_name") {
@@ -426,9 +419,7 @@ const ChatRoom = () => {
       } else if (currentTask.step === "type") {
         setCurrentTask((prev) => ({ ...prev, type: messageText, step: "features" }));
       } else if (currentTask.step === "features") {
-        setCurrentTask((prev) => ({ ...prev, features: messageText, step: "confirm" }));
-      } else if (currentTask.step === "confirm" && messageText.toLowerCase() === "create file / project") {
-        setCurrentTask((prev) => ({ ...prev, taskStatus: "building" }));
+        setCurrentTask((prev) => ({ ...prev, features: messageText, step: "building" }));
       }
     } else {
       messageData.type = "general_message";
@@ -674,7 +665,7 @@ const ChatRoom = () => {
                 />
               </div>
             ))}
-            {progressMessage && progressMessage.progress < 100 && (
+            {progressMessage && (
               <div>
                 <ChatMessage
                   message={progressMessage}
@@ -722,10 +713,10 @@ const ChatRoom = () => {
                 Edit
               </button>
               <button
-                onClick={() => handlePostTaskAction("Add More")}
+                onClick={() => handlePostTaskAction("Add-More")}
                 className={`px-4 py-2 rounded-full ${currentScheme.bubble}`}
               >
-                Add More
+                Add-More
               </button>
               <button
                 onClick={() => handlePostTaskAction("Done")}
@@ -743,7 +734,7 @@ const ChatRoom = () => {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={taskPending ? `Answer: ${taskPending.question}` : editMode ? "Edit or add more..." : "Type your message or /command..."}
+              placeholder={taskPending ? `Answer: ${taskPending.question}` : editMode ? "Edit your task..." : "Type your message or /command..."}
               className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-gray-600 ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-${currentScheme.accent.split("-")[1]}`}
             />
             <button

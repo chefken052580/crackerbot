@@ -1,3 +1,4 @@
+version: '3.8'
 services:
   redis:
     image: redis:7-alpine
@@ -11,7 +12,7 @@ services:
       - crackerbot-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s  # Updated from 10s
+      interval: 30s
       timeout: 5s
       retries: 5
 
@@ -25,16 +26,17 @@ services:
     environment:
       - PORT=5002
       - CORS_ORIGIN=https://visually-sterling-spider.ngrok-free.app
+      - NODE_ENV=development  # Added for nodemon
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - crackerbot-network
-    # volumes:
-    #   - ./ai_coders/websocket_server:/websocket_server  # Kept removed as per previous update
+    volumes:
+      - ./ai_coders/websocket_server/src:/usr/src/app/src  # Mount src only
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
-      interval: 30s  # Updated from 10s
+      interval: 30s
       timeout: 5s
       retries: 5
     logging:
@@ -62,6 +64,7 @@ services:
       - REDIS_DB=0
       - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_key_here}
       - LOG_DIR=/bot_lead/logs
+      - NODE_ENV=development  # Added for nodemon
     depends_on:
       redis:
         condition: service_healthy
@@ -70,11 +73,11 @@ services:
     networks:
       - crackerbot-network
     volumes:
-      - ./ai_coders/bot_lead:/bot_lead
+      - ./ai_coders/bot_lead/src:/usr/src/app/src  # Refined to src only
       - bot_lead_logs:/bot_lead/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-      interval: 30s  # Updated from 10s
+      interval: 30s
       timeout: 5s
       retries: 5
     logging:
@@ -100,6 +103,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-crackerbot}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_key_here}
       - LOG_DIR=/bot_backend/logs
+      - NODE_ENV=development  # Added for nodemon
     depends_on:
       redis:
         condition: service_healthy
@@ -108,7 +112,7 @@ services:
     networks:
       - crackerbot-network
     volumes:
-      - ./ai_coders/bot_backend:/bot_backend
+      - ./ai_coders/bot_backend/src:/usr/src/app/src  # Refined to src only
       - bot_backend_logs:/bot_backend/logs
     logging:
       driver: "json-file"
@@ -135,9 +139,11 @@ services:
         condition: service_started
     networks:
       - crackerbot-network
+    volumes:
+      - ./ai_coders/bot_frontend/src:/usr/src/app/src  # Added for HMR
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 30s  # Updated from 10s
+      interval: 30s
       timeout: 5s
       retries: 5
     logging:
