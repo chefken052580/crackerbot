@@ -101,10 +101,11 @@ export async function initTaskManager(botSocketArg) {
         taskId: taskState.taskId,
         frontendId,
       });
+      await log(`Sent welcome to ${userName} with ${projectCount} projects`);
     }
   });
 
-  socket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip, error: taskError, requestId, leadId }) => {
+  socket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip, error: taskError }) => {
     try {
       await log(`Task ${taskId} dropped for ${frontendId} - ${content ? content.length : 'null'} chars of pure fire! 🔥`);
       const taskData = await redisClient.hGet('tasks', taskId);
@@ -248,10 +249,18 @@ export async function handleMessage(botSocket, message) {
   const toneKey = `user:frontend:${frontendId}:tone`;
   const userInfoKey = `user:frontend:${frontendId}:info`;
   const stateKey = `taskState:${frontendId}`;
-  let userName = await redisClient.get(userKey) || message.user || 'Guest';
-  let tone = await redisClient.get(toneKey) || DEFAULT_TONE;
-  let taskState = await redisClient.get(stateKey);
-  taskState = taskState ? JSON.parse(taskState) : { step: "name", taskId: `initial_name:${frontendId}` };
+  let userName, tone, taskState;
+
+  try {
+    userName = await redisClient.get(userKey) || message.user || 'Guest';
+    tone = await redisClient.get(toneKey) || DEFAULT_TONE;
+    const stateData = await redisClient.get(stateKey);
+    taskState = stateData ? JSON.parse(stateData) : { step: "name", taskId: `initial_name:${frontendId}` };
+    await log(`Fetched state for ${frontendId}: ${JSON.stringify(taskState)}`);
+  } catch (err) {
+    await error(`Redis fetch failed for ${frontendId}: ${err.message}`);
+    return;
+  }
 
   if (message.type === 'reset_user') {
     await redisClient.del(userKey);
@@ -263,9 +272,70 @@ export async function handleMessage(botSocket, message) {
 
   await log(`Processing type: ${message.type || 'general_message'}, taskId: ${message.taskId || 'none'}, step: ${taskState.step} - Cracker Bot’s on it!`);
 
+  // Handle bubble responses during "choice" step
+  if (taskState.step === 'choice' && message.type === 'general_message') {
+    const choice = message.text.trim().toLowerCase();
+    await log(`Choice detected: ${choice} for ${userName}`);
+
+    if (choice === 'chat') {
+      try {
+        const chatPrompt = await generateResponse(
+          `Cool vibes, ${userName}! Let’s chat—what’s sparking your genius today?`,
+          userName,
+          tone
+        );
+        const chatMsg = {
+          text: chatPrompt,
+          type: "question",
+          taskId: `chat:${Date.now()}`,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          frontendId,
+        };
+        botSocket.emit('message', chatMsg);
+        await log(`Sent chat prompt to ${frontendId}: ${chatPrompt}`);
+      } catch (err) {
+        await error(`Chat prompt failed for ${userName}: ${err.message}`);
+      }
+      return;
+    } else if (choice === 'build-something-epic') {
+      try {
+        const newTaskId = Date.now().toString();
+        await redisClient.hSet('tasks', newTaskId, JSON.stringify({ taskId: newTaskId, step: 'project_name', user: userName, status: 'pending', frontendId }));
+        await redisClient.set(stateKey, JSON.stringify({ step: "project_name", taskId: newTaskId }));
+        const namePrompt = await generateResponse(
+          `Epic mode on, ${userName}! What’s this legendary project gonna be called?`,
+          userName,
+          tone
+        );
+        const buildMsg = {
+          text: namePrompt,
+          type: "question",
+          taskId: newTaskId,
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          options: ["Name your project!"],
+          frontendId,
+        };
+        botSocket.emit('message', buildMsg);
+        await log(`Started task ${newTaskId} for ${userName} and sent: ${namePrompt}`);
+      } catch (err) {
+        await error(`Build prompt failed for ${userName}: ${err.message}`);
+      }
+      return;
+    } else {
+      await log(`Invalid choice: ${choice} - prompting again`);
+    }
+  }
+
   if (message.type === 'command') {
     const commandParts = message.text.split(" ");
     const command = commandParts[0].toLowerCase();
+    await log(`Processing command: ${command} for ${userName}`);
     switch (command) {
       case "/create":
         taskState.step = "choice";
@@ -303,6 +373,7 @@ export async function handleMessage(botSocket, message) {
           user: userName,
           frontendId,
         });
+        await log(`Sent projects list to ${userName}: ${projects}`);
         break;
       case "/download":
         const lastTask = await redisClient.get('lastGeneratedTask');
@@ -329,6 +400,7 @@ export async function handleMessage(botSocket, message) {
               taskType: task.type,
               taskFeatures: task.features,
             });
+            await log(`Sent download for ${task.name} to ${userName}`);
           } else {
             botSocket.emit('message', {
               text: `No recent task for you, ${userName}! Finish something to grab it.`,
@@ -538,6 +610,7 @@ export async function processGeneralMessage(botSocket, text, userName, tone, ip,
       });
     }
     await storeMessage(userName, text);
+    await log(`Processed general message for ${userName}: ${text}`);
   }
 }
 
@@ -561,7 +634,7 @@ async function cacheCompletedTask(task) {
     });
     await redisClient.set(taskKey, taskData);
     await redisClient.set(`project:${user}:latest`, taskData);
-    await redisClient.sAdd(`projects:${user}`, taskId); // Track all projects for user
+    await redisClient.sAdd(`projects:${user}`, taskId);
     await log(`Cached task ${taskId} as ${taskKey} - locked and loaded!`);
   } catch (err) {
     await error(`Caching task ${task.taskId} flopped: ${err.message}`);
@@ -736,6 +809,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
           user: userName,
           frontendId,
         });
+        await log(`Sent chat prompt to ${userName}`);
       } else {
         const errorMsg = await generateResponse(
           `Yo ${userName}, "${answer}" ain’t an option! Pick "Chat" or "Build-Something-Epic"!`,

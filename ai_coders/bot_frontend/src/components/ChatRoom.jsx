@@ -192,7 +192,7 @@ const ChatRoom = () => {
         progress: data.progress,
       };
 
-      // Filter out redundant progress messages from main list
+      // Handle progress messages
       if (data.type === "progress") {
         setProgressMessage((prev) => ({
           ...newMessage,
@@ -202,43 +202,47 @@ const ChatRoom = () => {
           setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
           setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
         }
-      } else {
-        setMessages((prev) => {
-          const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
-          return exists ? prev : [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage];
-        });
-      }
-
-      if (data.type === "question" && data.taskId) {
-        setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
-        setCurrentTask((prev) => ({
-          taskId: data.taskId,
-          name: data.taskName || prev?.name || "Pending",
-          type: data.taskType || prev?.type || "Pending",
-          features: data.taskFeatures || prev?.features || "Pending",
-          step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
-                data.text.toLowerCase().includes("type") ? "type" :
-                data.text.toLowerCase().includes("features") ? "features" :
-                data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
-          taskStatus: "pending",
-        }));
-        setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
-        setPostTaskOptions(null);
-      } else if (data.type === "success" && data.options) {
-        setTaskPending(null);
-        setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
-      } else if (data.type === "download") {
+      } 
+      // Handle download messages and clear progress
+      else if (data.type === "download") {
+        setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
         setProgressMessage(null);
         setTaskPending(null);
         setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
         setEditMode(data.taskId);
         setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures });
-      } else if (data.type === "error" && data.taskId) {
-        setProgressMessage(null);
-        setTaskPending(null);
-        setCurrentTask(null);
-        setEditMode(null);
-        setPostTaskOptions(null);
+      } 
+      // Handle other messages
+      else {
+        setMessages((prev) => {
+          const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
+          return exists ? prev : [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage];
+        });
+        if (data.type === "question" && data.taskId) {
+          setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
+          setCurrentTask((prev) => ({
+            taskId: data.taskId,
+            name: data.taskName || prev?.name || "Pending",
+            type: data.taskType || prev?.type || "Pending",
+            features: data.taskFeatures || prev?.features || "Pending",
+            step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
+                  data.text.toLowerCase().includes("type") ? "type" :
+                  data.text.toLowerCase().includes("features") ? "features" :
+                  data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
+            taskStatus: "pending",
+          }));
+          setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
+          setPostTaskOptions(null);
+        } else if (data.type === "success" && data.options) {
+          setTaskPending(null);
+          setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
+        } else if (data.type === "error" && data.taskId) {
+          setProgressMessage(null);
+          setTaskPending(null);
+          setCurrentTask(null);
+          setEditMode(null);
+          setPostTaskOptions(null);
+        }
       }
 
       if (data.user && data.user !== "Guest") {
@@ -319,7 +323,7 @@ const ChatRoom = () => {
       });
       return;
     }
-
+  
     setIsSending(true);
     console.log("ChatRoom: Sending message:", messageText);
     const userName = localStorage.getItem("userName") || "Guest";
@@ -330,7 +334,7 @@ const ChatRoom = () => {
       ip: window.location.hostname,
       frontendId: socketRef.current.id,
     };
-
+  
     setMessages((prev) => [...prev, {
       from: userName,
       user: userName,
@@ -339,13 +343,19 @@ const ChatRoom = () => {
       timestamp: new Date().toLocaleTimeString(),
       className: "user-message",
     }]);
-
-    if (messageText.startsWith("/")) {
+  
+    // Check if this is a bubble click from the welcome message
+    const lastWelcome = messages.find(m => m.type === "success" && m.options && m.taskId);
+    if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
+      messageData.type = "task_response";
+      messageData.taskId = lastWelcome.taskId; // Use the welcome taskId
+      console.log("ChatRoom: Sending bubble click as task_response with taskId:", lastWelcome.taskId);
+    } else if (messageText.startsWith("/")) {
       messageData.type = "command";
       messageData.target = "bot_lead";
       const commandParts = messageText.split(" ");
       const command = commandParts[0].toLowerCase();
-
+  
       switch (command) {
         case "/create":
           messageData.text = "Build-Something-Epic";
@@ -424,7 +434,7 @@ const ChatRoom = () => {
     } else {
       messageData.type = "general_message";
     }
-
+  
     socketRef.current.emit("message", messageData);
     setInput("");
     setShowCommands(false);
@@ -660,12 +670,15 @@ const ChatRoom = () => {
                 <ChatMessage
                   message={msg}
                   onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
-                  onOptionClick={(option) => sendMessage(option)}
+                  onOptionClick={(option) => {
+                    console.log("ChatRoom: Bubble clicked:", option);
+                    sendMessage(option);
+                  }}
                   colorScheme={currentScheme}
                 />
               </div>
             ))}
-            {progressMessage && (
+            {progressMessage && progressMessage.progress < 100 && (
               <div>
                 <ChatMessage
                   message={progressMessage}
