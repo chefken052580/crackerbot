@@ -1,4 +1,3 @@
-// ai_coders/bot_lead/src/taskManager.js
 import { log, error } from './logger.js';
 import { redisClient, storeMessage } from './redisClient.js';
 import { setLastGeneratedTask, delegateTask, updateTaskStatus } from './stateManager.js';
@@ -146,6 +145,7 @@ export async function initTaskManager(botSocketArg) {
       await cacheCompletedTask({
         taskId,
         frontendId,
+        ip,
         name,
         type,
         fileName,
@@ -616,11 +616,12 @@ export async function processGeneralMessage(botSocket, text, userName, tone, ip,
 
 async function cacheCompletedTask(task) {
   try {
-    const { taskId, frontendId, name, type, fileName, content, user, features, version, network, editRequest } = task;
+    const { taskId, frontendId, ip, name, type, fileName, content, user, features, version, network, editRequest } = task;
     const taskKey = `project:${user}:${taskId}`;
     const taskData = JSON.stringify({
       taskId,
       frontendId,
+      ip,
       name,
       type,
       fileName,
@@ -995,15 +996,18 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
       if (commandFlag) {
         if (choice === "edit") {
           task.step = 'project_name';
-          task.status = 'pending';
+          task.status = 'pending_restart'; // Mark as restart to clear previous features
+          task.features = null; // Reset features for a fresh build
           await redisClient.hSet('tasks', taskId, JSON.stringify(task));
           stateUpdate = { step: "project_name", taskId };
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
           const namePrompt = await generateResponse(
-            `Editing "${taskName}", ${userName}! Let’s tweak this bad boy—new name or keep "${taskName}"?`,
+            `Yo ${userName}, restarting "${taskName}" from scratch! What’s the new name or stick with "${taskName}"?`,
             userName,
             tone
           );
+          // Clear lastGeneratedTask to avoid confusion
+          await redisClient.del('lastGeneratedTask');
           botSocket.emit('message', {
             text: namePrompt,
             type: "question",
@@ -1013,10 +1017,7 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             ip,
             user: userName,
             options: ["Type a new name or keep it!"],
-            frontendId,
-            taskName: taskName,
-            taskType: taskType,
-            taskFeatures: taskFeatures,
+            frontendId
           });
         } else if (choice === "add-more") {
           task.step = 'pending_features';
@@ -1041,7 +1042,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             frontendId,
             taskName: taskName,
             taskType: taskType,
-            taskFeatures: taskFeatures,
+            taskFeatures: task.features, // Preserve original features
+            previousContent: await redisClient.get(`project:${userName}:${taskId}`) // Pass previous build
           });
         } else if (choice === "done") {
           const doneMsg = await generateResponse(
@@ -1058,11 +1060,32 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
             user: userName,
             options: ["Chat", "Build-Something-Epic"],
             frontendId,
-            taskName: taskName,
-            taskType: taskType,
-            taskFeatures: taskFeatures,
           });
           await updateTaskStatus(taskId, 'completed');
+          // Ensure task is marked completed in Redis
+          const taskData = JSON.parse(await redisClient.get(`project:${userName}:${taskId}`));
+          if (taskData) {
+            taskData.completed = true;
+            await redisClient.set(`project:${userName}:${taskId}`, JSON.stringify(taskData));
+          }
+          // Trigger welcome message for returning user
+          const projectCount = (await redisClient.keys(`project:${userName}:*`)).length;
+          const welcome = await generateResponse(
+            `Yo ${userName}, you’re back with ${projectCount} bangers in the stash! Hit /projects to check ’em or let’s cook up something new!`,
+            userName,
+            tone
+          );
+          botSocket.emit('message', {
+            text: welcome,
+            type: "success",
+            from: 'Cracker Bot',
+            target: 'bot_frontend',
+            ip,
+            user: userName,
+            options: ["Chat", "Build-Something-Epic"],
+            taskId: `initial_name:${frontendId}`,
+            frontendId,
+          });
           await redisClient.hDel('tasks', taskId);
           stateUpdate = { step: "choice", taskId: `initial_name:${frontendId}` };
           await redisClient.set(stateKey, JSON.stringify(stateUpdate));
@@ -1071,6 +1094,8 @@ async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip,
         const reviewPrompt = await generateResponse(
           `Yo ${userName}, pick your move for "${taskName}"—edit it, add more, or call it done?`,
           userName,
+          taskName,
+          taskType,
           tone
         );
         botSocket.emit('message', {

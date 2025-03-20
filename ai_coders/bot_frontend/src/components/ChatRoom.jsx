@@ -1,4 +1,3 @@
-// ai_coders/bot_frontend/src/components/ChatRoom.jsx
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
@@ -585,7 +584,7 @@ const ChatRoom = () => {
     const { taskId, frontendId, taskName, taskType, taskFeatures } = postTaskOptions;
     const userName = localStorage.getItem("userName") || "Guest";
     const messageData = {
-      text: action,
+      text: action.toLowerCase(), // Normalize to match backend case
       type: "task_response",
       taskId,
       frontendId,
@@ -593,6 +592,7 @@ const ChatRoom = () => {
       userId: socketRef.current.id,
       commandFlag: true,
       target: "bot_lead",
+      ip: window.location.hostname,
       taskName,
       taskType,
       taskFeatures,

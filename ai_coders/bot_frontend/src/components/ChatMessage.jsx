@@ -1,4 +1,3 @@
-// bot_frontend/src/components/ChatMessage.jsx
 import React, { useEffect, useState } from 'react';
 
 const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
