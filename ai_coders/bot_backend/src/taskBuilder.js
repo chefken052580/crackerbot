@@ -1,21 +1,12 @@
 // bot_backend/src/taskBuilder.js
 import fsPromises from 'fs/promises'; // Promises API
 import fs from 'fs'; // Full fs module for streams
-import PDFDocument from 'pdfkit';
+import JSZip from 'jszip'; // ESM import
 import { createCanvas } from 'canvas';
 import { spawn } from 'child_process';
-import { createRequire } from 'module';
 import { generateResponse } from './aiHelper.js';
 import { log, error } from './logger.js';
-
-const require = createRequire(import.meta.url);
-let JSZip;
-try {
-  JSZip = require('jszip');
-} catch (e) {
-  console.error(`[${new Date().toISOString()}] Failed to load jszip:`, e.message);
-  process.exit(1);
-}
+import { botSocket } from './socket.js'; // Explicit import
 
 /** Checks if FFmpeg is available on the system */
 const ffmpegAvailable = () => new Promise((resolve) => {
@@ -59,7 +50,7 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
     await log(`Processing task type: ${taskType} for taskId ${task.taskId}`);
     let contentArray = [];
 
-    if (['image', 'jpeg', 'gif', 'mp4', 'pdf'].includes(taskType)) {
+    if (['image', 'jpeg', 'gif', 'mp4'].includes(taskType)) {
       if (taskType === 'image' || taskType === 'jpeg') {
         const format = taskType === 'image' ? 'png' : 'jpeg';
         const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
@@ -68,7 +59,7 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
       } else if (taskType === 'gif') {
         if (await imagemagickAvailable()) {
           const framesResponse = await generateResponse(
-            `Generate 3 short text frames (max 20 chars each) for a GIF named "${task.name}" with features: ${task.features}. Return as JSON array.`,
+            `Yo ${userName}, I’m Cracker Bot! Generate 3 dope text frames (max 20 chars each) for a slick GIF named "${task.name}" with features: ${task.features}. Drop it as a JSON array with some wild flair!`,
             userName,
             tone
           );
@@ -77,13 +68,18 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
           const content = await generateGif(frames.slice(0, 3), outputFile);
           contentArray = [{ fileName: `${task.name}.gif`, content }];
         } else {
-          const fallbackContent = Buffer.from(`GIF generation requires ImageMagick. Features: ${task.features}`).toString('base64');
-          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
+          const fallbackContent = await generateImage(
+            `GIF needs ImageMagick! Features: ${task.features}`,
+            `/tmp/${task.name}-${Date.now()}.png`,
+            'png'
+          );
+          contentArray = [{ fileName: `${task.name}.png`, content: fallbackContent }];
+          await log(`ImageMagick unavailable; falling back to PNG for task ${task.taskId}`);
         }
       } else if (taskType === 'mp4') {
         if (await ffmpegAvailable()) {
           const scriptResponse = await generateResponse(
-            `Generate a short description (max 150 chars) for an MP4 named "${task.name}" with features: ${task.features}.`,
+            `Hey ${userName}, Cracker Bot here! Craft a slick script (max 150 chars) for an MP4 named "${task.name}" with features: ${task.features}. Add some Cracker flair!`,
             userName,
             tone
           );
@@ -92,23 +88,18 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
           const content = await generateMp4(script, outputFile);
           contentArray = [{ fileName: `${task.name}.mp4`, content }];
         } else {
-          const fallbackContent = Buffer.from(`MP4 generation requires FFmpeg. Features: ${task.features}`).toString('base64');
-          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
+          const fallbackContent = await generateImage(
+            `MP4 needs FFmpeg! Features: ${task.features}`,
+            `/tmp/${task.name}-${Date.now()}.png`,
+            'png'
+          );
+          contentArray = [{ fileName: `${task.name}.png`, content: fallbackContent }];
+          await log(`FFmpeg unavailable; falling back to PNG for task ${task.taskId}`);
         }
-      } else if (taskType === 'pdf') {
-        const textResponse = await generateResponse(
-          `Generate text content (max 4000 chars) for a PDF named "${task.name}" with features: ${task.features}.`,
-          userName,
-          tone
-        );
-        const text = textResponse.substring(0, 4000);
-        const outputFile = `/tmp/${task.name}-${Date.now()}.pdf`;
-        const content = await generatePdf(text, outputFile);
-        contentArray = [{ fileName: `${task.name}.pdf`, content }];
       }
     } else if (taskType === 'graph') {
       const graphResponse = await generateResponse(
-        `Generate JavaScript code for a graph named "${task.name}" with features: ${task.features} using Chart.js. Include an index.html and package.json.`,
+        `Yo ${userName}, Cracker Bot’s on it! Generate a dope graph for "${task.name}" with features: ${task.features} using Chart.js. Drop index.html, script.js, and package.json as JSON with some Cracker Bot swagger!`,
         userName,
         tone
       );
@@ -121,14 +112,15 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
       } catch (parseErr) {
         await error(`Failed to parse AI response for graph task "${task.name}": ${parseErr.message}`);
         files = {
-          'index.html': `<html><body><canvas id="myChart"></canvas><script src="script.js"></script></body></html>`,
-          'script.js': `const ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['A', 'B', 'C'], datasets: [{ label: '${task.name}', data: [10, 20, 30] }] } });`,
-          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", dependencies: { "chart.js": "^3.9.1" } })
+          'index.html': `<!DOCTYPE html><html><body><h1>${task.name} - Cracker Bot Graph</h1><canvas id="myChart"></canvas><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><script src="script.js"></script></body></html>`,
+          'script.js': `// Cracker Bot’s slick graph magic!\nconst ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['A', 'B', 'C'], datasets: [{ label: '${task.name}', data: [10, 20, 30], backgroundColor: '#00ff00' }] }, options: { scales: { y: { beginAtZero: true } } } });`,
+          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", description: "Cracker Bot Graph", dependencies: { "chart.js": "^3.9.1" } }),
+          'run.bat': `@echo off\r\nstart "" "index.html"\r\necho Launched ${task.name} - Enjoy the vibes!\r\npause`
         };
       }
       contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content: Buffer.from(content).toString('base64') }));
     } else {
-      throw new Error(`Unexpected task type "${taskType}" handled by taskBuilder.js`);
+      throw new Error(`Task type "${taskType}" not handled by taskBuilder.js; deferring to taskExecution.js`);
     }
 
     if (contentArray.length === 0) {
@@ -136,7 +128,7 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
     }
 
     const response = await generateResponse(
-      `Boom, ${userName}! "${task.name}" is built as ${taskType} with ${contentArray.length} file(s). Time to shine!`,
+      `Boom, ${userName}! "${task.name}" is built as ${taskType} with ${contentArray.length} file(s). Time to shine with Cracker Bot flair!`,
       userName,
       tone
     );
@@ -208,7 +200,7 @@ export async function editTask(task, userName, tone, requestId, leadId) {
     await log(`Processing edit task type: ${taskType} for taskId ${task.taskId}`);
     let contentArray = [];
 
-    if (['image', 'jpeg', 'gif', 'mp4', 'pdf'].includes(taskType)) {
+    if (['image', 'jpeg', 'gif', 'mp4'].includes(taskType)) {
       if (taskType === 'image' || taskType === 'jpeg') {
         const format = taskType === 'image' ? 'png' : 'jpeg';
         const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
@@ -217,7 +209,7 @@ export async function editTask(task, userName, tone, requestId, leadId) {
       } else if (taskType === 'gif') {
         if (await imagemagickAvailable()) {
           const framesResponse = await generateResponse(
-            `Edit the GIF "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return 3 short text frames (max 20 chars each) as JSON array.`,
+            `Yo ${userName}, Cracker Bot’s remix time! Edit the GIF "${task.name}" with features: ${task.features}. Apply: ${task.editRequest}. Return 3 slick text frames (max 20 chars each) as JSON array with Cracker flair!`,
             userName,
             tone
           );
@@ -226,13 +218,18 @@ export async function editTask(task, userName, tone, requestId, leadId) {
           const content = await generateGif(frames.slice(0, 3), outputFile);
           contentArray = [{ fileName: `${task.name}.gif`, content }];
         } else {
-          const fallbackContent = Buffer.from(`GIF edit requires ImageMagick. Features: ${task.features}, Edit: ${task.editRequest}`).toString('base64');
-          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
+          const fallbackContent = await generateImage(
+            `GIF edit needs ImageMagick! Edit: ${task.editRequest}`,
+            `/tmp/${task.name}-${Date.now()}.png`,
+            'png'
+          );
+          contentArray = [{ fileName: `${task.name}.png`, content: fallbackContent }];
+          await log(`ImageMagick unavailable; falling back to PNG for task ${task.taskId}`);
         }
       } else if (taskType === 'mp4') {
         if (await ffmpegAvailable()) {
           const scriptResponse = await generateResponse(
-            `Edit the MP4 "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return a short description (max 150 chars).`,
+            `Hey ${userName}, Cracker Bot’s editing "${task.name}" MP4 with features: ${task.features}. Apply: ${task.editRequest}. Drop a slick script (max 150 chars) with flair!`,
             userName,
             tone
           );
@@ -241,23 +238,18 @@ export async function editTask(task, userName, tone, requestId, leadId) {
           const content = await generateMp4(script, outputFile);
           contentArray = [{ fileName: `${task.name}.mp4`, content }];
         } else {
-          const fallbackContent = Buffer.from(`MP4 edit requires FFmpeg. Features: ${task.features}, Edit: ${task.editRequest}`).toString('base64');
-          contentArray = [{ fileName: `${task.name}.txt`, content: fallbackContent }];
+          const fallbackContent = await generateImage(
+            `MP4 edit needs FFmpeg! Edit: ${task.editRequest}`,
+            `/tmp/${task.name}-${Date.now()}.png`,
+            'png'
+          );
+          contentArray = [{ fileName: `${task.name}.png`, content: fallbackContent }];
+          await log(`FFmpeg unavailable; falling back to PNG for task ${task.taskId}`);
         }
-      } else if (taskType === 'pdf') {
-        const textResponse = await generateResponse(
-          `Edit the PDF "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return updated text content (max 4000 chars).`,
-          userName,
-          tone
-        );
-        const text = textResponse.substring(0, 4000);
-        const outputFile = `/tmp/${task.name}-${Date.now()}.pdf`;
-        const content = await generatePdf(text, outputFile);
-        contentArray = [{ fileName: `${task.name}.pdf`, content }];
       }
     } else if (taskType === 'graph') {
       const graphResponse = await generateResponse(
-        `Edit the graph "${task.name}" with features: ${task.features}. Apply change: ${task.editRequest}. Return JavaScript code using Chart.js, index.html, and package.json as JSON.`,
+        `Yo ${userName}, Cracker Bot’s tweaking "${task.name}" graph with features: ${task.features}. Apply: ${task.editRequest}. Return Chart.js code, index.html, package.json as JSON with mad flair!`,
         userName,
         tone
       );
@@ -270,14 +262,15 @@ export async function editTask(task, userName, tone, requestId, leadId) {
       } catch (parseErr) {
         await error(`Failed to parse AI response for graph edit "${task.name}": ${parseErr.message}`);
         files = {
-          'index.html': `<html><body><canvas id="myChart"></canvas><script src="script.js"></script></body></html>`,
-          'script.js': `const ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['A', 'B', 'C'], datasets: [{ label: '${task.name} (Edited)', data: [15, 25, 35] }] } });`,
-          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", dependencies: { "chart.js": "^3.9.1" } })
+          'index.html': `<!DOCTYPE html><html><body><h1>${task.name} - Cracker Bot Graph (Edited)</h1><canvas id="myChart"></canvas><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><script src="script.js"></script></body></html>`,
+          'script.js': `// Cracker Bot’s remix swagger!\nconst ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['X', 'Y', 'Z'], datasets: [{ label: '${task.name} (Edited)', data: [15, 25, 35], backgroundColor: '#ff00ff' }] }, options: { scales: { y: { beginAtZero: true } } } });`,
+          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", description: "Cracker Bot Graph", dependencies: { "chart.js": "^3.9.1" } }),
+          'run.bat': `@echo off\r\nstart "" "index.html"\r\necho Launched ${task.name} - Enjoy the vibes!\r\npause`
         };
       }
       contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content: Buffer.from(content).toString('base64') }));
     } else {
-      throw new Error(`Unexpected task type "${taskType}" handled by taskBuilder.js`);
+      throw new Error(`Task type "${taskType}" not handled by taskBuilder.js; deferring to taskExecution.js`);
     }
 
     if (contentArray.length === 0) {
@@ -285,7 +278,7 @@ export async function editTask(task, userName, tone, requestId, leadId) {
     }
 
     const response = await generateResponse(
-      `Edits on "${task.name}" v${task.version} are live, ${userName}! ${contentArray.length} file(s) ready to roll!`,
+      `Edits on "${task.name}" v${task.version} are live, ${userName}! ${contentArray.length} file(s) ready to roll with Cracker Bot swagger!`,
       userName,
       tone
     );
@@ -329,31 +322,48 @@ export async function editTask(task, userName, tone, requestId, leadId) {
   }
 }
 
-/** Generates a PDF file from text content */
-async function generatePdf(text, outputFile) {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument();
-    const stream = fs.createWriteStream(outputFile); // Use fs (not fsPromises) for streams
-    doc.pipe(stream);
-    doc.fontSize(12).text(text, 50, 50);
-    doc.end();
-    stream.on('finish', async () => {
-      try {
-        const content = (await fsPromises.readFile(outputFile)).toString('base64'); // Use fsPromises for async read
-        await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
-        resolve(content);
-      } catch (err) {
-        reject(err);
-      }
-    });
-    stream.on('error', (err) => reject(err));
-  });
+/** Generates an image (PNG or JPEG) from a description with flair */
+async function generateImage(description, outputFile, format) {
+  const canvas = createCanvas(400, 300); // Larger canvas for more detail
+  const ctx = canvas.getContext('2d');
+  
+  // Cracker Bot flair: Neon gradient background
+  const gradient = ctx.createLinearGradient(0, 0, 400, 300);
+  gradient.addColorStop(0, '#00ff00');
+  gradient.addColorStop(1, '#ff00ff');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 400, 300);
+
+  // Text with shadow
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px Arial';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#000000';
+  ctx.shadowBlur = 5;
+  ctx.fillText(description.slice(0, 50), 200, 150); // Limit text for readability
+  ctx.shadowBlur = 0; // Reset shadow
+
+  // Cracker Bot watermark
+  ctx.fillStyle = '#00ffff';
+  ctx.font = 'italic 14px Arial';
+  ctx.fillText('Cracker Bot Creation', 200, 280);
+
+  await fsPromises.writeFile(outputFile, canvas.toBuffer(`image/${format}`));
+  const content = (await fsPromises.readFile(outputFile)).toString('base64');
+  await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
+  return content;
 }
 
 /** Generates a GIF from an array of text frames using ImageMagick */
 async function generateGif(frames, outputFile) {
   return new Promise((resolve, reject) => {
-    const args = frames.flatMap(frame => ['-delay', '50', '-size', '200x200', `label:${frame}`]).concat(['-loop', '0', outputFile]);
+    const args = frames.flatMap((frame, i) => [
+      '-delay', '50', '-size', '400x300',
+      '-background', i % 2 === 0 ? '#00ff00' : '#ff00ff', // Alternating neon colors
+      '-fill', '#ffffff', '-font', 'Arial', '-pointsize', '24',
+      `label:${frame}`,
+    ]).concat(['-loop', '0', outputFile]);
+    
     const convert = spawn('convert', args);
     convert.on('close', async (code) => {
       if (code === 0) {
@@ -379,12 +389,14 @@ async function generateMp4(script, outputFile) {
   for (let i = 0; i < slideTexts.length; i++) {
     const canvas = createCanvas(640, 480);
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'black';
+    ctx.fillStyle = i % 2 === 0 ? '#00ff00' : '#ff00ff'; // Neon flair
     ctx.fillRect(0, 0, 640, 480);
-    ctx.fillStyle = 'white';
-    ctx.font = '24px DejaVu Sans';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 32px Arial';
     ctx.textAlign = 'center';
     ctx.fillText(slideTexts[i], 320, 240);
+    ctx.font = 'italic 16px Arial';
+    ctx.fillText('Cracker Bot Vibes', 320, 460); // Watermark
     const slideFile = `/tmp/slide-${Date.now()}-${i}.png`;
     await fsPromises.writeFile(slideFile, canvas.toBuffer('image/png'));
     slideFiles.push(slideFile);
@@ -418,20 +430,4 @@ async function generateMp4(script, outputFile) {
     });
     ffmpeg.on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)));
   });
-}
-
-/** Generates an image (PNG or JPEG) from a description */
-async function generateImage(description, outputFile, format) {
-  const canvas = createCanvas(200, 200);
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0, 0, 200, 200);
-  ctx.fillStyle = 'white';
-  ctx.font = '16px DejaVu Sans';
-  ctx.textAlign = 'center';
-  ctx.fillText(description.slice(0, 20), 100, 100);
-  await fsPromises.writeFile(outputFile, canvas.toBuffer(`image/${format}`));
-  const content = (await fsPromises.readFile(outputFile)).toString('base64');
-  await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
-  return content;
 }

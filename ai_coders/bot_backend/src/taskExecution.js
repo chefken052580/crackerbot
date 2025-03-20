@@ -3,7 +3,7 @@ import { openai } from './aiHelper.js';
 import { botSocket } from './socket.js';
 import { zipFilesWithReadme } from './contentUtils.js';
 import { log, error } from './logger.js';
-import fs from 'node:fs';
+import fs from 'node:fs/promises'; // Use promises for async operations
 import PDFDocument from 'pdfkit';
 
 export function initializeTaskExecution() {
@@ -44,31 +44,33 @@ export function initializeTaskExecution() {
         return;
       }
 
-      let finalContent, finalFileName;
       const contentArray = Array.isArray(result.content)
         ? result.content
         : [{ fileName: `${task.name}.${task.type || 'txt'}`, content: result.content }];
 
-      if (contentArray.length > 1) {
+      let finalContent, finalFileName;
+      if (contentArray.length > 1 || task.type === 'full-stack') {
         const files = Object.fromEntries(
           contentArray.map(item => [item.fileName, Buffer.from(item.content, 'base64')])
         );
         finalContent = await zipFilesWithReadme(files, task);
         finalFileName = `${task.name}${task.version ? `-v${task.version}` : ''}.zip`;
       } else {
-        finalContent = contentArray[0].content;
+        finalContent = Buffer.from(contentArray[0].content, 'base64'); // Ensure buffer
         finalFileName = contentArray[0].fileName;
       }
 
       await log(`Prepared taskResult for taskId ${task.taskId} to frontendId ${task.frontendId} with requestId ${requestId}`);
       botSocket.emit('taskResult', {
         taskId: task.taskId,
-        content: Buffer.isBuffer(finalContent) ? finalContent.toString('base64') : finalContent,
+        content: finalContent.toString('base64'), // Always base64 string
         fileName: finalFileName,
         type: task.type,
         name: task.name,
         frontendId: task.frontendId,
         ip: task.ip,
+        taskFeatures: task.features, // For Redis caching
+        version: task.version || 1,
         error: result.error,
         requestId,
         leadId,
@@ -88,7 +90,7 @@ export function initializeTaskExecution() {
 
   botSocket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js version 2025-03-19-1 enhanced with AI flair and PDF fixes');
+    await log('taskExecution.js version 2025-03-20-1 with bug fixes and AI flair');
     botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
   });
 
@@ -106,23 +108,23 @@ export async function startBuildTask(task) {
   try {
     await log(`Starting build for ${name} (${type}) with features: "${features}"`);
     const extensionMap = {
-      'javascript': 'js', 'js': 'js',
-      'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java', 'c++': 'cpp',
-      'html': 'html', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt',
-      'swift': 'swift', 'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart',
-      'perl': 'pl', 'lua': 'lua', 'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql',
-      'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md', 'toml': 'toml', 'full-stack': 'zip',
-      'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts', 'docker': 'Dockerfile',
-      'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf',
+      'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb',
+      'java': 'java', 'c++': 'cpp', 'html': 'html', 'typescript': 'ts', 'go': 'go',
+      'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift', 'csharp': 'cs', 'r': 'r',
+      'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua', 'bash': 'sh',
+      'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
+      'toml': 'toml', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue',
+      'angular': 'ts', 'docker': 'Dockerfile', 'doc': 'txt', 'csv': 'csv', 'json': 'json',
+      'pdf': 'pdf',
     };
 
     const aiPrompt = `
-      Yo, I’m Cracker Bot, your slick code maestro! Build "${name}", a ${type} project with these vibes: "${features || 'basic functionality'}".
-      Dive deep into the vision, amplify it with next-level flair, and stack wild, unexpected features to make this a banger.
-      Add slick comments (e.g., "// Cracker Bot’s magic touch!") and optimizations—go all out! Exclude user names unless explicitly required.
-      For PDFs, create rich, detailed text filling each page fully (at least 3 pages unless specified), with "---PAGE BREAK---" between pages, no empty first page.
-      For "full-stack" or "graph", return a JSON object with file names as keys and content as strings. Otherwise, drop a single string packed with swagger.
-      Let’s make this legendary!
+      Yo, I’m Cracker Bot, your code maestro with swagger! Build "${name}", a ${type} project with these vibes: "${features || 'basic functionality'}".
+      Dive deep into the vision—amplify it with next-level flair! For games or apps, include multiple files (e.g., "index.html", "styles.css", "game.js") with assets (e.g., base64 audio, images).
+      Stack wild features: animations, sound effects, scoring—go beyond the ask! Add slick comments (e.g., "// Cracker Bot’s galactic flair!").
+      For PDFs, craft rich, detailed text (3+ pages, 500+ words each, "---PAGE BREAK---" between, no empty first page).
+      For "full-stack" or "graph", return a JSON object with file names as keys and content as strings (text or base64 for assets). Otherwise, drop a single string dripping with style.
+      Exclude user names unless required. Make it legendary!
     `;
 
     if (type === 'pdf') {
@@ -132,7 +134,7 @@ export async function startBuildTask(task) {
           { role: 'system', content: `Return detailed, engaging plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Interpret the features deeply, adding creative flair and extra value. Fill each page fully with dense content (at least 500 words per page unless specified), avoiding user names unless required. Ensure at least 3 pages, no empty first page.` },
           { role: 'user', content: aiPrompt },
         ],
-        max_tokens: 4000, // Increased for denser content
+        max_tokens: 4000,
       });
 
       const content = response.choices[0].message.content.trim();
@@ -141,11 +143,6 @@ export async function startBuildTask(task) {
       const doc = new PDFDocument();
       const buffers = [];
       doc.on('data', buffers.push.bind(buffers));
-      doc.on('end', () => {
-        const pdfData = Buffer.concat(buffers);
-        fs.writeFileSync(filePath, pdfData);
-      });
-
       const filePath = `/tmp/${name}-${task.taskId}.pdf`;
       const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
@@ -159,14 +156,13 @@ export async function startBuildTask(task) {
       }
 
       doc.end();
-
       await new Promise((resolve, reject) => {
         stream.on('finish', resolve);
         stream.on('error', reject);
       });
 
-      const pdfContent = fs.readFileSync(filePath, { encoding: 'base64' });
-      fs.unlinkSync(filePath);
+      const pdfContent = await fs.readFile(filePath, { encoding: 'base64' });
+      await fs.unlink(filePath);
       await log(`Generated PDF for taskId ${task.taskId} with ${pages.length} pages`);
       return { content: [{ fileName: `${name}.pdf`, content: pdfContent }], frontendId, ip, requestId, leadId };
     }
@@ -175,7 +171,7 @@ export async function startBuildTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "server.js") and their content as strings. Deeply interpret the features, adding creative, unexpected enhancements with flair-filled comments. Exclude user names unless required.` },
+          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "app.js") and content as strings (text or base64 for assets like audio/images). Deeply interpret the features, adding creative enhancements (e.g., animations, sound effects) with flair-filled comments. Exclude user names unless required.` },
           { role: 'user', content: aiPrompt },
         ],
         response_format: { type: 'json_object' },
@@ -190,7 +186,7 @@ export async function startBuildTask(task) {
 
       const contentArray = Object.entries(files).map(([fileName, content]) => ({
         fileName,
-        content: Buffer.from(content).toString('base64'),
+        content: Buffer.from(content).toString('base64'), // Ensure base64
       }));
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
@@ -221,22 +217,23 @@ export async function editTask(task) {
   try {
     await log(`Starting edit for ${name} (${type}) with request: "${editRequest}"`);
     const extensionMap = {
-      'javascript': 'js', 'js': 'js',
-      'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java', 'c++': 'cpp',
-      'html': 'html', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt',
-      'swift': 'swift', 'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart',
-      'perl': 'pl', 'lua': 'lua', 'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql',
-      'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md', 'toml': 'toml', 'full-stack': 'zip',
-      'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts', 'docker': 'Dockerfile',
-      'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf',
+      'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb',
+      'java': 'java', 'c++': 'cpp', 'html': 'html', 'typescript': 'ts', 'go': 'go',
+      'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift', 'csharp': 'cs', 'r': 'r',
+      'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua', 'bash': 'sh',
+      'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
+      'toml': 'toml', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue',
+      'angular': 'ts', 'docker': 'Dockerfile', 'doc': 'txt', 'csv': 'csv', 'json': 'json',
+      'pdf': 'pdf',
     };
 
     const aiPrompt = `
       Yo, I’m Cracker Bot, remixing "${name}", a ${type} project! Original vibes: "${features || 'basic functionality'}". Now apply this edit: "${editRequest}".
       Dive deep into the vision, tweak it with mad flair, and stack wild extras—slick comments (e.g., "// Cracker Bot’s remix magic!"), optimizations, and chaos that slaps!
-      Exclude user names unless explicitly required.
+      For games or apps, include multiple files with assets (e.g., base64 audio, images) if applicable.
       For PDFs, return rich text filling each page fully (at least 500 words per page unless specified), with "---PAGE BREAK---" between pages, at least 3 pages, no empty start.
       For "full-stack" or "graph", return a JSON object with file names as keys and content as strings. Otherwise, drop a single string that’s next-level dope!
+      Exclude user names unless required.
     `;
 
     if (type === 'pdf') {
@@ -255,11 +252,6 @@ export async function editTask(task) {
       const doc = new PDFDocument();
       const buffers = [];
       doc.on('data', buffers.push.bind(buffers));
-      doc.on('end', () => {
-        const pdfData = Buffer.concat(buffers);
-        fs.writeFileSync(filePath, pdfData);
-      });
-
       const filePath = `/tmp/${name}-${task.taskId}.pdf`;
       const stream = fs.createWriteStream(filePath);
       doc.pipe(stream);
@@ -273,14 +265,13 @@ export async function editTask(task) {
       }
 
       doc.end();
-
       await new Promise((resolve, reject) => {
         stream.on('finish', resolve);
         stream.on('error', reject);
       });
 
-      const pdfContent = fs.readFileSync(filePath, { encoding: 'base64' });
-      fs.unlinkSync(filePath);
+      const pdfContent = await fs.readFile(filePath, { encoding: 'base64' });
+      await fs.unlink(filePath);
       await log(`Generated PDF for taskId ${task.taskId} with ${pages.length} pages`);
       return { content: [{ fileName: `${name}.pdf`, content: pdfContent }], frontendId, ip, requestId, leadId };
     }
@@ -289,7 +280,7 @@ export async function editTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "server.js") and their content as strings. Enhance the original features with the edit request, adding creative flair and comments. Exclude user names unless required.` },
+          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "app.js") and content as strings (text or base64 for assets). Enhance the original features with the edit request, adding creative flair and comments. Exclude user names unless required.` },
           { role: 'user', content: aiPrompt },
         ],
         response_format: { type: 'json_object' },

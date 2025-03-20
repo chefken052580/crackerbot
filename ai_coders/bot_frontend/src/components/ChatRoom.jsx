@@ -1,3 +1,4 @@
+// bot_frontend/src/components/ChatRoom.jsx
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
@@ -11,7 +12,6 @@ const commands = [
   { command: "/reset_name", description: "Change your name" },
   { command: "/tone", description: "Set my vibe (e.g., /tone sassy)" },
   { command: "/guide", description: "See all commands" },
-  { command: "/template", description: "Start with a template (e.g., /template 1)" },
 ];
 
 const colorSchemes = {
@@ -34,76 +34,76 @@ const colorSchemes = {
     bubble: "bg-purple-600 hover:bg-yellow-400 text-white font-semibold",
   },
   cyberpunk: {
-    bg: "bg-gray-800",
+    bg: "bg-cyber-dark",
     chatBg: "bg-gray-900",
-    text: "text-cyan-300",
-    user: "text-pink-500 bg-gray-800 border-2 border-pink-500 rounded-lg p-2 shadow-cyber animate-glow",
-    bot: "text-cyan-400 bg-gray-900",
-    system: "text-purple-400 bg-gray-800 italic",
-    command: "text-yellow-400 bg-gray-900",
-    success: "text-cyan-400 bg-gray-900",
-    error: "text-red-500 bg-gray-900",
-    question: "text-cyan-300 bg-gray-900",
+    text: "text-cyber-cyan",
+    user: "text-cyber-pink bg-gray-900 border-2 border-cyber-pink rounded-lg p-2 shadow-cyber animate-glow",
+    bot: "text-cyber-cyan bg-gray-900",
+    system: "text-cyber-purple bg-cyber-dark italic",
+    command: "text-white bg-gray-900",
+    success: "text-cyber-cyan bg-gray-900",
+    error: "text-neon-red bg-gray-900",
+    question: "text-cyber-cyan bg-gray-900",
     progress: "bg-gray-900",
-    download: "bg-purple-800 text-cyan-200",
-    button: "bg-cyan-500 hover:bg-cyan-600",
-    buttonText: "text-gray-900",
-    accent: "text-pink-500",
-    bubble: "bg-cyan-600 hover:bg-pink-500 text-white font-semibold",
+    download: "bg-cyber-purple text-cyber-cyan",
+    button: "bg-cyber-cyan hover:bg-neon-blue",
+    buttonText: "text-cyber-dark",
+    accent: "text-cyber-pink",
+    bubble: "bg-cyber-cyan hover:bg-cyber-pink text-cyber-dark font-semibold",
   },
   retro: {
-    bg: "bg-retro-beige",
-    chatBg: "bg-retro-brown",
+    bg: "bg-stone-200",
+    chatBg: "bg-retro-dark",
     text: "text-retro-orange",
-    user: "text-retro-yellow bg-retro-brown border-2 border-retro-yellow rounded-lg p-2 shadow-retro",
-    bot: "text-retro-green bg-retro-brown",
-    system: "text-retro-blue bg-retro-beige italic",
-    command: "text-retro-purple bg-retro-brown",
-    success: "text-retro-green bg-retro-brown",
-    error: "text-retro-red bg-retro-brown",
-    question: "text-retro-orange bg-retro-brown",
-    progress: "bg-retro-brown",
-    download: "bg-retro-green text-retro-beige",
-    button: "bg-retro-orange hover:bg-retro-yellow",
-    buttonText: "text-retro-brown",
-    accent: "text-retro-yellow",
-    bubble: "bg-retro-green hover:bg-retro-orange text-retro-beige font-semibold",
+    user: "text-retro-orange bg-retro-dark border-2 border-retro-orange rounded-sm p-2 shadow-retro",
+    bot: "text-retro-green bg-retro-dark",
+    system: "text-retro-blue bg-stone-200 italic",
+    command: "text-retro-blue bg-retro-dark",
+    success: "text-retro-green bg-retro-dark",
+    error: "text-neon-red bg-retro-dark",
+    question: "text-retro-orange bg-retro-dark",
+    progress: "bg-retro-dark",
+    download: "bg-retro-green text-stone-200",
+    button: "bg-retro-orange hover:bg-retro-orange",
+    buttonText: "text-stone-900",
+    accent: "text-retro-orange",
+    bubble: "bg-retro-green hover:bg-retro-orange text-stone-900 font-semibold",
   },
   pastel: {
-    bg: "bg-pastel-cream",
+    bg: "bg-pastel-bg",
     chatBg: "bg-pastel-light",
     text: "text-pastel-dark",
     user: "text-pastel-pink bg-pastel-light border-2 border-pastel-pink rounded-lg p-2 shadow-pastel",
     bot: "text-pastel-blue bg-pastel-light",
-    system: "text-pastel-purple bg-pastel-cream italic",
-    command: "text-pastel-green bg-pastel-light",
+    system: "text-pastel-purple bg-pastel-bg italic",
+    command: "text-pastel-teal bg-pastel-light",
     success: "text-pastel-blue bg-pastel-light",
-    error: "text-pastel-red bg-pastel-light",
+    error: "text-neon-red bg-pastel-light",
     question: "text-pastel-dark bg-pastel-light",
     progress: "bg-pastel-light",
-    download: "bg-pastel-blue text-pastel-cream",
-    button: "bg-pastel-pink hover:bg-pastel-green",
+    download: "bg-pastel-blue text-pastel-bg",
+    button: "bg-pastel-pink hover:bg-pastel-teal",
     buttonText: "text-pastel-dark",
     accent: "text-pastel-pink",
-    bubble: "bg-pastel-blue hover:bg-pastel-pink text-pastel-cream font-semibold",
+    bubble: "bg-pastel-blue hover:bg-pastel-teal text-pastel-dark font-semibold",
   },
   matrix: {
-    bg: "bg-black",
-    chatBg: "bg-gray-900",
+    bg: "bg-matrix-dark",
+    chatBg: "bg-matrix-bg",
     text: "text-matrix-green",
-    user: "text-matrix-green bg-gray-800",
-    bot: "text-matrix-green bg-gray-900",
-    system: "text-matrix-blue bg-gray-900 italic",
-    command: "text-matrix-purple bg-gray-800",
-    success: "text-matrix-green bg-gray-900",
-    error: "text-matrix-red bg-gray-900",
-    question: "text-matrix-green bg-gray-900",
-    progress: "bg-gray-900",
-    download: "bg-matrix-green text-black",
-    button: "bg-matrix-green hover:bg-gray-600",
-    buttonText: "text-black",
+    user: "text-matrix-green bg-matrix-bg border-2 border-matrix-green rounded-sm p-2 animate-matrix-glitch font-mono",
+    bot: "text-matrix-green bg-matrix-bg",
+    system: "text-neon-blue bg-matrix-bg italic",
+    command: "text-neon-purple bg-matrix-bg",
+    success: "text-matrix-green bg-matrix-bg",
+    error: "text-neon-red bg-matrix-bg",
+    question: "text-matrix-green bg-matrix-bg",
+    progress: "bg-matrix-bg",
+    download: "bg-matrix-green text-matrix-dark",
+    button: "bg-matrix-green hover:bg-neon-blue",
+    buttonText: "text-matrix-dark",
     accent: "text-matrix-green",
-    bubble: "bg-matrix-green hover:bg-gray-600 text-black",
+    bubble: "bg-matrix-green hover:bg-neon-blue text-matrix-dark font-semibold",
   },
 };
 
@@ -123,15 +123,83 @@ const ChatRoom = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [postTaskOptions, setPostTaskOptions] = useState(null);
+  const [retryAttempts, setRetryAttempts] = useState(0);
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
   const recognitionRef = useRef(null);
+  const canvasRef = useRef(null);
 
   useEffect(() => {
-    document.body.className = colorScheme;
+    document.body.className = `${colorSchemes[colorScheme].bg} relative`;
+    if (colorScheme === "matrix") {
+      document.body.style.backgroundImage = "none"; // Canvas will handle the effect
+      initMatrixRain();
+    } else {
+      document.body.style.backgroundImage = "none";
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+    }
+
+    return () => {
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+    };
   }, [colorScheme]);
+
+  const initMatrixRain = () => {
+    if (colorScheme !== "matrix" || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()_+-=[]{}|;:,.<>?";
+    const fontSize = 14;
+    const columns = canvas.width / fontSize;
+    const drops = Array(Math.floor(columns)).fill(1);
+
+    const draw = () => {
+      ctx.fillStyle = "rgba(10, 15, 10, 0.1)"; // Faint trail effect
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#00ff00"; // Matrix green
+      ctx.font = `${fontSize}px monospace`;
+
+      for (let i = 0; i < drops.length; i++) {
+        const text = characters.charAt(Math.floor(Math.random() * characters.length));
+        const yPos = drops[i] * fontSize;
+        ctx.fillStyle = `rgba(0, 255, 0, ${Math.max(1 - yPos / canvas.height, 0.2)})`;
+        ctx.fillText(text, i * fontSize, yPos);
+
+        if (yPos > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0; // Reset drop
+        }
+        drops[i]++;
+      }
+    };
+
+    const animate = () => {
+      draw();
+      requestAnimationFrame(animate);
+    };
+    animate();
+
+    const handleResize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      drops.length = Math.floor(canvas.width / fontSize);
+      drops.fill(1);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  };
 
   useEffect(() => {
     console.log("ChatRoom: Mounting component...");
@@ -155,6 +223,7 @@ const ChatRoom = () => {
         timestamp: new Date().toLocaleTimeString() 
       }]);
       setIsConnected(true);
+      setRetryAttempts(0);
       const userName = localStorage.getItem('userName') || "Guest";
       socketRef.current.emit("register", { 
         name: userName,
@@ -191,7 +260,6 @@ const ChatRoom = () => {
         progress: data.progress,
       };
 
-      // Handle progress messages
       if (data.type === "progress") {
         setProgressMessage((prev) => ({
           ...newMessage,
@@ -200,19 +268,28 @@ const ChatRoom = () => {
         if (data.progress === 100) {
           setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
           setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
+          setProgressMessage(null);
         }
-      } 
-      // Handle download messages and clear progress
-      else if (data.type === "download") {
+      } else if (data.type === "download") {
         setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
         setProgressMessage(null);
         setTaskPending(null);
         setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
         setEditMode(data.taskId);
         setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures });
-      } 
-      // Handle other messages
-      else {
+      } else if (data.type === "projects") {
+        const projects = data.text.split('\n').slice(1, -1).map((line, index) => ({
+          id: `${data.taskId || 'proj'}-${index}`,
+          text: line,
+          type: "project",
+          timestamp: new Date().toLocaleTimeString(),
+          options: ["Download", "Enhance"],
+        }));
+        setMessages((prev) => [...prev, ...projects]);
+        setTaskPending(null);
+        setCurrentTask(null);
+        setProgressMessage(null);
+      } else {
         setMessages((prev) => {
           const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
           return exists ? prev : [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage];
@@ -232,9 +309,11 @@ const ChatRoom = () => {
           }));
           setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
           setPostTaskOptions(null);
+          setProgressMessage(null);
         } else if (data.type === "success" && data.options) {
           setTaskPending(null);
           setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
+          setProgressMessage(null);
         } else if (data.type === "error" && data.taskId) {
           setProgressMessage(null);
           setTaskPending(null);
@@ -259,11 +338,12 @@ const ChatRoom = () => {
       console.error("ChatRoom: WebSocket connect error:", error.message);
       setMessages((prev) => [...prev, { 
         from: "System", 
-        text: `Connection Error: ${error.message}`, 
+        text: `Connection Error: ${error.message} (Attempt ${retryAttempts + 1}/10)`, 
         type: "error", 
         timestamp: new Date().toLocaleTimeString() 
       }]);
       setIsConnected(false);
+      setRetryAttempts((prev) => prev + 1);
     });
 
     socketRef.current.on("disconnect", (reason) => {
@@ -322,7 +402,7 @@ const ChatRoom = () => {
       });
       return;
     }
-  
+
     setIsSending(true);
     console.log("ChatRoom: Sending message:", messageText);
     const userName = localStorage.getItem("userName") || "Guest";
@@ -333,7 +413,7 @@ const ChatRoom = () => {
       ip: window.location.hostname,
       frontendId: socketRef.current.id,
     };
-  
+
     setMessages((prev) => [...prev, {
       from: userName,
       user: userName,
@@ -342,19 +422,18 @@ const ChatRoom = () => {
       timestamp: new Date().toLocaleTimeString(),
       className: "user-message",
     }]);
-  
-    // Check if this is a bubble click from the welcome message
+
     const lastWelcome = messages.find(m => m.type === "success" && m.options && m.taskId);
     if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
       messageData.type = "task_response";
-      messageData.taskId = lastWelcome.taskId; // Use the welcome taskId
+      messageData.taskId = lastWelcome.taskId;
       console.log("ChatRoom: Sending bubble click as task_response with taskId:", lastWelcome.taskId);
     } else if (messageText.startsWith("/")) {
       messageData.type = "command";
       messageData.target = "bot_lead";
       const commandParts = messageText.split(" ");
       const command = commandParts[0].toLowerCase();
-  
+
       switch (command) {
         case "/create":
           messageData.text = "Build-Something-Epic";
@@ -394,10 +473,6 @@ const ChatRoom = () => {
           }]);
           setIsSending(false);
           return;
-        case "/template":
-          const templateNum = commandParts[1] || "1";
-          messageData.text = `/template ${templateNum}`;
-          break;
         default:
           setMessages((prev) => [...prev, {
             from: "Cracker Bot",
@@ -433,7 +508,7 @@ const ChatRoom = () => {
     } else {
       messageData.type = "general_message";
     }
-  
+
     socketRef.current.emit("message", messageData);
     setInput("");
     setShowCommands(false);
@@ -492,7 +567,7 @@ const ChatRoom = () => {
         console.error("ChatRoom: SpeechRecognition not supported in this browser.");
         setMessages((prev) => [...prev, {
           from: "System",
-          text: "Speech recognition not supported in this browser!",
+          text: "Sorry, speech recognition isn’t supported here! Type instead.",
           type: "error",
           timestamp: new Date().toLocaleTimeString(),
         }]);
@@ -512,7 +587,7 @@ const ChatRoom = () => {
         console.error("ChatRoom: Speech recognition error:", event.error);
         setMessages((prev) => [...prev, {
           from: "System",
-          text: `Speech recognition error: ${event.error}`,
+          text: `Oops, speech failed: ${event.error === "no-speech" ? "No speech detected!" : event.error}. Try typing!`,
           type: "error",
           timestamp: new Date().toLocaleTimeString(),
         }]);
@@ -551,6 +626,7 @@ const ChatRoom = () => {
         type: "system", 
         timestamp: new Date().toLocaleTimeString() 
       }]);
+      setRetryAttempts(0);
     }
   };
 
@@ -583,29 +659,65 @@ const ChatRoom = () => {
     if (!postTaskOptions) return;
     const { taskId, frontendId, taskName, taskType, taskFeatures } = postTaskOptions;
     const userName = localStorage.getItem("userName") || "Guest";
+
     const messageData = {
-      text: action.toLowerCase(), // Normalize to match backend case
+      text: action,
       type: "task_response",
       taskId,
       frontendId,
       user: userName,
       userId: socketRef.current.id,
-      commandFlag: true,
-      target: "bot_lead",
       ip: window.location.hostname,
       taskName,
       taskType,
       taskFeatures,
+      commandFlag: action !== "Done", // Set commandFlag for Edit/Add-More
+      target: "bot_lead",
     };
+
+    console.log("ChatRoom: Emitting post-task action:", JSON.stringify(messageData));
     socketRef.current.emit("message", messageData);
-    if (action === "Done") {
+
+    setMessages((prev) => [...prev, {
+      from: "System",
+      user: userName,
+      text: `${action === "Edit" ? "Editing" : action === "Add-More" ? "Adding more to" : "Completed"} "${taskName}"...`,
+      type: "system",
+      timestamp: new Date().toLocaleTimeString(),
+    }]);
+
+    if (action === "Add-More") {
+      setTaskPending({ taskId, question: `Type additional features for "${taskName}"`, options: [] });
+      setCurrentTask((prev) => ({ ...prev, step: "features" }));
+    } else if (action === "Edit") {
+      setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
+    } else if (action === "Done") {
       setPostTaskOptions(null);
       setCurrentTask(null);
       setTaskPending(null);
       setEditMode(null);
       setProgressMessage(null);
-    } else {
-      setPostTaskOptions(null);
+    }
+    setPostTaskOptions(null);
+  };
+
+  const handleProjectAction = (action, projectMessage) => {
+    const projectId = projectMessage.text.split('.')[0]; // Extract project number
+    const messageData = {
+      text: action === "Download" ? "/download" : "Enhance Project " + projectId,
+      type: action === "Download" ? "command" : "task_response",
+      user: localStorage.getItem("userName") || "Guest",
+      userId: socketRef.current.id,
+      ip: window.location.hostname,
+      frontendId: socketRef.current.id,
+      taskId: projectMessage.taskId || `${socketRef.current.id}-${Date.now()}`,
+      commandFlag: action === "Enhance",
+      target: "bot_lead",
+    };
+    socketRef.current.emit("message", messageData);
+    if (action === "Enhance") {
+      setTaskPending({ taskId: messageData.taskId, question: `Add features to enhance project ${projectId}`, options: [] });
+      setCurrentTask({ taskId: messageData.taskId, step: "features", taskStatus: "pending" });
     }
   };
 
@@ -613,8 +725,14 @@ const ChatRoom = () => {
   console.log("ChatRoom: Rendering UI with colorScheme:", colorScheme);
 
   return (
-    <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text}`}>
-      <div className="flex-shrink-0 p-4 flex justify-between items-center">
+    <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text} overflow-hidden relative`}>
+      {colorScheme === "matrix" && (
+        <canvas
+          ref={canvasRef}
+          className="absolute top-0 left-0 w-full h-full pointer-events-none z-0"
+        />
+      )}
+      <div className="flex-shrink-0 p-4 flex justify-between items-center relative z-10">
         <h2 className={`text-2xl font-bold ${currentScheme.accent}`}>
           Cracker Bot Chat Room {editMode ? "(Edit Mode)" : ""}
         </h2>
@@ -662,7 +780,7 @@ const ChatRoom = () => {
         </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center relative z-10">
         <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? "border-2 border-matrix-green" : ""}`}>
           <div className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}>
             {messages.map((msg, index) => (
@@ -672,20 +790,16 @@ const ChatRoom = () => {
                   onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
                   onOptionClick={(option) => {
                     console.log("ChatRoom: Bubble clicked:", option);
-                    sendMessage(option);
+                    if (msg.type === "project") {
+                      handleProjectAction(option, msg);
+                    } else {
+                      sendMessage(option);
+                    }
                   }}
                   colorScheme={currentScheme}
                 />
               </div>
             ))}
-            {progressMessage && progressMessage.progress < 100 && (
-              <div>
-                <ChatMessage
-                  message={progressMessage}
-                  colorScheme={currentScheme}
-                />
-              </div>
-            )}
             {Object.entries(isTyping).map(([user, typing]) => typing && (
               <div key={user} className="text-gray-500 italic">{`${user} is typing...`}</div>
             ))}

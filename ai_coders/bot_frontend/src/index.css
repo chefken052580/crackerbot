@@ -1,3 +1,4 @@
+/* bot_frontend/src/index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -18,25 +19,28 @@ body.neon {
 }
 
 body.cyberpunk {
-  @apply bg-black text-cyan-300;
+  @apply bg-cyber-dark text-cyber-cyan;
+  background-image: linear-gradient(to bottom, rgba(10, 10, 20, 0.9), rgba(10, 10, 20, 1));
 }
 
 body.retro {
-  @apply bg-stone-200 text-stone-800;
+  @apply bg-stone-200 text-retro-orange;
+  background-image: repeating-linear-gradient(45deg, #f5e8d0, #f5e8d0 10px, #e0c8a0 10px, #e0c8a0 20px);
 }
 
 body.pastel {
-  @apply bg-pink-100 text-gray-700;
+  @apply bg-pastel-bg text-pastel-dark;
+  background-image: radial-gradient(circle, #fce4ec, #f8bbd0);
 }
 
 body.matrix {
   @apply bg-matrix-dark text-matrix-green font-mono;
-  background-image: linear-gradient(to bottom, rgba(10, 15, 10, 0.9), rgba(10, 15, 10, 1));
+  background-image: none; /* Canvas handles the effect */
 }
 
+/* Code block styles */
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
 /* Button styles */
@@ -59,7 +63,7 @@ code {
   @apply absolute top-0 left-0 w-full py-2 px-4 bg-gray-800 border-b border-gray-700 text-center;
 }
 
-/* Custom animations for user messages */
+/* Custom animations */
 @keyframes pulse {
   0% { opacity: 0.7; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.05); }
@@ -69,6 +73,21 @@ code {
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-5px); }
+}
+
+@keyframes glow {
+  0% { box-shadow: 0 0 5px currentColor; }
+  50% { box-shadow: 0 0 15px currentColor; }
+  100% { box-shadow: 0 0 5px currentColor; }
+}
+
+@keyframes matrixGlitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(2px, -2px); }
+  60% { transform: translate(-1px, 1px); }
+  80% { transform: translate(1px, -1px); }
+  100% { transform: translate(0); }
 }
 
 /* User message enhancements */
@@ -82,17 +101,100 @@ code {
 }
 
 .cyberpunk .user-message {
-  @apply text-cyber-pink bg-gray-800 shadow-md border-2 border-cyber-pink rounded-md p-2 transform -rotate-1 animate-pulse;
+  @apply text-cyber-pink bg-gray-900 shadow-md border-2 border-cyber-pink rounded-md p-2 transform -rotate-1 animate-glow;
 }
 
 .retro .user-message {
-  @apply text-retro-orange bg-stone-100 shadow-inner border-2 border-retro-orange rounded-sm p-2 font-mono;
+  @apply text-retro-orange bg-retro-dark shadow-inner border-2 border-retro-orange rounded-sm p-2 font-mono;
 }
 
 .pastel .user-message {
-  @apply text-pastel-purple bg-pink-200 shadow-md border-2 border-pastel-purple rounded-full p-2 transform skew-y-2 animate-bounce;
+  @apply text-pastel-pink bg-pastel-light shadow-md border-2 border-pastel-pink rounded-full p-2 transform skew-y-2 animate-bounce;
 }
 
 .matrix .user-message {
-  @apply text-matrix-green bg-matrix-dark shadow-lg border-2 border-matrix-green rounded-sm p-2 font-mono animate-matrix-fall;
+  @apply text-matrix-green bg-matrix-bg shadow-lg border-2 border-matrix-green rounded-sm p-2 animate-matrix-glitch font-mono;
+}
+
+/* Theme-specific enhancements */
+.cyberpunk .chat-bg {
+  @apply bg-gray-900;
+}
+
+.cyberpunk button:hover {
+  @apply text-cyber-dark bg-cyber-pink shadow-glow;
+}
+
+.cyberpunk input:focus {
+  @apply ring-cyber-cyan bg-gray-900 text-cyber-cyan;
+}
+
+.retro .chat-bg {
+  @apply bg-retro-dark;
+}
+
+.retro button:hover {
+  @apply text-stone-900 bg-retro-orange shadow-inner;
+}
+
+.retro input:focus {
+  @apply ring-retro-orange bg-retro-dark text-retro-orange;
+}
+
+.pastel .chat-bg {
+  @apply bg-pastel-light;
+}
+
+.pastel button:hover {
+  @apply text-pastel-dark bg-pastel-teal shadow-md;
+}
+
+.pastel input:focus {
+  @apply ring-pastel-teal bg-pastel-light text-pastel-dark;
+}
+
+.matrix .chat-bg {
+  @apply bg-matrix-bg;
+}
+
+.matrix button:hover {
+  @apply text-matrix-dark bg-neon-blue shadow-matrix-glow;
+}
+
+.matrix input:focus {
+  @apply ring-matrix-green bg-matrix-bg text-matrix-green;
+}
+
+/* Bubble hover fixes */
+.cyberpunk .bg-cyber-cyan:hover {
+  @apply bg-cyber-pink text-cyber-dark;
+}
+
+.retro .bg-retro-green:hover {
+  @apply bg-retro-orange text-stone-900;
+}
+
+.pastel .bg-pastel-blue:hover {
+  @apply bg-pastel-teal text-pastel-dark;
+}
+
+.matrix .bg-matrix-green:hover {
+  @apply bg-neon-blue text-matrix-dark;
+}
+
+/* Custom shadows */
+.shadow-cyber {
+  box-shadow: 0 0 10px #00e5ff;
+}
+
+.shadow-retro {
+  box-shadow: inset 0 0 5px #ff8c00;
+}
+
+.shadow-pastel {
+  box-shadow: 0 0 8px #ff85a2;
+}
+
+.shadow-matrix-glow {
+  box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
 }
