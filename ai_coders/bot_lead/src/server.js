@@ -1,3 +1,4 @@
+// ai_coders/bot_lead/src/server.js
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -6,7 +7,7 @@ import { createClient } from 'redis';
 import { botSocket } from './socket.js';
 import { log, error } from './logger.js';
 import { initTaskManager } from './taskManager.js';
-import { generateFile } from './fileGenerator.js';
+import { generateFile } from '../bot_backend/src/fileGenerator.js'; // Updated import path
 
 const app = express();
 const server = http.createServer(app);
@@ -39,15 +40,15 @@ app.get('/health', async (req, res) => {
 app.post('/api/file', async (req, res) => {
   try {
     const { command, args } = req.body;
-    const fileData = await generateFile(command, args);
-    res.json(fileData);
+    const filePath = await generateFile(command, args); // Returns a string (file path)
+    res.json({ filePath }); // Wrap in JSON object
   } catch (err) {
     await error(`Error generating file: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });
 
-initTaskManager(botSocket); // Initialize once, no connect handler
+initTaskManager(botSocket);
 
 async function startServer() {
   try {

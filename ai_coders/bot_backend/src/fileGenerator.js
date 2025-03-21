@@ -16,7 +16,6 @@ export async function generatePdf(text, outputFile) {
     const stream = fs.createWriteStream(outputFile);
     doc.pipe(stream);
 
-    // Split text by page breaks and render each page
     const pages = text.split('---PAGE BREAK---').filter(page => page.trim().length > 0);
     for (const [index, pageContent] of pages.entries()) {
       if (index > 0) doc.addPage();
@@ -53,5 +52,4 @@ export async function generateImage(text, outputFile) {
   }
 }
 
-// Alias for compatibility with server.js import
-export const generateFile = generatePdf;
+export const generateFile = generatePdf; // Alias for compatibility

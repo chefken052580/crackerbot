@@ -2,110 +2,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
+import WebSocketManager from "../utils/WebSocketManager";
+import TaskSelector from "./TaskSelector";
+import { commands, colorSchemes } from "../config/chatConfig";
 
 const WEBSOCKET_SERVER_URL = process.env.REACT_APP_WEBSOCKET_SERVER_URL || "wss://websocket-visually-sterling-spider.ngrok-free.app";
-
-const commands = [
-  { command: "/create", description: "Start a new project" },
-  { command: "/projects", description: "List your projects" },
-  { command: "/download", description: "Grab your latest file" },
-  { command: "/reset_name", description: "Change your name" },
-  { command: "/tone", description: "Set my vibe (e.g., /tone sassy)" },
-  { command: "/guide", description: "See all commands" },
-];
-
-const colorSchemes = {
-  neon: {
-    bg: "bg-gray-900",
-    chatBg: "bg-gray-800",
-    text: "text-gray-300",
-    user: "text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform animate-pulse",
-    bot: "text-neon-green bg-gray-800",
-    system: "text-neon-blue bg-gray-900 italic",
-    command: "text-neon-purple bg-gray-700",
-    success: "text-neon-green bg-gray-800",
-    error: "text-neon-red bg-gray-800",
-    question: "text-[#ADD8E6] bg-gray-800",
-    progress: "bg-gray-800",
-    download: "bg-purple-900 text-purple-200",
-    button: "bg-neon-green hover:bg-neon-yellow",
-    buttonText: "text-gray-900",
-    accent: "text-neon-yellow",
-    bubble: "bg-purple-600 hover:bg-yellow-400 text-white font-semibold",
-  },
-  cyberpunk: {
-    bg: "bg-cyber-dark",
-    chatBg: "bg-gray-900",
-    text: "text-cyber-cyan",
-    user: "text-cyber-pink bg-gray-900 border-2 border-cyber-pink rounded-lg p-2 shadow-cyber animate-glow",
-    bot: "text-cyber-cyan bg-gray-900",
-    system: "text-cyber-purple bg-cyber-dark italic",
-    command: "text-white bg-gray-900",
-    success: "text-cyber-cyan bg-gray-900",
-    error: "text-neon-red bg-gray-900",
-    question: "text-cyber-cyan bg-gray-900",
-    progress: "bg-gray-900",
-    download: "bg-cyber-purple text-cyber-cyan",
-    button: "bg-cyber-cyan hover:bg-neon-blue",
-    buttonText: "text-cyber-dark",
-    accent: "text-cyber-pink",
-    bubble: "bg-cyber-cyan hover:bg-cyber-pink text-cyber-dark font-semibold",
-  },
-  retro: {
-    bg: "bg-stone-200",
-    chatBg: "bg-retro-dark",
-    text: "text-retro-orange",
-    user: "text-retro-orange bg-retro-dark border-2 border-retro-orange rounded-sm p-2 shadow-retro",
-    bot: "text-retro-green bg-retro-dark",
-    system: "text-retro-blue bg-stone-200 italic",
-    command: "text-retro-blue bg-retro-dark",
-    success: "text-retro-green bg-retro-dark",
-    error: "text-neon-red bg-retro-dark",
-    question: "text-retro-orange bg-retro-dark",
-    progress: "bg-retro-dark",
-    download: "bg-retro-green text-stone-200",
-    button: "bg-retro-orange hover:bg-retro-orange",
-    buttonText: "text-stone-900",
-    accent: "text-retro-orange",
-    bubble: "bg-retro-green hover:bg-retro-orange text-stone-900 font-semibold",
-  },
-  pastel: {
-    bg: "bg-pastel-bg",
-    chatBg: "bg-pastel-light",
-    text: "text-pastel-dark",
-    user: "text-pastel-pink bg-pastel-light border-2 border-pastel-pink rounded-lg p-2 shadow-pastel",
-    bot: "text-pastel-blue bg-pastel-light",
-    system: "text-pastel-purple bg-pastel-bg italic",
-    command: "text-pastel-teal bg-pastel-light",
-    success: "text-pastel-blue bg-pastel-light",
-    error: "text-neon-red bg-pastel-light",
-    question: "text-pastel-dark bg-pastel-light",
-    progress: "bg-pastel-light",
-    download: "bg-pastel-blue text-pastel-bg",
-    button: "bg-pastel-pink hover:bg-pastel-teal",
-    buttonText: "text-pastel-dark",
-    accent: "text-pastel-pink",
-    bubble: "bg-pastel-blue hover:bg-pastel-teal text-pastel-dark font-semibold",
-  },
-  matrix: {
-    bg: "bg-matrix-dark",
-    chatBg: "bg-matrix-bg",
-    text: "text-matrix-green",
-    user: "text-matrix-green bg-matrix-bg border-2 border-matrix-green rounded-sm p-2 animate-matrix-glitch font-mono",
-    bot: "text-matrix-green bg-matrix-bg",
-    system: "text-neon-blue bg-matrix-bg italic",
-    command: "text-neon-purple bg-matrix-bg",
-    success: "text-matrix-green bg-matrix-bg",
-    error: "text-neon-red bg-matrix-bg",
-    question: "text-matrix-green bg-matrix-bg",
-    progress: "bg-matrix-bg",
-    download: "bg-matrix-green text-matrix-dark",
-    button: "bg-matrix-green hover:bg-neon-blue",
-    buttonText: "text-matrix-dark",
-    accent: "text-matrix-green",
-    bubble: "bg-matrix-green hover:bg-neon-blue text-matrix-dark font-semibold",
-  },
-};
 
 const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
@@ -117,13 +18,14 @@ const ChatRoom = () => {
   const [isTyping, setIsTyping] = useState({});
   const [taskPending, setTaskPending] = useState(null);
   const [currentTask, setCurrentTask] = useState(null);
-  const [progressMessage, setProgressMessage] = useState(null);
+  const [progressMessages, setProgressMessages] = useState({});
   const [editMode, setEditMode] = useState(null);
   const [colorScheme, setColorScheme] = useState(localStorage.getItem('colorScheme') || "neon");
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [postTaskOptions, setPostTaskOptions] = useState(null);
   const [retryAttempts, setRetryAttempts] = useState(0);
+  const [showTechStackSelector, setShowTechStackSelector] = useState(false);
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
@@ -197,164 +99,124 @@ const ChatRoom = () => {
 
   useEffect(() => {
     console.log("ChatRoom: Mounting component...");
-    socketRef.current = io(WEBSOCKET_SERVER_URL, {
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      transports: ["websocket"],
-      path: "/socket.io",
-    });
-
-    socketRef.current.on("connect", () => {
-      console.log("ChatRoom: WebSocket connected, ID:", socketRef.current.id);
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: "Connected to Cracker Bot!", 
-        type: "system", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
-      setIsConnected(true);
-      setRetryAttempts(0);
-      const userName = localStorage.getItem('userName') || "Guest";
-      socketRef.current.emit("register", { 
-        name: userName,
-        role: "frontend", 
-        frontendId: socketRef.current.id,
-        userName 
-      });
-      socketRef.current.emit("frontend_connected", { 
-        ip: window.location.hostname, 
-        frontendId: socketRef.current.id,
-        userName 
-      });
-    });
-
-    socketRef.current.on("message", (data) => {
-      console.log("ChatRoom: Message received:", data);
-      setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
-      const userName = localStorage.getItem('userName') || "Guest";
-      const newMessage = {
-        from: data.from || "Cracker Bot",
-        user: data.user || userName,
-        text: data.text || "",
-        type: data.type || "bot",
-        fileName: data.fileName,
-        fileContent: data.content,
-        taskId: data.taskId,
-        options: data.options,
-        timestamp: new Date().toLocaleTimeString(),
-        frontendId: data.frontendId,
-        taskName: data.taskName,
-        taskType: data.taskType,
-        taskFeatures: data.taskFeatures,
-        progress: data.progress,
-      };
-
-      if (data.type === "progress") {
-        setProgressMessage((prev) => ({
-          ...newMessage,
-          id: data.taskId,
-        }));
-        if (data.progress === 100) {
-          setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
-          setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
-          setProgressMessage(null);
-        }
-      } else if (data.type === "download") {
-        setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
-        setProgressMessage(null);
-        setTaskPending(null);
-        setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
-        setEditMode(data.taskId);
-        setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures, fileContent: data.content });
-      } else if (data.type === "projects") {
-        const projects = data.text.split('\n').slice(1, -1).map((line, index) => ({
-          id: `${data.taskId || 'proj'}-${index}`,
-          text: line,
-          type: "project",
+    socketRef.current = new WebSocketManager(WEBSOCKET_SERVER_URL, {
+      onConnect: (id) => {
+        console.log("ChatRoom: WebSocket connected, ID:", id);
+        setMessages((prev) => [...prev, { from: "System", text: "Connected to Cracker Bot!", type: "system", timestamp: new Date().toLocaleTimeString() }]);
+        setIsConnected(true);
+        setRetryAttempts(0);
+        const userName = localStorage.getItem('userName') || "Guest";
+        socketRef.current.emit("register", { name: userName, role: "frontend", frontendId: id, userName });
+        socketRef.current.emit("frontend_connected", { ip: window.location.hostname, frontendId: id, userName });
+      },
+      onMessage: (data) => {
+        console.log("ChatRoom: Message received:", data);
+        setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
+        const userName = localStorage.getItem('userName') || "Guest";
+        const newMessage = {
+          from: data.from || "Cracker Bot",
+          user: data.user || userName,
+          text: data.text || "",
+          type: data.type || "bot",
+          fileName: data.fileName,
+          fileContent: data.content,
+          taskId: data.taskId,
+          options: data.options,
           timestamp: new Date().toLocaleTimeString(),
-          options: ["Download", "Enhance"],
-        }));
-        setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), ...projects]);
-        setTaskPending(null);
-        setCurrentTask(null);
-        setProgressMessage(null);
-        setEditMode(null);
-        setPostTaskOptions(null);
-      } else {
-        setMessages((prev) => {
-          const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
-          return exists ? prev : [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage];
-        });
-        if (data.type === "question" && data.taskId) {
-          setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
-          setCurrentTask((prev) => ({
-            taskId: data.taskId,
-            name: data.taskName || prev?.name || "Pending",
-            type: data.taskType || prev?.type || "Pending",
-            features: data.taskFeatures || prev?.features || "Pending",
-            step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
-                  data.text.toLowerCase().includes("type") ? "type" :
-                  data.text.toLowerCase().includes("features") ? "features" :
-                  data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
-            taskStatus: "pending",
+          frontendId: data.frontendId,
+          taskName: data.taskName,
+          taskType: data.taskType,
+          taskFeatures: data.taskFeatures,
+          progress: data.progress,
+        };
+
+        if (data.type === "progress") {
+          setProgressMessages((prev) => ({
+            ...prev,
+            [data.taskId]: { ...newMessage, id: data.taskId },
           }));
-          setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
-          setPostTaskOptions(null);
-          setProgressMessage(null);
-        } else if (data.type === "success" && data.options) {
+          if (data.progress === 100) {
+            setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
+            setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
+            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
+          }
+        } else if (data.type === "download") {
+          setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
+          setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
           setTaskPending(null);
-          setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
-          setProgressMessage(null);
-        } else if (data.type === "error" && data.taskId) {
-          setProgressMessage(null);
+          setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
+          setEditMode(data.taskId);
+          setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures, fileContent: data.content });
+        } else if (data.type === "projects") {
+          const projects = data.text.split('\n').slice(1, -1).map((line, index) => ({
+            id: `${data.taskId || 'proj'}-${index}`,
+            text: line,
+            type: "project",
+            timestamp: new Date().toLocaleTimeString(),
+            options: ["Download", "Enhance"],
+          }));
+          setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), ...projects]);
           setTaskPending(null);
           setCurrentTask(null);
+          setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
           setEditMode(null);
           setPostTaskOptions(null);
+        } else {
+          setMessages((prev) => {
+            const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
+            return exists ? prev : [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage];
+          });
+          if (data.type === "question" && data.taskId) {
+            setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
+            setCurrentTask((prev) => ({
+              taskId: data.taskId,
+              name: data.taskName || prev?.name || "Pending",
+              type: data.taskType || prev?.type || "Pending",
+              features: data.taskFeatures || prev?.features || "Pending",
+              step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
+                    data.text.toLowerCase().includes("type") ? "type" :
+                    data.text.toLowerCase().includes("features") ? "features" :
+                    data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
+              taskStatus: "pending",
+            }));
+            setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
+            setPostTaskOptions(null);
+            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
+          } else if (data.type === "success" && data.options) {
+            setTaskPending(null);
+            setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
+            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
+          } else if (data.type === "error" && data.taskId) {
+            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
+            setTaskPending(null);
+            setCurrentTask(null);
+            setEditMode(null);
+            setPostTaskOptions(null);
+          }
         }
-      }
 
-      if (data.user && data.user !== "Guest") {
-        localStorage.setItem("userName", data.user);
-      }
-    });
-
-    socketRef.current.on("typing", (data) => {
-      setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
-    });
-
-    socketRef.current.on("connect_error", (error) => {
-      console.error("ChatRoom: WebSocket connect error:", error.message);
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: `Connection Error: ${error.message} (Attempt ${retryAttempts + 1}/10)`, 
-        type: "error", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
-      setIsConnected(false);
-      setRetryAttempts((prev) => prev + 1);
-    });
-
-    socketRef.current.on("disconnect", (reason) => {
-      console.log("ChatRoom: WebSocket disconnected:", reason);
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: `Disconnected: ${reason}`, 
-        type: "error", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
-      setIsConnected(false);
+        if (data.user && data.user !== "Guest") {
+          localStorage.setItem("userName", data.user);
+        }
+      },
+      onTyping: (data) => {
+        setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
+      },
+      onConnectError: (error) => {
+        console.error("ChatRoom: WebSocket connect error:", error.message);
+        setMessages((prev) => [...prev, { from: "System", text: `Connection Error: ${error.message} (Attempt ${retryAttempts + 1}/10)`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+        setIsConnected(false);
+        setRetryAttempts((prev) => prev + 1);
+      },
+      onDisconnect: (reason) => {
+        console.log("ChatRoom: WebSocket disconnected:", reason);
+        setMessages((prev) => [...prev, { from: "System", text: `Disconnected: ${reason}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+        setIsConnected(false);
+      },
     });
 
     return () => {
       if (socketRef.current) {
-        socketRef.current.off("connect");
-        socketRef.current.off("message");
-        socketRef.current.off("typing");
-        socketRef.current.off("connect_error");
-        socketRef.current.off("disconnect");
         socketRef.current.disconnect();
       }
       if (recognitionRef.current) {
@@ -365,7 +227,7 @@ const ChatRoom = () => {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping, progressMessage, postTaskOptions]);
+  }, [messages, isTyping, progressMessages, postTaskOptions]);
 
   useEffect(() => {
     if (showCommands && commandsRef.current) {
@@ -373,7 +235,7 @@ const ChatRoom = () => {
     }
   }, [showCommands, filteredCommands]);
 
-  const sendMessage = (messageText) => {
+  const sendMessage = (messageText, techStack = null, fileExtension = null) => {
     if (!socketRef.current || !messageText.trim() || !isConnected || isSending) {
       console.warn("ChatRoom: Cannot send message", {
         socketExists: !!socketRef.current,
@@ -389,9 +251,11 @@ const ChatRoom = () => {
     const messageData = {
       text: messageText.trim(),
       user: userName,
-      userId: socketRef.current.id,
+      userId: socketRef.current.socket.id,
       ip: window.location.hostname,
-      frontendId: socketRef.current.id,
+      frontendId: socketRef.current.socket.id,
+      techStack,
+      fileExtension,
     };
 
     setMessages((prev) => [...prev, {
@@ -412,8 +276,10 @@ const ChatRoom = () => {
 
       switch (command) {
         case "/create":
-          messageData.text = "Build-Something-Epic";
-          break;
+          setShowTechStackSelector(true);
+          setIsSending(false);
+          setInput("");
+          return;
         case "/projects":
         case "/download":
           socketRef.current.emit("message", messageData);
@@ -425,7 +291,7 @@ const ChatRoom = () => {
           return;
         case "/reset_name":
           localStorage.removeItem("userName");
-          socketRef.current.emit("reset_user", { userId: socketRef.current.id, ip: window.location.hostname });
+          socketRef.current.emit("reset_user", { userId: socketRef.current.socket.id, ip: window.location.hostname });
           setMessages((prev) => [...prev, {
             from: "System",
             user: userName,
@@ -433,7 +299,7 @@ const ChatRoom = () => {
             type: "system",
             timestamp: new Date().toLocaleTimeString(),
           }]);
-          setCurrentTask({ taskId: `initial_name:${socketRef.current.id}`, step: "name", taskStatus: "pending" });
+          setCurrentTask({ taskId: `initial_name:${socketRef.current.socket.id}`, step: "name", taskStatus: "pending" });
           setIsSending(false);
           setInput("");
           setShowCommands(false);
@@ -476,6 +342,12 @@ const ChatRoom = () => {
     } else if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
       messageData.type = "task_response";
       messageData.taskId = lastWelcome.taskId;
+      if (messageText === "Build-Something-Epic") {
+        setShowTechStackSelector(true);
+        setIsSending(false);
+        setInput("");
+        return;
+      }
     } else if (currentTask && currentTask.taskStatus !== "completed") {
       messageData.type = "task_response";
       messageData.taskId = currentTask.taskId;
@@ -485,7 +357,11 @@ const ChatRoom = () => {
         setCurrentTask((prev) => ({ ...prev, step: "choice" }));
       } else if (currentTask.step === "choice") {
         if (messageText.toLowerCase() === "build-something-epic") {
-          setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
+          setCurrentTask((prev) => ({ ...prev, step: "tech_stack" }));
+          setShowTechStackSelector(true);
+          setIsSending(false);
+          setInput("");
+          return;
         } else if (messageText.toLowerCase() === "chat") {
           setCurrentTask((prev) => ({ ...prev, step: "chat" }));
         }
@@ -599,23 +475,18 @@ const ChatRoom = () => {
 
   const manualReconnect = () => {
     if (socketRef.current) {
-      const userId = socketRef.current.id;
+      const userId = socketRef.current.socket.id;
       const ip = window.location.hostname;
       socketRef.current.emit("reset_user", { userId, ip });
       localStorage.removeItem("userName");
       setMessages([]);
       setTaskPending(null);
       setCurrentTask(null);
-      setProgressMessage(null);
+      setProgressMessages({});
       setEditMode(null);
       socketRef.current.disconnect();
       socketRef.current.connect();
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: "Reset and reconnected", 
-        type: "system", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      setMessages((prev) => [...prev, { from: "System", text: "Reset and reconnected", type: "system", timestamp: new Date().toLocaleTimeString() }]);
       setRetryAttempts(0);
     }
   };
@@ -624,19 +495,9 @@ const ChatRoom = () => {
     try {
       const decoded = atob(fileContent);
       const lines = decoded.split("\n").slice(0, 5).join("\n");
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, 
-        type: "system", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      setMessages((prev) => [...prev, { from: "System", text: `Preview:\n\`\`\`\n${lines}\n\`\`\``, type: "system", timestamp: new Date().toLocaleTimeString() }]);
     } catch (e) {
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: "Preview failed—binary file or invalid content!",
-        type: "error", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
+      setMessages((prev) => [...prev, { from: "System", text: "Preview failed—binary file or invalid content!", type: "error", timestamp: new Date().toLocaleTimeString() }]);
     }
   };
 
@@ -656,7 +517,7 @@ const ChatRoom = () => {
       taskId,
       frontendId,
       user: userName,
-      userId: socketRef.current.id,
+      userId: socketRef.current.socket.id,
       ip: window.location.hostname,
       taskName,
       taskType,
@@ -666,13 +527,12 @@ const ChatRoom = () => {
     };
 
     if (action === "Edit") {
-      // Restart the task from scratch
       setCurrentTask({
         taskId: `${Date.now()}`,
-        step: "project_name",
+        step: "tech_stack",
         taskStatus: "pending",
       });
-      setTaskPending({ taskId: messageData.taskId, question: "Name your new project!", options: [] });
+      setTaskPending({ taskId: messageData.taskId, question: "Choose your tech stack!", options: [] });
       setPostTaskOptions(null);
       setEditMode(null);
       setMessages((prev) => [...prev, {
@@ -683,12 +543,11 @@ const ChatRoom = () => {
         timestamp: new Date().toLocaleTimeString(),
       }]);
     } else if (action === "Add-More") {
-      // Enhance the existing build
       setCurrentTask((prev) => ({
         ...prev,
         step: "features",
         taskStatus: "pending",
-        previousContent: fileContent, // Pass the existing content
+        previousContent: fileContent,
       }));
       setTaskPending({ taskId: messageData.taskId, question: `Add more features to "${taskName}"!`, options: [] });
       setPostTaskOptions(null);
@@ -701,7 +560,6 @@ const ChatRoom = () => {
         timestamp: new Date().toLocaleTimeString(),
       }]);
     } else if (action === "Done") {
-      // Finalize and store in Redis
       socketRef.current.emit("message", messageData);
       setMessages((prev) => [...prev, {
         from: "System",
@@ -714,7 +572,7 @@ const ChatRoom = () => {
       setCurrentTask(null);
       setTaskPending(null);
       setEditMode(null);
-      setProgressMessage(null);
+      setProgressMessages({});
       setIsSending(false);
       inputRef.current?.focus();
       return;
@@ -736,10 +594,10 @@ const ChatRoom = () => {
       text: action === "Download" ? "/download" : "Enhance Project " + projectId,
       type: action === "Download" ? "command" : "task_response",
       user: localStorage.getItem("userName") || "Guest",
-      userId: socketRef.current.id,
+      userId: socketRef.current.socket.id,
       ip: window.location.hostname,
-      frontendId: socketRef.current.id,
-      taskId: projectMessage.taskId || `${socketRef.current.id}-${Date.now()}`,
+      frontendId: socketRef.current.socket.id,
+      taskId: projectMessage.taskId || `${socketRef.current.socket.id}-${Date.now()}`,
       commandFlag: action === "Enhance",
       target: "bot_lead",
     };
@@ -750,15 +608,18 @@ const ChatRoom = () => {
     }
   };
 
+  const handleTaskSelection = ({ techStack, fileExtension }) => {
+    setCurrentTask((prev) => ({ ...prev, techStack, fileExtension, step: "project_name" }));
+    setShowTechStackSelector(false);
+    sendMessage("/create", techStack, fileExtension);
+  };
+
   const currentScheme = colorSchemes[colorScheme];
 
   return (
     <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text} overflow-hidden relative`}>
       {colorScheme === "matrix" && (
-        <canvas
-          ref={canvasRef}
-          className="absolute top-0 left-0 w-full h-full pointer-events-none z-0"
-        />
+        <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none z-0" />
       )}
       <div className="flex-shrink-0 p-4 flex justify-between items-center relative z-10">
         <h2 className={`text-2xl font-bold ${currentScheme.accent}`}>
@@ -830,6 +691,14 @@ const ChatRoom = () => {
             {Object.entries(isTyping).map(([user, typing]) => typing && (
               <div key={user} className="text-gray-500 italic">{`${user} is typing...`}</div>
             ))}
+            {Object.values(progressMessages).map((progMsg) => (
+              <ChatMessage
+                key={progMsg.id}
+                message={progMsg.text}
+                progress={progMsg.progress}
+                colorScheme={currentScheme}
+              />
+            ))}
             <div ref={chatEndRef} />
           </div>
 
@@ -856,6 +725,10 @@ const ChatRoom = () => {
                 </div>
               ))}
             </div>
+          )}
+
+          {showTechStackSelector && (
+            <TaskSelector onSelect={handleTaskSelection} onCancel={() => setShowTechStackSelector(false)} colorScheme={currentScheme} />
           )}
 
           {postTaskOptions && (
