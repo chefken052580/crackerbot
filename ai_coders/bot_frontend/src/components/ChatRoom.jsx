@@ -134,7 +134,7 @@ const ChatRoom = () => {
   useEffect(() => {
     document.body.className = `${colorSchemes[colorScheme].bg} relative`;
     if (colorScheme === "matrix") {
-      document.body.style.backgroundImage = "none"; // Canvas will handle the effect
+      document.body.style.backgroundImage = "none";
       initMatrixRain();
     } else {
       document.body.style.backgroundImage = "none";
@@ -143,7 +143,6 @@ const ChatRoom = () => {
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
     }
-
     return () => {
       if (canvasRef.current) {
         const ctx = canvasRef.current.getContext('2d');
@@ -154,32 +153,27 @@ const ChatRoom = () => {
 
   const initMatrixRain = () => {
     if (colorScheme !== "matrix" || !canvasRef.current) return;
-
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-
     const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()_+-=[]{}|;:,.<>?";
     const fontSize = 14;
     const columns = canvas.width / fontSize;
     const drops = Array(Math.floor(columns)).fill(1);
 
     const draw = () => {
-      ctx.fillStyle = "rgba(10, 15, 10, 0.1)"; // Faint trail effect
+      ctx.fillStyle = "rgba(10, 15, 10, 0.1)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.fillStyle = "#00ff00"; // Matrix green
+      ctx.fillStyle = "#00ff00";
       ctx.font = `${fontSize}px monospace`;
-
       for (let i = 0; i < drops.length; i++) {
         const text = characters.charAt(Math.floor(Math.random() * characters.length));
         const yPos = drops[i] * fontSize;
         ctx.fillStyle = `rgba(0, 255, 0, ${Math.max(1 - yPos / canvas.height, 0.2)})`;
         ctx.fillText(text, i * fontSize, yPos);
-
         if (yPos > canvas.height && Math.random() > 0.975) {
-          drops[i] = 0; // Reset drop
+          drops[i] = 0;
         }
         drops[i]++;
       }
@@ -212,8 +206,6 @@ const ChatRoom = () => {
       path: "/socket.io",
     });
 
-    console.log("ChatRoom: WebSocket initialized with URL:", WEBSOCKET_SERVER_URL);
-
     socketRef.current.on("connect", () => {
       console.log("ChatRoom: WebSocket connected, ID:", socketRef.current.id);
       setMessages((prev) => [...prev, { 
@@ -236,7 +228,6 @@ const ChatRoom = () => {
         frontendId: socketRef.current.id,
         userName 
       });
-      console.log("ChatRoom: Emitted 'register' and 'frontend_connected' with ID:", socketRef.current.id, "and userName:", userName);
     });
 
     socketRef.current.on("message", (data) => {
@@ -276,7 +267,7 @@ const ChatRoom = () => {
         setTaskPending(null);
         setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
         setEditMode(data.taskId);
-        setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures });
+        setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures, fileContent: data.content });
       } else if (data.type === "projects") {
         const projects = data.text.split('\n').slice(1, -1).map((line, index) => ({
           id: `${data.taskId || 'proj'}-${index}`,
@@ -285,10 +276,12 @@ const ChatRoom = () => {
           timestamp: new Date().toLocaleTimeString(),
           options: ["Download", "Enhance"],
         }));
-        setMessages((prev) => [...prev, ...projects]);
+        setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), ...projects]);
         setTaskPending(null);
         setCurrentTask(null);
         setProgressMessage(null);
+        setEditMode(null);
+        setPostTaskOptions(null);
       } else {
         setMessages((prev) => {
           const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
@@ -325,12 +318,10 @@ const ChatRoom = () => {
 
       if (data.user && data.user !== "Guest") {
         localStorage.setItem("userName", data.user);
-        console.log("ChatRoom: Updated userName in localStorage:", data.user);
       }
     });
 
     socketRef.current.on("typing", (data) => {
-      console.log("ChatRoom: Typing event received:", data);
       setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
     });
 
@@ -357,21 +348,13 @@ const ChatRoom = () => {
       setIsConnected(false);
     });
 
-    socketRef.current.on("error", (error) => {
-      console.error("ChatRoom: WebSocket error:", error);
-    });
-
-    console.log("ChatRoom: WebSocket setup complete");
-
     return () => {
-      console.log("ChatRoom: Unmounting, cleaning up WebSocket");
       if (socketRef.current) {
         socketRef.current.off("connect");
         socketRef.current.off("message");
         socketRef.current.off("typing");
         socketRef.current.off("connect_error");
         socketRef.current.off("disconnect");
-        socketRef.current.off("error");
         socketRef.current.disconnect();
       }
       if (recognitionRef.current) {
@@ -381,13 +364,11 @@ const ChatRoom = () => {
   }, []);
 
   useEffect(() => {
-    console.log("ChatRoom: Scrolling to end due to messages or state change");
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping, progressMessage, postTaskOptions]);
 
   useEffect(() => {
     if (showCommands && commandsRef.current) {
-      console.log("ChatRoom: Focusing commands dropdown");
       commandsRef.current.focus();
     }
   }, [showCommands, filteredCommands]);
@@ -404,7 +385,6 @@ const ChatRoom = () => {
     }
 
     setIsSending(true);
-    console.log("ChatRoom: Sending message:", messageText);
     const userName = localStorage.getItem("userName") || "Guest";
     const messageData = {
       text: messageText.trim(),
@@ -424,11 +404,7 @@ const ChatRoom = () => {
     }]);
 
     const lastWelcome = messages.find(m => m.type === "success" && m.options && m.taskId);
-    if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
-      messageData.type = "task_response";
-      messageData.taskId = lastWelcome.taskId;
-      console.log("ChatRoom: Sending bubble click as task_response with taskId:", lastWelcome.taskId);
-    } else if (messageText.startsWith("/")) {
+    if (messageText.startsWith("/")) {
       messageData.type = "command";
       messageData.target = "bot_lead";
       const commandParts = messageText.split(" ");
@@ -439,12 +415,13 @@ const ChatRoom = () => {
           messageData.text = "Build-Something-Epic";
           break;
         case "/projects":
-          socketRef.current.emit("message", messageData);
-          setIsSending(false);
-          return;
         case "/download":
           socketRef.current.emit("message", messageData);
           setIsSending(false);
+          setInput("");
+          setShowCommands(false);
+          setCommandIndex(-1);
+          inputRef.current?.focus();
           return;
         case "/reset_name":
           localStorage.removeItem("userName");
@@ -458,6 +435,10 @@ const ChatRoom = () => {
           }]);
           setCurrentTask({ taskId: `initial_name:${socketRef.current.id}`, step: "name", taskStatus: "pending" });
           setIsSending(false);
+          setInput("");
+          setShowCommands(false);
+          setCommandIndex(-1);
+          inputRef.current?.focus();
           return;
         case "/tone":
           const tone = commandParts[1] || "default";
@@ -472,6 +453,10 @@ const ChatRoom = () => {
             timestamp: new Date().toLocaleTimeString(),
           }]);
           setIsSending(false);
+          setInput("");
+          setShowCommands(false);
+          setCommandIndex(-1);
+          inputRef.current?.focus();
           return;
         default:
           setMessages((prev) => [...prev, {
@@ -482,15 +467,21 @@ const ChatRoom = () => {
             timestamp: new Date().toLocaleTimeString(),
           }]);
           setIsSending(false);
+          setInput("");
+          setShowCommands(false);
+          setCommandIndex(-1);
+          inputRef.current?.focus();
           return;
       }
+    } else if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
+      messageData.type = "task_response";
+      messageData.taskId = lastWelcome.taskId;
     } else if (currentTask && currentTask.taskStatus !== "completed") {
       messageData.type = "task_response";
       messageData.taskId = currentTask.taskId;
       if (currentTask.step === "name" && !localStorage.getItem("userName")) {
         localStorage.setItem("userName", messageText.trim());
         messageData.user = messageText.trim();
-        console.log("ChatRoom: Set userName in localStorage from task response:", messageText.trim());
         setCurrentTask((prev) => ({ ...prev, step: "choice" }));
       } else if (currentTask.step === "choice") {
         if (messageText.toLowerCase() === "build-something-epic") {
@@ -513,13 +504,16 @@ const ChatRoom = () => {
     setInput("");
     setShowCommands(false);
     setCommandIndex(-1);
-    setTimeout(() => setIsSending(false), 1000);
+    setTimeout(() => {
+      setIsSending(false);
+      inputRef.current?.focus();
+    }, 100);
   };
 
   const handleInputChange = (e) => {
     const value = e.target.value;
     setInput(value);
-    if (value.startsWith("/") && (!currentTask || currentTask.taskStatus === "completed")) {
+    if (value.startsWith("/")) {
       const query = value.split(" ")[0].toLowerCase();
       const filtered = commands.filter((cmd) => cmd.command.toLowerCase().startsWith(query));
       setFilteredCommands(filtered);
@@ -539,6 +533,7 @@ const ChatRoom = () => {
         setInput(selectedCommand);
         setShowCommands(false);
         setCommandIndex(-1);
+        inputRef.current?.focus();
       } else {
         sendMessage(input);
       }
@@ -564,7 +559,6 @@ const ChatRoom = () => {
     if (!isRecording) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        console.error("ChatRoom: SpeechRecognition not supported in this browser.");
         setMessages((prev) => [...prev, {
           from: "System",
           text: "Sorry, speech recognition isn’t supported here! Type instead.",
@@ -584,7 +578,6 @@ const ChatRoom = () => {
         sendMessage(transcript);
       };
       recognition.onerror = (event) => {
-        console.error("ChatRoom: Speech recognition error:", event.error);
         setMessages((prev) => [...prev, {
           from: "System",
           text: `Oops, speech failed: ${event.error === "no-speech" ? "No speech detected!" : event.error}. Try typing!`,
@@ -598,16 +591,13 @@ const ChatRoom = () => {
       };
       recognition.start();
       setIsRecording(true);
-      console.log("ChatRoom: Started speech recognition");
     } else {
       recognitionRef.current?.stop();
       setIsRecording(false);
-      console.log("ChatRoom: Stopped speech recognition");
     }
   };
 
   const manualReconnect = () => {
-    console.log("ChatRoom: Manual reconnect triggered with reset");
     if (socketRef.current) {
       const userId = socketRef.current.id;
       const ip = window.location.hostname;
@@ -657,7 +647,7 @@ const ChatRoom = () => {
 
   const handlePostTaskAction = (action) => {
     if (!postTaskOptions) return;
-    const { taskId, frontendId, taskName, taskType, taskFeatures } = postTaskOptions;
+    const { taskId, frontendId, taskName, taskType, taskFeatures, fileContent } = postTaskOptions;
     const userName = localStorage.getItem("userName") || "Guest";
 
     const messageData = {
@@ -671,38 +661,77 @@ const ChatRoom = () => {
       taskName,
       taskType,
       taskFeatures,
-      commandFlag: action !== "Done", // Set commandFlag for Edit/Add-More
+      commandFlag: action !== "Done",
       target: "bot_lead",
     };
 
-    console.log("ChatRoom: Emitting post-task action:", JSON.stringify(messageData));
-    socketRef.current.emit("message", messageData);
-
-    setMessages((prev) => [...prev, {
-      from: "System",
-      user: userName,
-      text: `${action === "Edit" ? "Editing" : action === "Add-More" ? "Adding more to" : "Completed"} "${taskName}"...`,
-      type: "system",
-      timestamp: new Date().toLocaleTimeString(),
-    }]);
-
-    if (action === "Add-More") {
-      setTaskPending({ taskId, question: `Type additional features for "${taskName}"`, options: [] });
-      setCurrentTask((prev) => ({ ...prev, step: "features" }));
-    } else if (action === "Edit") {
-      setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
+    if (action === "Edit") {
+      // Restart the task from scratch
+      setCurrentTask({
+        taskId: `${Date.now()}`,
+        step: "project_name",
+        taskStatus: "pending",
+      });
+      setTaskPending({ taskId: messageData.taskId, question: "Name your new project!", options: [] });
+      setPostTaskOptions(null);
+      setEditMode(null);
+      setMessages((prev) => [...prev, {
+        from: "System",
+        user: userName,
+        text: `Restarting "${taskName}" from scratch...`,
+        type: "system",
+        timestamp: new Date().toLocaleTimeString(),
+      }]);
+    } else if (action === "Add-More") {
+      // Enhance the existing build
+      setCurrentTask((prev) => ({
+        ...prev,
+        step: "features",
+        taskStatus: "pending",
+        previousContent: fileContent, // Pass the existing content
+      }));
+      setTaskPending({ taskId: messageData.taskId, question: `Add more features to "${taskName}"!`, options: [] });
+      setPostTaskOptions(null);
+      setEditMode(null);
+      setMessages((prev) => [...prev, {
+        from: "System",
+        user: userName,
+        text: `Enhancing "${taskName}"...`,
+        type: "system",
+        timestamp: new Date().toLocaleTimeString(),
+      }]);
     } else if (action === "Done") {
+      // Finalize and store in Redis
+      socketRef.current.emit("message", messageData);
+      setMessages((prev) => [...prev, {
+        from: "System",
+        user: userName,
+        text: `"${taskName}" completed and stored! Access it with /projects or /download.`,
+        type: "system",
+        timestamp: new Date().toLocaleTimeString(),
+      }]);
       setPostTaskOptions(null);
       setCurrentTask(null);
       setTaskPending(null);
       setEditMode(null);
       setProgressMessage(null);
+      setIsSending(false);
+      inputRef.current?.focus();
+      return;
     }
-    setPostTaskOptions(null);
+
+    socketRef.current.emit("message", messageData);
+    setInput("");
+    setShowCommands(false);
+    setCommandIndex(-1);
+    setTimeout(() => {
+      setIsSending(false);
+      inputRef.current?.focus();
+    }, 100);
   };
 
   const handleProjectAction = (action, projectMessage) => {
-    const projectId = projectMessage.text.split('.')[0]; // Extract project number
+    const projectId = projectMessage.text.split('.')[0];
     const messageData = {
       text: action === "Download" ? "/download" : "Enhance Project " + projectId,
       type: action === "Download" ? "command" : "task_response",
@@ -722,7 +751,6 @@ const ChatRoom = () => {
   };
 
   const currentScheme = colorSchemes[colorScheme];
-  console.log("ChatRoom: Rendering UI with colorScheme:", colorScheme);
 
   return (
     <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text} overflow-hidden relative`}>
@@ -789,7 +817,6 @@ const ChatRoom = () => {
                   message={msg}
                   onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
                   onOptionClick={(option) => {
-                    console.log("ChatRoom: Bubble clicked:", option);
                     if (msg.type === "project") {
                       handleProjectAction(option, msg);
                     } else {
@@ -871,10 +898,7 @@ const ChatRoom = () => {
               🎙️
             </button>
             <button
-              onClick={() => {
-                console.log("ChatRoom: Send button clicked, input:", input);
-                sendMessage(input);
-              }}
+              onClick={() => sendMessage(input)}
               disabled={!isConnected || !input.trim() || isSending}
               className={`px-4 py-2 rounded-r-md transition ${isConnected && input.trim() && !isSending ? `${currentScheme.button} ${currentScheme.buttonText}` : "bg-gray-500 text-gray-300 cursor-not-allowed"}`}
             >

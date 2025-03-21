@@ -1,26 +1,25 @@
+// bot_frontend/src/components/ChatMessage.jsx
 import React, { useEffect, useState } from 'react';
 
 const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
-  const [progress, setProgress] = useState(0); // Single progress state
+  const [progress, setProgress] = useState(0);
   const [displayText, setDisplayText] = useState(message.text);
   const [isVisible, setIsVisible] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
 
-  // Unified progress and completion handling
   useEffect(() => {
     if (message.type === 'progress') {
       setProgress(message.progress);
       setDisplayText(message.text);
       if (message.progress === 100) {
         setIsComplete(true);
-        setIsVisible(true); // Persist at 100% instead of hiding
+        setIsVisible(true);
       }
     } else if (message.type === 'download' || message.type === 'success') {
-      setIsVisible(true); // Ensure download/success messages are visible
+      setIsVisible(true);
     }
   }, [message.progress, message.text, message.type]);
 
-  // Dynamic message styling based on type and color scheme
   const getMessageStyle = (type) => {
     if (type === 'progress') {
       return `${colorScheme.progress} font-mono transition-all duration-300 ease-in-out`;
@@ -28,11 +27,9 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
     return `${colorScheme[type] || colorScheme.text} ${colorScheme.chatBg} rounded-md shadow-md`;
   };
 
-  // Enhanced download handler with MIME type support and error resilience
   const handleDownloadClick = (fileName, fileContent) => {
     const extension = fileName.split('.').pop().toLowerCase();
     let blob;
-
     try {
       const byteCharacters = atob(fileContent);
       const byteNumbers = new Uint8Array(byteCharacters.length);
@@ -89,7 +86,6 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
       alert(`Failed to download ${fileName}: Invalid file content. Check console for details.`);
       return;
     }
-
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -100,7 +96,6 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
     window.URL.revokeObjectURL(url);
   };
 
-  // Parse options for post-task actions
   const parseOptions = (text, predefinedOptions) => {
     return predefinedOptions || [];
   };
@@ -147,7 +142,9 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
                   link.click();
                   document.body.removeChild(link);
                 }}
-                className={`${colorScheme.accent} underline hover:text-neon-green ml-2 px-2 py-1 rounded hover:bg-opacity-80 transition-all`}
+                className={`${
+                  colorScheme.bg === 'bg-matrix-dark' ? 'text-matrix-dark' : colorScheme.accent
+                } underline hover:text-matrix-dark ml-2 px-2 py-1 rounded hover:bg-matrix-green transition-all`}
                 aria-label={`Download ${message.fileName || 'file'}`}
               >
                 Download {message.fileName || 'file'}
@@ -158,7 +155,9 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
                 {onPreview && message.fileContent && (
                   <button
                     onClick={() => onPreview(message.fileContent)}
-                    className={`${colorScheme.accent} underline hover:text-neon-green px-3 py-1 rounded hover:bg-opacity-80 transition-transform transform hover:scale-105`}
+                    className={`${
+                      colorScheme.bg === 'bg-matrix-dark' ? 'text-matrix-dark' : colorScheme.accent
+                    } underline hover:text-matrix-dark px-3 py-1 rounded hover:bg-matrix-green transition-transform transform hover:scale-105`}
                     aria-label={`Preview ${message.fileName || 'file'}`}
                   >
                     Preview
@@ -172,7 +171,9 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
                         message.fileContent
                       )
                     }
-                    className={`${colorScheme.accent} underline hover:text-neon-green px-3 py-1 rounded hover:bg-opacity-80 transition-transform transform hover:scale-105`}
+                    className={`${
+                      colorScheme.bg === 'bg-matrix-dark' ? 'text-matrix-dark' : colorScheme.accent
+                    } underline hover:text-matrix-dark px-3 py-1 rounded hover:bg-matrix-green transition-transform transform hover:scale-105`}
                     aria-label={`Download ${message.fileName || 'file'}`}
                   >
                     Download {message.fileName || 'file'}
@@ -202,7 +203,6 @@ const ChatMessage = ({ message, onPreview, onOptionClick, colorScheme }) => {
   );
 };
 
-// Inline CSS animations for enhanced visual flair
 const styles = `
   @keyframes pulse {
     0% { box-shadow: 0 0 5px rgba(0, 255, 0, 0.5); }
