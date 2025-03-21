@@ -7,7 +7,7 @@ import { createClient } from 'redis';
 import { botSocket } from './socket.js';
 import { log, error } from './logger.js';
 import { initTaskManager } from './taskManager.js';
-import { generateFile } from '../bot_backend/src/fileGenerator.js'; // Updated import path
+import { generateFile } from '../bot_backend/src/fileGenerator.js'; // Corrected to 2 dots
 
 const app = express();
 const server = http.createServer(app);
