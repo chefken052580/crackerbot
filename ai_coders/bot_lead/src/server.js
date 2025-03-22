@@ -2,25 +2,25 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import http from 'http';
+import { createServer } from 'http';
 import { createClient } from 'redis';
 import { botSocket } from './socket.js';
 import { log, error } from './logger.js';
 import { initTaskManager } from './taskManager.js';
-import { generateFile } from '../bot_backend/src/fileGenerator.js'; // Corrected to 2 dots
 
 const app = express();
-const server = http.createServer(app);
+const server = createServer(app);
 
 const BOT_NAME = 'bot_lead';
 const PORT = process.env.PORT || 5001;
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || "https://visually-sterling-spider.ngrok-free.app", methods: ["GET", "POST"] }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'https://visually-sterling-spider.ngrok-free.app', methods: ['GET', 'POST'] }));
 app.use(express.json());
 
 const redisClient = createClient({ url: 'redis://redis:6379' });
 
 redisClient.on('error', (err) => error(`Redis Client Error: ${err.message}`));
+
 (async () => {
   try {
     await redisClient.connect();
@@ -40,8 +40,16 @@ app.get('/health', async (req, res) => {
 app.post('/api/file', async (req, res) => {
   try {
     const { command, args } = req.body;
-    const filePath = await generateFile(command, args); // Returns a string (file path)
-    res.json({ filePath }); // Wrap in JSON object
+    if (!command) throw new Error('Missing command (e.g., "pdf" or "image")');
+    const response = await fetch('http://bot_backend:5000/api/generate-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, args: args || '' }), // Ensure args is sent
+    });
+    if (!response.ok) throw new Error(`bot_backend responded with ${response.status}`);
+    const { filePath } = await response.json();
+    await log(`File generated at ${filePath} via bot_backend`);
+    res.json({ filePath });
   } catch (err) {
     await error(`Error generating file: ${err.message}`);
     res.status(500).json({ error: err.message });
@@ -77,3 +85,5 @@ process.on('uncaughtException', async (err) => {
 process.on('unhandledRejection', async (reason) => {
   await error(`Unhandled Rejection: ${reason}`);
 });
+
+export { redisClient, server };

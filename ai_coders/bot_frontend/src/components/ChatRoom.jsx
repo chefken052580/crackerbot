@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
-import WebSocketManager from "./utils/WebSocketManager";
+import WebSocketManager from "../utils/WebSocketManager";
 import TaskSelector from "./TaskSelector";
 import { commands, colorSchemes } from "../config/chatConfig";
 
@@ -26,12 +26,170 @@ const ChatRoom = () => {
   const [postTaskOptions, setPostTaskOptions] = useState(null);
   const [retryAttempts, setRetryAttempts] = useState(0);
   const [showTechStackSelector, setShowTechStackSelector] = useState(false);
+  const [forceRender, setForceRender] = useState(false); // New state to force render
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
   const recognitionRef = useRef(null);
   const canvasRef = useRef(null);
+
+  // Initialize WebSocket connection
+  const initializeSocket = () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+    socketRef.current = new WebSocketManager(WEBSOCKET_SERVER_URL, {
+      onConnect: (id) => {
+        console.log("ChatRoom: WebSocket connected, ID:", id);
+        setMessages((prev) => [...prev, { from: "System", text: "Connected to Cracker Bot!", type: "system", timestamp: new Date().toLocaleTimeString() }]);
+        setIsConnected(true);
+        setRetryAttempts(0);
+        const userName = localStorage.getItem('userName') || "Guest";
+        socketRef.current.emit("register", { name: userName, role: "frontend", frontendId: id, userName });
+        socketRef.current.emit("frontend_connected", { ip: window.location.hostname, frontendId: id, userName });
+      },
+      onMessage: (data) => {
+        console.log("ChatRoom: Message received:", data);
+        const userName = localStorage.getItem('userName') || "Guest";
+        const newMessage = {
+          from: data.from || "Cracker Bot",
+          user: data.user || userName,
+          text: data.text || "",
+          type: data.type || "bot",
+          fileName: data.fileName,
+          fileContent: data.content,
+          taskId: data.taskId,
+          options: data.options,
+          timestamp: new Date().toLocaleTimeString(),
+          frontendId: data.frontendId,
+          taskName: data.taskName,
+          taskType: data.taskType,
+          taskFeatures: data.taskFeatures,
+          progress: data.progress,
+        };
+        
+        setMessages((prev) => {
+          const updatedMessages = [...prev, newMessage];
+          console.log("ChatRoom: Appending message, new messages array:", updatedMessages);
+          return updatedMessages;
+        });
+        setForceRender((prev) => !prev); // Force re-render
+        setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
+
+        if (data.type === "progress") {
+          setProgressMessages((prev) => ({
+            ...prev,
+            [data.taskId]: { ...newMessage, id: data.taskId },
+          }));
+          if (data.progress === 100) {
+            setProgressMessages((prev) => {
+              const { [data.taskId]: _, ...rest } = prev;
+              return rest;
+            });
+            setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
+          }
+        } else if (data.type === "download") {
+          setProgressMessages((prev) => {
+            const { [data.taskId]: _, ...rest } = prev;
+            return rest;
+          });
+          setTaskPending(null);
+          setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
+          setEditMode(data.taskId);
+          setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures, fileContent: data.content });
+        } else if (data.type === "projects") {
+          const projects = data.text.split('\n').slice(1, -1).map((line, index) => ({
+            id: `${data.taskId || 'proj'}-${index}`,
+            text: line,
+            type: "project",
+            timestamp: new Date().toLocaleTimeString(),
+            options: ["Download", "Enhance"],
+          }));
+          setMessages((prev) => [...prev, ...projects]);
+          setTaskPending(null);
+          setCurrentTask(null);
+          setProgressMessages((prev) => {
+            const { [data.taskId]: _, ...rest } = prev;
+            return rest;
+          });
+          setEditMode(null);
+          setPostTaskOptions(null);
+        } else if (data.type === "question" && data.taskId) {
+          setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
+          setCurrentTask((prev) => ({
+            taskId: data.taskId,
+            name: data.taskName || prev?.name || "Pending",
+            type: data.taskType || prev?.type || "Pending",
+            features: data.taskFeatures || prev?.features || "Pending",
+            step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
+                  data.text.toLowerCase().includes("type") ? "type" :
+                  data.text.toLowerCase().includes("features") ? "features" :
+                  data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
+            taskStatus: "pending",
+          }));
+          setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
+          setPostTaskOptions(null);
+          setProgressMessages((prev) => {
+            const { [data.taskId]: _, ...rest } = prev;
+            return rest;
+          });
+        } else if (data.type === "success" && data.options) {
+          setTaskPending(null);
+          setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
+          setProgressMessages((prev) => {
+            const { [data.taskId]: _, ...rest } = prev;
+            return rest;
+          });
+        } else if (data.type === "error" && data.taskId) {
+          setProgressMessages((prev) => {
+            const { [data.taskId]: _, ...rest } = prev;
+            return rest;
+          });
+          setTaskPending(null);
+          setCurrentTask(null);
+          setEditMode(null);
+          setPostTaskOptions(null);
+        }
+
+        if (data.user && data.user !== "Guest") {
+          localStorage.setItem("userName", data.user);
+        }
+      },
+      onTyping: (data) => {
+        setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
+      },
+      onConnectError: (error) => {
+        console.error("ChatRoom: WebSocket connect error:", error.message);
+        setMessages((prev) => [...prev, { from: "System", text: `Connection Error: ${error.message} (Attempt ${retryAttempts + 1}/10)`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+        setIsConnected(false);
+        setRetryAttempts((prev) => prev + 1);
+      },
+      onDisconnect: (reason) => {
+        console.log("ChatRoom: WebSocket disconnected:", reason);
+        setMessages((prev) => [...prev, { from: "System", text: `Disconnected: ${reason}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
+        setIsConnected(false);
+      },
+    });
+  };
+
+  useEffect(() => {
+    console.log("ChatRoom: Mounting component...");
+    initializeSocket();
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log("ChatRoom: Messages state updated:", messages);
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, forceRender]);
 
   useEffect(() => {
     document.body.className = `${colorSchemes[colorScheme].bg} relative`;
@@ -96,138 +254,6 @@ const ChatRoom = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   };
-
-  useEffect(() => {
-    console.log("ChatRoom: Mounting component...");
-    socketRef.current = new WebSocketManager(WEBSOCKET_SERVER_URL, {
-      onConnect: (id) => {
-        console.log("ChatRoom: WebSocket connected, ID:", id);
-        setMessages((prev) => [...prev, { from: "System", text: "Connected to Cracker Bot!", type: "system", timestamp: new Date().toLocaleTimeString() }]);
-        setIsConnected(true);
-        setRetryAttempts(0);
-        const userName = localStorage.getItem('userName') || "Guest";
-        socketRef.current.emit("register", { name: userName, role: "frontend", frontendId: id, userName });
-        socketRef.current.emit("frontend_connected", { ip: window.location.hostname, frontendId: id, userName });
-      },
-      onMessage: (data) => {
-        console.log("ChatRoom: Message received:", data);
-        setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
-        const userName = localStorage.getItem('userName') || "Guest";
-        const newMessage = {
-          from: data.from || "Cracker Bot",
-          user: data.user || userName,
-          text: data.text || "",
-          type: data.type || "bot",
-          fileName: data.fileName,
-          fileContent: data.content,
-          taskId: data.taskId,
-          options: data.options,
-          timestamp: new Date().toLocaleTimeString(),
-          frontendId: data.frontendId,
-          taskName: data.taskName,
-          taskType: data.taskType,
-          taskFeatures: data.taskFeatures,
-          progress: data.progress,
-        };
-
-        if (data.type === "progress") {
-          setProgressMessages((prev) => ({
-            ...prev,
-            [data.taskId]: { ...newMessage, id: data.taskId },
-          }));
-          if (data.progress === 100) {
-            setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
-            setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
-            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
-          }
-        } else if (data.type === "download") {
-          setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage]);
-          setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
-          setTaskPending(null);
-          setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
-          setEditMode(data.taskId);
-          setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures, fileContent: data.content });
-        } else if (data.type === "projects") {
-          const projects = data.text.split('\n').slice(1, -1).map((line, index) => ({
-            id: `${data.taskId || 'proj'}-${index}`,
-            text: line,
-            type: "project",
-            timestamp: new Date().toLocaleTimeString(),
-            options: ["Download", "Enhance"],
-          }));
-          setMessages((prev) => [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), ...projects]);
-          setTaskPending(null);
-          setCurrentTask(null);
-          setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
-          setEditMode(null);
-          setPostTaskOptions(null);
-        } else {
-          setMessages((prev) => {
-            const exists = prev.some(m => m.taskId === newMessage.taskId && m.timestamp === newMessage.timestamp && m.text === newMessage.text);
-            return exists ? prev : [...prev.filter(m => m.type !== "progress" || m.taskId !== data.taskId), newMessage];
-          });
-          if (data.type === "question" && data.taskId) {
-            setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
-            setCurrentTask((prev) => ({
-              taskId: data.taskId,
-              name: data.taskName || prev?.name || "Pending",
-              type: data.taskType || prev?.type || "Pending",
-              features: data.taskFeatures || prev?.features || "Pending",
-              step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
-                    data.text.toLowerCase().includes("type") ? "type" :
-                    data.text.toLowerCase().includes("features") ? "features" :
-                    data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
-              taskStatus: "pending",
-            }));
-            setEditMode(data.taskId && data.text.toLowerCase().includes("edit") ? data.taskId : null);
-            setPostTaskOptions(null);
-            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
-          } else if (data.type === "success" && data.options) {
-            setTaskPending(null);
-            setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
-            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
-          } else if (data.type === "error" && data.taskId) {
-            setProgressMessages((prev) => { const { [data.taskId]: _, ...rest } = prev; return rest; });
-            setTaskPending(null);
-            setCurrentTask(null);
-            setEditMode(null);
-            setPostTaskOptions(null);
-          }
-        }
-
-        if (data.user && data.user !== "Guest") {
-          localStorage.setItem("userName", data.user);
-        }
-      },
-      onTyping: (data) => {
-        setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
-      },
-      onConnectError: (error) => {
-        console.error("ChatRoom: WebSocket connect error:", error.message);
-        setMessages((prev) => [...prev, { from: "System", text: `Connection Error: ${error.message} (Attempt ${retryAttempts + 1}/10)`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
-        setIsConnected(false);
-        setRetryAttempts((prev) => prev + 1);
-      },
-      onDisconnect: (reason) => {
-        console.log("ChatRoom: WebSocket disconnected:", reason);
-        setMessages((prev) => [...prev, { from: "System", text: `Disconnected: ${reason}`, type: "error", timestamp: new Date().toLocaleTimeString() }]);
-        setIsConnected(false);
-      },
-    });
-
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping, progressMessages, postTaskOptions]);
 
   useEffect(() => {
     if (showCommands && commandsRef.current) {
@@ -475,19 +501,40 @@ const ChatRoom = () => {
 
   const manualReconnect = () => {
     if (socketRef.current) {
-      const userId = socketRef.current.socket.id;
+      const oldUserId = socketRef.current.socket.id;
       const ip = window.location.hostname;
-      socketRef.current.emit("reset_user", { userId, ip });
+
+      // Clear all state
       localStorage.removeItem("userName");
-      setMessages([]);
+      setMessages([]); // Clear messages immediately
       setTaskPending(null);
       setCurrentTask(null);
       setProgressMessages({});
       setEditMode(null);
-      socketRef.current.disconnect();
-      socketRef.current.connect();
-      setMessages((prev) => [...prev, { from: "System", text: "Reset and reconnected", type: "system", timestamp: new Date().toLocaleTimeString() }]);
       setRetryAttempts(0);
+
+      // Add reset message
+      setMessages([{ from: "System", text: "Reset and reconnected", type: "system", timestamp: new Date().toLocaleTimeString() }]);
+      setForceRender((prev) => !prev); // Force render
+
+      // Disconnect and reinitialize socket
+      socketRef.current.emit("reset_user", { userId: oldUserId, ip });
+      socketRef.current.disconnect();
+      initializeSocket(); // Reinitialize socket
+
+      // Emit frontend_connected with new ID
+      setTimeout(() => {
+        const newUserId = socketRef.current.socket.id;
+        if (newUserId) {
+          console.log("ChatRoom: Reconnected with new ID:", newUserId);
+          const userName = "Guest";
+          socketRef.current.emit("register", { name: userName, role: "frontend", frontendId: newUserId, userName });
+          socketRef.current.emit("frontend_connected", { ip, frontendId: newUserId, userName });
+        } else {
+          console.error("ChatRoom: New socket ID not available after reconnect");
+          setMessages((prev) => [...prev, { from: "System", text: "Reconnect failed: No new ID", type: "error", timestamp: new Date().toLocaleTimeString() }]);
+        }
+      }, 2000); // Increased to 2000ms
     }
   };
 
@@ -694,7 +741,7 @@ const ChatRoom = () => {
             {Object.values(progressMessages).map((progMsg) => (
               <ChatMessage
                 key={progMsg.id}
-                message={progMsg.text}
+                message={progMsg}
                 progress={progMsg.progress}
                 colorScheme={currentScheme}
               />

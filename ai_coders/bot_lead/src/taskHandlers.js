@@ -1,6 +1,6 @@
 // ai_coders/bot_lead/src/taskHandlers.js
 import { log } from './logger.js';
-import { get, set, hGet, hSet, hDel } from './redisClient.js';
+import { redisClient, get, set, hGet, hSet, hDel } from './redisClient.js'; // Added redisClient import
 import { delegateTask, updateTaskStatus } from './stateManager.js';
 import { generateResponse } from './aiHelper.js';
 import { DEFAULT_TONE, extensionMap } from './constants.js';
@@ -77,7 +77,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
     case 'name':
       const newName = answer?.trim();
       if (newName && newName.length <= 20 && /^[a-zA-Z0-9_-]+$/.test(newName)) {
-        await redisClient.set(userKey, newName);
+        await redisClient.set(userKey, newName); // Now works with imported redisClient
         userName = newName;
         taskState.step = "choice";
         await set(stateKey, taskState);

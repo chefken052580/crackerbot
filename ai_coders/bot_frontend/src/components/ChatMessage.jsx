@@ -1,7 +1,6 @@
 // bot_frontend/src/components/ChatMessage.jsx
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import './ChatMessage.css';
 
 const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, colorScheme }) => {
   const [progressValue, setProgressValue] = useState(0);

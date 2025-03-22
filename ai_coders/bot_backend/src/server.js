@@ -1,17 +1,19 @@
 // ai_coders/bot_backend/src/server.js
 import express from 'express';
 import cors from 'cors';
-import http from 'http';
+import { createServer } from 'http';
 import { botSocket } from './socket.js';
 import { initializeTaskExecution } from './taskExecution.js';
 import { log, error } from './logger.js';
+import { generatePdf, generateImage } from './fileGenerator.js';
+import path from 'path';
 
-const BOT_NAME = "bot_backend";
+const BOT_NAME = 'bot_backend';
 const app = express();
-const server = http.createServer(app);
+const server = createServer(app);
 const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ["https://visually-sterling-spider.ngrok-free.app"];
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['https://visually-sterling-spider.ngrok-free.app'];
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -28,7 +30,36 @@ app.get('/health', async (req, res) => {
   res.status(200).send('bot_backend is healthy!');
 });
 
-// Initialize task execution (handles all WebSocket events)
+app.post('/api/generate-file', async (req, res) => {
+  try {
+    const { command, args } = req.body;
+    if (!command) throw new Error('Missing command in request body');
+
+    // Extract text and optional outputFile from args
+    const text = typeof args === 'string' ? args : args?.text;
+    if (!text) throw new Error('Missing text in args');
+    const outputFile = args?.outputFile || path.join('/tmp', `${Date.now()}-${command}.file`);
+
+    let filePath;
+    switch (command.toLowerCase()) {
+      case 'pdf':
+        filePath = await generatePdf(text, outputFile);
+        break;
+      case 'image':
+        filePath = await generateImage(text, outputFile);
+        break;
+      default:
+        throw new Error(`Unsupported command: ${command}. Use 'pdf' or 'image'`);
+    }
+
+    await log(`Generated ${command} file at ${filePath}`);
+    res.json({ filePath });
+  } catch (err) {
+    await error(`File generation failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 initializeTaskExecution();
 
 setInterval(async () => {
@@ -40,7 +71,7 @@ setInterval(async () => {
 }, 10000);
 
 server.listen(PORT, async () => {
-  console.log(`[${new Date().toISOString()}] bot_backend server running on port ${PORT}`);
-  await log(`bot_backend server running on port ${PORT}`);
-  await log('server.js version 2025-03-17-1 loaded');
+  console.log(`[${new Date().toISOString()}] ${BOT_NAME} server running on port ${PORT}`);
+  await log(`${BOT_NAME} server running on port ${PORT}`);
+  await log('server.js version 2025-03-22-2 loaded'); // Updated version
 });

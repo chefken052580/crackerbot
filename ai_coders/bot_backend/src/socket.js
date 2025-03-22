@@ -1,14 +1,15 @@
+// ai_coders/bot_backend/src/socket.js
 import io from 'socket.io-client';
 import { log } from './logger.js';
 
-const BOT_NAME = "bot_backend";
+const BOT_NAME = 'bot_backend';
 export const WEBSOCKET_SERVER_URL = process.env.WEBSOCKET_SERVER_URL || 'wss://websocket-visually-sterling-spider.ngrok-free.app';
 
 export const botSocket = io(WEBSOCKET_SERVER_URL, {
   reconnection: true,
-  reconnectionAttempts: Infinity, // Allow infinite retries
+  reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
-  reconnectionDelayMax: 10000, // Exponential backoff up to 10s
+  reconnectionDelayMax: 10000,
   timeout: 20000,
   transports: ['websocket'],
   path: '/socket.io',
@@ -34,12 +35,15 @@ botSocket.on('connect', async () => {
 botSocket.on('connect_error', async (error) => {
   console.error(`${BOT_NAME} WebSocket connection error:`, error.message);
   await log(`${BOT_NAME} WebSocket connection error: ${error.message}`);
+  setTimeout(() => {
+    if (!botSocket.connected) botSocket.connect();
+  }, 500);
 });
 
 botSocket.on('disconnect', async (reason) => {
   console.log(`${BOT_NAME} WebSocket disconnected. Reason:`, reason);
   await log(`${BOT_NAME} WebSocket disconnected: ${reason}`);
-  isRegistered = false; // Reset registration on disconnect
+  isRegistered = false;
 });
 
 botSocket.on('reconnect_attempt', async (attempt) => {
