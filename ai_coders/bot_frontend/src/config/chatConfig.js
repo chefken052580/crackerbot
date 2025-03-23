@@ -13,7 +13,7 @@ export const commands = [
       bg: "bg-gray-900",
       chatBg: "bg-gray-800",
       text: "text-gray-300",
-      user: "text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform animate-pulse",
+      user: "text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2",
       bot: "text-neon-green bg-gray-800",
       system: "text-neon-blue bg-gray-900 italic",
       command: "text-neon-purple bg-gray-700",

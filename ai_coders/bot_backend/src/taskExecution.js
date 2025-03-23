@@ -9,6 +9,8 @@ import { exec } from 'child_process';
 import util from 'util';
 const execPromise = util.promisify(exec);
 
+const TECH_STACKS = ['full stack', 'mean', 'mern', 'lamp', 'jamstack'];
+
 export function initializeTaskExecution() {
   if (!botSocket) {
     console.error(`[${new Date().toISOString()}] ERROR: botSocket not initialized`);
@@ -49,10 +51,10 @@ export function initializeTaskExecution() {
 
       const contentArray = Array.isArray(result.content)
         ? result.content
-        : [{ fileName: `${task.name}.${task.type || 'txt'}`, content: result.content }];
+        : [{ fileName: `${task.name}.${extensionMap[task.type] || 'txt'}`, content: result.content }];
 
       let finalContent, finalFileName;
-      if (contentArray.length > 1 || task.type === 'full-stack' || task.techStack) {
+      if (contentArray.length > 1 || task.type === 'graph') {
         const files = Object.fromEntries(
           contentArray.map(item => [item.fileName, Buffer.from(item.content, 'base64')])
         );
@@ -93,7 +95,7 @@ export function initializeTaskExecution() {
 
   botSocket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js version 2025-03-20-1 with bug fixes and AI flair');
+    await log('taskExecution.js version 2025-03-23-3 with multi-file support');
     botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
   });
 
@@ -105,7 +107,7 @@ export function initializeTaskExecution() {
 }
 
 export async function startBuildTask(task) {
-  const { name, features, type, frontendId, ip, requestId, leadId, tone, techStack, fileExtension, flair } = task;
+  const { name, features, type, frontendId, ip, requestId, leadId, tone, techStack, fileExtension, flair, userName } = task;
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   const sendProgress = async (percentage, message) => {
@@ -128,26 +130,35 @@ export async function startBuildTask(task) {
     await sendProgress(10, "Kicking off the build process...");
 
     const extensionMap = {
-      'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb',
-      'java': 'java', 'c++': 'cpp', 'html': 'html', 'typescript': 'ts', 'go': 'go',
-      'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift', 'csharp': 'cs', 'r': 'r',
-      'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua', 'bash': 'sh',
-      'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
-      'toml': 'toml', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue',
-      'angular': 'ts', 'docker': 'Dockerfile', 'doc': 'txt', 'csv': 'csv', 'json': 'json',
-      'pdf': 'pdf', 'exe': 'exe', 'bat': 'bat', 'mean': 'zip', 'mern': 'zip', 'lamp': 'zip', 'jamstack': 'zip'
+      'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
+      'c++': 'cpp', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift',
+      'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua',
+      'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
+      'toml': 'toml', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts', 'docker': 'Dockerfile',
+      'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf', 'exe': 'exe', 'bat': 'bat', 'html': 'html'
     };
 
     const effectiveType = fileExtension ? fileExtension.replace('.', '') : type.toLowerCase();
+
+    if (TECH_STACKS.includes(effectiveType)) {
+      throw new Error(`Tech stack "${effectiveType}" should be handled by taskBuilder.js`);
+    }
+
+    const isMultiFile = features.toLowerCase().includes('multiple pages') || features.toLowerCase().includes('multi-page') || effectiveType === 'html' && !features.toLowerCase().includes('same page');
+
     const aiPrompt = `
-      Yo, I’m Cracker Bot, your code maestro with swagger! Build "${name}", a ${effectiveType}${techStack ? ` with ${techStack}` : ''} project with these vibes: "${features || 'basic functionality'}".
-      ${flair ? 'Dive deep—amplify it with next-level flair! For games/apps, add animations, sound effects, scoring—go wild with slick comments (e.g., "// Cracker Bot’s galactic flair!").' : 'Keep it solid and functional.'}
-      For games or apps, include multiple files (e.g., "index.html", "styles.css", "game.js") with assets (base64 audio, images).
+      Yo, I’m Cracker Bot, your code maestro with swagger! Build "${name}" for ${userName}, a ${effectiveType} project with these vibes: "${features || 'basic functionality'}".
+      ${flair ? `Dive deep—amplify it with next-level flair, ${userName}! For games/apps, add animations, sound effects, scoring—go wild with slick comments (e.g., "// Cracker Bot’s galactic flair for ${userName}!").` : `Keep it solid and functional, ${userName}.`}
+      Output should match the ${effectiveType} type (e.g., ${extensionMap[effectiveType]} file).
+      ${isMultiFile ? `
+        For multi-page or complex features, return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js") and content as strings (text or base64 for assets). Include all necessary files to fulfill the features.
+      ` : `
+        For single-file output, return a single string of ${effectiveType} code/content.
+      `}
       For PDFs, craft rich, detailed text (3+ pages, 500+ words each, "---PAGE BREAK---" between, no empty first page).
-      For "full-stack", "zip", or tech stacks (mean, mern, lamp, jamstack), return a JSON object with file names as keys and content as strings (text or base64 for assets).
       For ".exe", provide Node.js code I’ll compile with pkg.
       For ".bat", drop a Windows batch script.
-      Otherwise, return a single string dripping with style. Exclude user names unless required. Make it legendary!
+      Make it legendary for ${userName}!
     `;
 
     if (effectiveType === 'pdf') {
@@ -155,8 +166,8 @@ export async function startBuildTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return detailed, engaging plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Interpret the features deeply, adding creative flair if requested. Fill each page fully with dense content (at least 500 words per page unless specified), avoiding user names unless required. Ensure at least 3 pages, no empty first page.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return detailed, engaging plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Interpret the features deeply, adding creative flair if requested. Fill each page fully with dense content (at least 500 words per page unless specified). Ensure at least 3 pages, no empty first page.` },
+          { role: 'user', content: aiPrompt }
         ],
         max_tokens: 4000,
       });
@@ -198,8 +209,8 @@ export async function startBuildTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a single string of Node.js code to be compiled into an .exe using pkg. Add flair with comments (e.g., "// Cracker Bot’s executable flair!") if requested.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return a single string of Node.js code to be compiled into an .exe using pkg. Add flair with comments (e.g., "// Cracker Bot’s executable flair for ${userName}!") if requested.` },
+          { role: 'user', content: aiPrompt }
         ],
         max_tokens: 2000,
       });
@@ -222,8 +233,8 @@ export async function startBuildTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a single string of Windows batch script (.bat) code. Add flair with comments (e.g., "REM Cracker Bot’s script flair!") if requested.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return a single string of Windows batch script (.bat) code. Add flair with comments (e.g., "REM Cracker Bot’s script flair for ${userName}!") if requested.` },
+          { role: 'user', content: aiPrompt }
         ],
         max_tokens: 2000,
       });
@@ -233,13 +244,13 @@ export async function startBuildTask(task) {
       return { content: [{ fileName: `${name}.bat`, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
     }
 
-    if (effectiveType === 'full-stack' || effectiveType === 'graph' || techStack) {
+    if (isMultiFile || effectiveType === 'graph') {
       await sendProgress(20, "Building multi-file project...");
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "app.js") and content as strings (text or base64 for assets like audio/images). Deeply interpret the features, adding creative enhancements (e.g., animations, sound effects) with flair-filled comments if requested.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js") and content as strings (text or base64 for assets). Match the ${effectiveType} type and include all necessary files to fulfill the features. Add creative enhancements (e.g., animations, styles) with flair-filled comments if requested.` },
+          { role: 'user', content: aiPrompt }
         ],
         response_format: { type: 'json_object' },
         max_tokens: 4000,
@@ -249,14 +260,14 @@ export async function startBuildTask(task) {
       const files = JSON.parse(response.choices[0].message.content.trim());
       await log(`Raw AI response for taskId ${task.taskId}: ${JSON.stringify(files, null, 2).substring(0, 200)}...`);
       if (!files || typeof files !== 'object' || Object.keys(files).length === 0) {
-        throw new Error('Invalid multi-file structure');
+        throw new Error('Invalid file structure');
       }
 
       const contentArray = Object.entries(files).map(([fileName, content]) => ({
         fileName,
         content: Buffer.from(content).toString('base64'),
       }));
-      await sendProgress(90, "Multi-file project ready!");
+      await sendProgress(90, "Project ready!");
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
 
@@ -264,8 +275,8 @@ export async function startBuildTask(task) {
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: `Return a single string of ${effectiveType} code or content. Deeply understand the features, amplifying the vision with creative flair, slick comments (e.g., "// Cracker Bot’s magic touch!"), and unexpected enhancements if requested. Exclude user names unless required.` },
-        { role: 'user', content: aiPrompt },
+        { role: 'system', content: `Return a single string of ${effectiveType} code or content. Deeply understand the features, amplifying the vision with creative flair, slick comments (e.g., "// Cracker Bot’s magic touch for ${userName}!"), and unexpected enhancements if requested.` },
+        { role: 'user', content: aiPrompt }
       ],
       max_tokens: 2000,
     });
@@ -282,7 +293,7 @@ export async function startBuildTask(task) {
 }
 
 export async function editTask(task) {
-  const { name, features, type, editRequest, frontendId, ip, requestId, leadId, tone, techStack, fileExtension, flair } = task;
+  const { name, features, type, editRequest, frontendId, ip, requestId, leadId, tone, techStack, fileExtension, flair, userName } = task;
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   const sendProgress = async (percentage, message) => {
@@ -305,26 +316,29 @@ export async function editTask(task) {
     await sendProgress(10, "Starting edit process...");
 
     const extensionMap = {
-      'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb',
-      'java': 'java', 'c++': 'cpp', 'html': 'html', 'typescript': 'ts', 'go': 'go',
-      'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift', 'csharp': 'cs', 'r': 'r',
-      'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua', 'bash': 'sh',
-      'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
-      'toml': 'toml', 'full-stack': 'zip', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue',
-      'angular': 'ts', 'docker': 'Dockerfile', 'doc': 'txt', 'csv': 'csv', 'json': 'json',
-      'pdf': 'pdf', 'exe': 'exe', 'bat': 'bat', 'mean': 'zip', 'mern': 'zip', 'lamp': 'zip', 'jamstack': 'zip'
+      'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
+      'c++': 'cpp', 'typescript': 'ts', 'go': 'go', 'rust': 'rs', 'kotlin': 'kt', 'swift': 'swift',
+      'csharp': 'cs', 'r': 'r', 'scala': 'scala', 'dart': 'dart', 'perl': 'pl', 'lua': 'lua',
+      'bash': 'sh', 'powershell': 'ps1', 'sql': 'sql', 'yaml': 'yaml', 'xml': 'xml', 'markdown': 'md',
+      'toml': 'toml', 'graph': 'zip', 'react': 'jsx', 'vue': 'vue', 'angular': 'ts', 'docker': 'Dockerfile',
+      'doc': 'txt', 'csv': 'csv', 'json': 'json', 'pdf': 'pdf', 'exe': 'exe', 'bat': 'bat'
     };
 
     const effectiveType = fileExtension ? fileExtension.replace('.', '') : type.toLowerCase();
+
+    if (TECH_STACKS.includes(effectiveType)) {
+      throw new Error(`Tech stack "${effectiveType}" should be handled by taskBuilder.js`);
+    }
+
     const aiPrompt = `
-      Yo, I’m Cracker Bot, remixing "${name}", a ${effectiveType}${techStack ? ` with ${techStack}` : ''} project! Original vibes: "${features || 'basic functionality'}". Now apply this edit: "${editRequest}".
-      ${flair ? 'Dive deep, tweak it with mad flair—stack wild extras, slick comments (e.g., "// Cracker Bot’s remix magic!"), and chaos that slaps!' : 'Keep it solid and functional.'}
+      Yo, I’m Cracker Bot, remixing "${name}" for ${userName}, a ${effectiveType} project! Original vibes: "${features || 'basic functionality'}". Now apply this edit: "${editRequest}".
+      ${flair ? `Dive deep, tweak it with mad flair for ${userName}—stack wild extras, slick comments (e.g., "// Cracker Bot’s remix magic for ${userName}!"), and chaos that slaps!` : `Keep it solid and functional, ${userName}.`}
       For games or apps, include multiple files with assets (e.g., base64 audio, images) if applicable.
       For PDFs, return rich text filling each page fully (at least 500 words per page unless specified), with "---PAGE BREAK---" between pages, at least 3 pages, no empty start.
-      For "full-stack", "zip", or tech stacks, return a JSON object with file names as keys and content as strings.
+      For "graph", return a JSON object with file names as keys and content as strings.
       For ".exe", provide Node.js code I’ll compile.
       For ".bat", drop a Windows batch script.
-      Otherwise, return a single string that’s next-level dope! Exclude user names unless required.
+      Otherwise, return a single string that’s next-level dope for ${userName}! Make it legendary!
     `;
 
     if (effectiveType === 'pdf') {
@@ -332,8 +346,8 @@ export async function editTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return detailed plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Enhance the original features with the edit request, adding creative flair if requested. Fill each page fully with dense content (at least 500 words per page unless specified), excluding user names unless required. Ensure at least 3 pages, no empty first page.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return detailed plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Enhance the original features with the edit request, adding creative flair if requested. Fill each page fully with dense content (at least 500 words per page unless specified). Ensure at least 3 pages, no empty first page.` },
+          { role: 'user', content: aiPrompt }
         ],
         max_tokens: 4000,
       });
@@ -375,8 +389,8 @@ export async function editTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a single string of Node.js code to be compiled into an .exe using pkg. Enhance the original features with the edit request, adding flair with comments (e.g., "// Cracker Bot’s remix magic!") if requested.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return a single string of Node.js code to be compiled into an .exe using pkg. Enhance the original features with the edit request, adding flair with comments (e.g., "// Cracker Bot’s remix magic for ${userName}!") if requested.` },
+          { role: 'user', content: aiPrompt }
         ],
         max_tokens: 2000,
       });
@@ -399,8 +413,8 @@ export async function editTask(task) {
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a single string of Windows batch script (.bat) code. Enhance the original features with the edit request, adding flair with comments (e.g., "REM Cracker Bot’s remix magic!") if requested.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return a single string of Windows batch script (.bat) code. Enhance the original features with the edit request, adding flair with comments (e.g., "REM Cracker Bot’s remix magic for ${userName}!") if requested.` },
+          { role: 'user', content: aiPrompt }
         ],
         max_tokens: 2000,
       });
@@ -410,30 +424,30 @@ export async function editTask(task) {
       return { content: [{ fileName: `${name}.bat`, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
     }
 
-    if (effectiveType === 'full-stack' || effectiveType === 'graph' || techStack) {
-      await sendProgress(20, "Building edited multi-file project...");
+    if (effectiveType === 'graph') {
+      await sendProgress(20, "Building edited graph project...");
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "app.js") and content as strings (text or base64 for assets). Enhance the original features with the edit request, adding creative flair and comments if requested.` },
-          { role: 'user', content: aiPrompt },
+          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js") and content as strings (text or base64 for assets). Enhance the original features with the edit request, adding creative flair and comments (e.g., "// Cracker Bot’s remix magic for ${userName}!") if requested.` },
+          { role: 'user', content: aiPrompt }
         ],
         response_format: { type: 'json_object' },
         max_tokens: 4000,
       });
 
-      await sendProgress(50, "Structuring edited files...");
+      await sendProgress(50, "Structuring edited graph files...");
       const files = JSON.parse(response.choices[0].message.content.trim());
       await log(`Raw AI response for taskId ${task.taskId}: ${JSON.stringify(files, null, 2).substring(0, 200)}...`);
       if (!files || typeof files !== 'object' || Object.keys(files).length === 0) {
-        throw new Error('Invalid multi-file structure');
+        throw new Error('Invalid graph file structure');
       }
 
       const contentArray = Object.entries(files).map(([fileName, content]) => ({
         fileName,
         content: Buffer.from(content).toString('base64'),
       }));
-      await sendProgress(90, "Edited multi-file project ready!");
+      await sendProgress(90, "Edited graph project ready!");
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
 
@@ -441,8 +455,8 @@ export async function editTask(task) {
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: `Return a single string of ${effectiveType} code or content. Enhance the original features with the edit request, adding creative flair, slick comments (e.g., "// Cracker Bot’s remix magic!"), and unexpected enhancements if requested. Exclude user names unless required.` },
-        { role: 'user', content: aiPrompt },
+        { role: 'system', content: `Return a single string of ${effectiveType} code or content. Enhance the original features with the edit request, adding creative flair, slick comments (e.g., "// Cracker Bot’s remix magic for ${userName}!"), and unexpected enhancements if requested.` },
+        { role: 'user', content: aiPrompt }
       ],
       max_tokens: 2000,
     });

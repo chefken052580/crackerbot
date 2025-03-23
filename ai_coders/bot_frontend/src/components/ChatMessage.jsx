@@ -1,4 +1,4 @@
-// bot_frontend/src/components/ChatMessage.jsx
+// ai_coders/bot_frontend/src/components/ChatMessage.jsx
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
@@ -17,6 +17,8 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
   }, [progress, taskResult]);
 
   const msg = typeof message === 'string' ? { text: message } : message;
+  // Only prepend user name for text field messages (no options in original message)
+  const displayText = msg.type === 'user' && !msg.options ? `${msg.user}: ${msg.text}` : msg.text;
 
   const renderProgressBar = () => {
     const barStyle = {
@@ -38,11 +40,25 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
   const renderTaskResult = () => {
     if (!taskResult && !msg.fileContent) return null;
     const { downloadLink } = taskResult || {};
+    const hasContent = msg.fileContent || (taskResult && taskResult.content);
     return (
-      <div className="task-result">
-        {downloadLink && <a href={downloadLink} download className={colorScheme.accent}>Download</a>}
-        {msg.fileContent && (
-          <button onClick={onPreview} className={`${colorScheme.button} ${colorScheme.buttonText} ml-2`}>Preview</button>
+      <div className="task-result flex space-x-2">
+        {hasContent && (
+          <>
+            <a
+              href={downloadLink || `data:text/plain;base64,${msg.fileContent || taskResult.content}`}
+              download={msg.fileName || 'download'}
+              className={`${colorScheme.accent} hover:underline`}
+            >
+              Download
+            </a>
+            <button
+              onClick={onPreview}
+              className={`${colorScheme.button} ${colorScheme.buttonText} hover:scale-105 transition-transform`}
+            >
+              Preview
+            </button>
+          </>
         )}
       </div>
     );
@@ -51,25 +67,39 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
   const renderOptions = () => {
     if (!msg.options || msg.options.length === 0) return null;
     return (
-      <div className="options-container">
-        {msg.options.map((option, idx) => (
-          <button
-            key={idx}
-            onClick={() => onOptionClick(option)}
-            className={`${colorScheme.bubble} m-1 px-2 py-1 rounded`}
-          >
-            {option}
-          </button>
-        ))}
+      <div className="options-container flex flex-wrap gap-2 mt-2">
+        {msg.options.map((option, idx) => {
+          const isObject = typeof option === 'object' && option.text && option.style;
+          const text = isObject ? option.text : option;
+          const style = isObject ? option.style : 'normal';
+          const isLarge = style === 'large';
+          return (
+            <button
+              key={idx}
+              onClick={() => onOptionClick(text)}
+              className={`${colorScheme.bubble} ${
+                isLarge ? 'px-4 py-2 text-lg font-semibold' : 'px-2 py-1 text-base'
+              } rounded-full shadow-md hover:scale-105 transition-transform duration-200`}
+            >
+              {text}
+            </button>
+          );
+        })}
       </div>
     );
   };
 
-  const messageClass = `${msg.type === 'user' ? colorScheme.user : msg.type === 'system' ? colorScheme.system : colorScheme.bot} p-2 mb-2 rounded`;
+  const messageClass = `${
+    msg.type === 'user'
+      ? `${colorScheme.user} no-animation`
+      : msg.type === 'system'
+      ? colorScheme.system
+      : colorScheme.bot
+  } p-2 mb-2 rounded`;
 
   return (
-    <div className={`chat-message ${messageClass}`}>
-      <p>{msg.text}</p>
+    <div className={`chat-message ${messageClass}`} style={msg.type === 'user' ? { animation: 'none' } : {}}>
+      <p className="break-words">{displayText}</p>
       {progress !== undefined && renderProgressBar()}
       {(taskResult || msg.fileContent) && renderTaskResult()}
       {msg.options && renderOptions()}
@@ -82,6 +112,7 @@ ChatMessage.propTypes = {
   progress: PropTypes.number,
   taskResult: PropTypes.shape({
     downloadLink: PropTypes.string,
+    content: PropTypes.string,
   }),
   onPreview: PropTypes.func,
   onOptionClick: PropTypes.func,

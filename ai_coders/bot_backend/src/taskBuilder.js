@@ -1,41 +1,40 @@
-// bot_backend/src/taskBuilder.js
-import fsPromises from 'fs/promises'; // Promises API
-import fs from 'fs'; // Full fs module for streams
-import JSZip from 'jszip'; // ESM import
+// ai_coders/bot_backend/src/taskBuilder.js
+import fsPromises from 'fs/promises';
+import fs from 'fs';
+import JSZip from 'jszip';
 import { createCanvas } from 'canvas';
 import { spawn } from 'child_process';
 import { generateResponse } from './aiHelper.js';
 import { log, error } from './logger.js';
-import { botSocket } from './socket.js'; // Explicit import
+import { botSocket } from './socket.js';
 
-/** Checks if FFmpeg is available on the system */
+// Minimal requirements for tech stacks (guidance for AI, not enforced)
+const TECH_STACK_MINIMUMS = {
+  'full stack': 'At least a frontend (e.g., HTML/CSS/JS) and backend (e.g., Node.js server).',
+  'mean': 'MongoDB, Express.js, Angular, Node.js with a DB model file.',
+  'mern': 'MongoDB, Express.js, React, Node.js with a DB model file.',
+  'lamp': 'PHP frontend, MySQL DB config, and supporting files.',
+  'jamstack': 'Static frontend (e.g., HTML/CSS/JS) and an API or serverless function.'
+};
+
+/** Checks if FFmpeg is available */
 const ffmpegAvailable = () => new Promise((resolve) => {
   const ffmpeg = spawn('ffmpeg', ['-version']);
   ffmpeg.on('error', () => resolve(false));
   ffmpeg.on('close', (code) => resolve(code === 0));
 });
 
-/** Checks if ImageMagick is available on the system */
+/** Checks if ImageMagick is available */
 const imagemagickAvailable = () => new Promise((resolve) => {
   const convert = spawn('convert', ['-version']);
   convert.on('error', () => resolve(false));
   convert.on('close', (code) => resolve(code === 0));
 });
 
-/**
- * Builds a new task based on the provided type and features
- * @param {Object} task - Task object with taskId, type, name, features, etc.
- * @param {string} userName - Name of the user requesting the task
- * @param {string} tone - Tone for AI responses
- * @param {string} requestId - Unique request identifier
- * @param {string} leadId - Lead identifier
- * @returns {Object} Result containing content or error
- */
 export async function buildTask(task, userName, tone, requestId, leadId) {
   const frontendId = task.frontendId || botSocket.id;
   const ip = task.ip || 'unknown';
 
-  // Validate required task fields
   if (!task || !task.taskId || !task.type) {
     const errMsg = `Missing required task fields: taskId or type for requestId ${requestId}`;
     await error(errMsg);
@@ -50,7 +49,40 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
     await log(`Processing task type: ${taskType} for taskId ${task.taskId}`);
     let contentArray = [];
 
-    if (['image', 'jpeg', 'gif', 'mp4'].includes(taskType)) {
+    const isTechStack = Object.keys(TECH_STACK_MINIMUMS).includes(taskType);
+    if (isTechStack) {
+      const filesPrompt = `
+        Yo, I’m Cracker Bot, your code architect with swagger! Build "${task.name}", a ${taskType} project with features: "${task.features || 'basic functionality'}".
+        Minimum vibe: ${TECH_STACK_MINIMUMS[taskType]}. But go above and beyond—craft a full set of files (e.g., frontend, backend, configs, scripts) that nail these features.
+        Deeply interpret the features, deciding what’s needed (e.g., DB schemas, API routes, UI components) and add extras with mad flair (e.g., "// Cracker Bot’s epic touch!").
+        Return a JSON object with file names as keys (e.g., "index.html", "server.js") and content as strings (text or base64 for assets). 
+        No limits—make it legendary, robust, and ready to roll!
+      `;
+      const filesResponse = await generateResponse(filesPrompt, userName, tone, { response_format: { type: 'json_object' }, max_tokens: 4000 });
+      const files = JSON.parse(filesResponse);
+      if (!files || typeof files !== 'object' || Object.keys(files).length === 0) {
+        throw new Error('AI failed to generate valid tech stack files');
+      }
+
+      const readmePrompt = `
+        Yo, I’m Cracker Bot, your setup guru! Craft an in-depth README.md for "${task.name}", a ${taskType} project with features: "${task.features || 'basic functionality'}".
+        Analyze these AI-generated files: ${Object.keys(files).join(', ')}. 
+        Provide detailed, step-by-step setup and installation instructions tailored to these files and features. 
+        Specify all dependencies, downloads, or installs needed (e.g., "npm install express mongoose" for MERN) with exact commands and how to run the project (e.g., "node server.js"). 
+        Include prerequisites (e.g., "Install MongoDB for MEAN") and troubleshooting tips with Cracker Bot flair (e.g., "// Stuck? Cracker Bot’s got your back!"). 
+        Make it at least 500 words, markdown-formatted, and dripping with style!
+      `;
+      const readmeResponse = await generateResponse(readmePrompt, userName, tone, { max_tokens: 2000 });
+
+      contentArray = [
+        ...Object.entries(files).map(([fileName, content]) => ({
+          fileName,
+          content: Buffer.from(content).toString('base64')
+        })),
+        { fileName: 'README.md', content: Buffer.from(readmeResponse).toString('base64') }
+      ];
+      await log(`Generated ${taskType} task ${task.taskId} with files: ${contentArray.map(f => f.fileName).join(', ')}`);
+    } else if (['image', 'jpeg', 'gif', 'mp4'].includes(taskType)) {
       if (taskType === 'image' || taskType === 'jpeg') {
         const format = taskType === 'image' ? 'png' : 'jpeg';
         const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
@@ -97,28 +129,6 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
           await log(`FFmpeg unavailable; falling back to PNG for task ${task.taskId}`);
         }
       }
-    } else if (taskType === 'graph') {
-      const graphResponse = await generateResponse(
-        `Yo ${userName}, Cracker Bot’s on it! Generate a dope graph for "${task.name}" with features: ${task.features} using Chart.js. Drop index.html, script.js, and package.json as JSON with some Cracker Bot swagger!`,
-        userName,
-        tone
-      );
-      let files;
-      try {
-        files = JSON.parse(graphResponse);
-        if (!files['index.html'] || !files['script.js'] || !files['package.json']) {
-          throw new Error("Missing required files for graph");
-        }
-      } catch (parseErr) {
-        await error(`Failed to parse AI response for graph task "${task.name}": ${parseErr.message}`);
-        files = {
-          'index.html': `<!DOCTYPE html><html><body><h1>${task.name} - Cracker Bot Graph</h1><canvas id="myChart"></canvas><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><script src="script.js"></script></body></html>`,
-          'script.js': `// Cracker Bot’s slick graph magic!\nconst ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['A', 'B', 'C'], datasets: [{ label: '${task.name}', data: [10, 20, 30], backgroundColor: '#00ff00' }] }, options: { scales: { y: { beginAtZero: true } } } });`,
-          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", description: "Cracker Bot Graph", dependencies: { "chart.js": "^3.9.1" } }),
-          'run.bat': `@echo off\r\nstart "" "index.html"\r\necho Launched ${task.name} - Enjoy the vibes!\r\npause`
-        };
-      }
-      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content: Buffer.from(content).toString('base64') }));
     } else {
       throw new Error(`Task type "${taskType}" not handled by taskBuilder.js; deferring to taskExecution.js`);
     }
@@ -172,20 +182,10 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
   }
 }
 
-/**
- * Edits an existing task based on the provided edit request
- * @param {Object} task - Task object with taskId, type, name, features, editRequest, etc.
- * @param {string} userName - Name of the user requesting the edit
- * @param {string} tone - Tone for AI responses
- * @param {string} requestId - Unique request identifier
- * @param {string} leadId - Lead identifier
- * @returns {Object} Result containing content or error
- */
 export async function editTask(task, userName, tone, requestId, leadId) {
   const frontendId = task.frontendId || botSocket.id;
   const ip = task.ip || 'unknown';
 
-  // Validate required task fields
   if (!task || !task.taskId || !task.type) {
     const errMsg = `Missing required task fields: taskId or type for requestId ${requestId}`;
     await error(errMsg);
@@ -200,7 +200,39 @@ export async function editTask(task, userName, tone, requestId, leadId) {
     await log(`Processing edit task type: ${taskType} for taskId ${task.taskId}`);
     let contentArray = [];
 
-    if (['image', 'jpeg', 'gif', 'mp4'].includes(taskType)) {
+    const isTechStack = Object.keys(TECH_STACK_MINIMUMS).includes(taskType);
+    if (isTechStack) {
+      const filesPrompt = `
+        Yo, I’m Cracker Bot, remixing "${task.name}", a ${taskType} project! Original features: "${task.features || 'basic functionality'}". Now apply this edit: "${task.editRequest}".
+        Minimum vibe: ${TECH_STACK_MINIMUMS[taskType]}. But go wild—craft a full set of files (e.g., frontend, backend, configs) that crush these features and edits.
+        Deeply interpret the request, adding whatever’s needed (e.g., DB schemas, APIs, UI) with mad flair (e.g., "// Cracker Bot’s remix swagger!").
+        Return a JSON object with file names as keys and content as strings (text or base64 for assets). 
+        Make it dope, detailed, and beyond expectations!
+      `;
+      const filesResponse = await generateResponse(filesPrompt, userName, tone, { response_format: { type: 'json_object' }, max_tokens: 4000 });
+      const files = JSON.parse(filesResponse);
+      if (!files || typeof files !== 'object' || Object.keys(files).length === 0) {
+        throw new Error('AI failed to generate valid tech stack files for edit');
+      }
+
+      const readmePrompt = `
+        Yo, I’m Cracker Bot! Craft an in-depth README.md for "${task.name}", a ${taskType} project edited with features: "${task.features || 'basic functionality'}" and edit request: "${task.editRequest}".
+        Analyze these AI-generated files: ${Object.keys(files).join(', ')}. 
+        Provide detailed setup instructions based on the edited files and features, listing all dependencies (e.g., Node.js, MongoDB), downloads, or installs (e.g., "npm install express"), and how to run it (e.g., "node server.js"). 
+        Include prerequisites and troubleshooting with Cracker Bot flair (e.g., "// Edit not working? Cracker Bot’s gotcha!"). 
+        Make it 500+ words, markdown-formatted, and oozing with style!
+      `;
+      const readmeResponse = await generateResponse(readmePrompt, userName, tone, { max_tokens: 2000 });
+
+      contentArray = [
+        ...Object.entries(files).map(([fileName, content]) => ({
+          fileName,
+          content: Buffer.from(content).toString('base64')
+        })),
+        { fileName: 'README.md', content: Buffer.from(readmeResponse).toString('base64') }
+      ];
+      await log(`Generated edited ${taskType} task ${task.taskId} with files: ${contentArray.map(f => f.fileName).join(', ')}`);
+    } else if (['image', 'jpeg', 'gif', 'mp4'].includes(taskType)) {
       if (taskType === 'image' || taskType === 'jpeg') {
         const format = taskType === 'image' ? 'png' : 'jpeg';
         const outputFile = `/tmp/${task.name}-${Date.now()}.${format}`;
@@ -247,28 +279,6 @@ export async function editTask(task, userName, tone, requestId, leadId) {
           await log(`FFmpeg unavailable; falling back to PNG for task ${task.taskId}`);
         }
       }
-    } else if (taskType === 'graph') {
-      const graphResponse = await generateResponse(
-        `Yo ${userName}, Cracker Bot’s tweaking "${task.name}" graph with features: ${task.features}. Apply: ${task.editRequest}. Return Chart.js code, index.html, package.json as JSON with mad flair!`,
-        userName,
-        tone
-      );
-      let files;
-      try {
-        files = JSON.parse(graphResponse);
-        if (!files['index.html'] || !files['script.js'] || !files['package.json']) {
-          throw new Error("Missing required files for graph edit");
-        }
-      } catch (parseErr) {
-        await error(`Failed to parse AI response for graph edit "${task.name}": ${parseErr.message}`);
-        files = {
-          'index.html': `<!DOCTYPE html><html><body><h1>${task.name} - Cracker Bot Graph (Edited)</h1><canvas id="myChart"></canvas><script src="https://cdn.jsdelivr.net/npm/chart.js"></script><script src="script.js"></script></body></html>`,
-          'script.js': `// Cracker Bot’s remix swagger!\nconst ctx = document.getElementById('myChart').getContext('2d'); new Chart(ctx, { type: 'bar', data: { labels: ['X', 'Y', 'Z'], datasets: [{ label: '${task.name} (Edited)', data: [15, 25, 35], backgroundColor: '#ff00ff' }] }, options: { scales: { y: { beginAtZero: true } } } });`,
-          'package.json': JSON.stringify({ name: task.name, version: "1.0.0", description: "Cracker Bot Graph", dependencies: { "chart.js": "^3.9.1" } }),
-          'run.bat': `@echo off\r\nstart "" "index.html"\r\necho Launched ${task.name} - Enjoy the vibes!\r\npause`
-        };
-      }
-      contentArray = Object.entries(files).map(([fileName, content]) => ({ fileName, content: Buffer.from(content).toString('base64') }));
     } else {
       throw new Error(`Task type "${taskType}" not handled by taskBuilder.js; deferring to taskExecution.js`);
     }
@@ -278,7 +288,7 @@ export async function editTask(task, userName, tone, requestId, leadId) {
     }
 
     const response = await generateResponse(
-      `Edits on "${task.name}" v${task.version} are live, ${userName}! ${contentArray.length} file(s) ready to roll with Cracker Bot swagger!`,
+      `Edits on "${task.name}" v${task.version || 1} are live, ${userName}! ${contentArray.length} file(s) ready to roll with Cracker Bot swagger!`,
       userName,
       tone
     );
@@ -286,7 +296,7 @@ export async function editTask(task, userName, tone, requestId, leadId) {
     botSocket.emit('taskResult', {
       taskId: task.taskId,
       content: contentArray,
-      fileName: contentArray.length > 1 ? `${task.name}-v${task.version}.zip` : contentArray[0].fileName,
+      fileName: contentArray.length > 1 ? `${task.name}-v${task.version || 1}.zip` : contentArray[0].fileName,
       type: task.type,
       name: task.name,
       frontendId,
@@ -322,48 +332,38 @@ export async function editTask(task, userName, tone, requestId, leadId) {
   }
 }
 
-/** Generates an image (PNG or JPEG) from a description with flair */
 async function generateImage(description, outputFile, format) {
-  const canvas = createCanvas(400, 300); // Larger canvas for more detail
+  const canvas = createCanvas(400, 300);
   const ctx = canvas.getContext('2d');
-  
-  // Cracker Bot flair: Neon gradient background
   const gradient = ctx.createLinearGradient(0, 0, 400, 300);
   gradient.addColorStop(0, '#00ff00');
   gradient.addColorStop(1, '#ff00ff');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, 400, 300);
-
-  // Text with shadow
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 24px Arial';
   ctx.textAlign = 'center';
   ctx.shadowColor = '#000000';
   ctx.shadowBlur = 5;
-  ctx.fillText(description.slice(0, 50), 200, 150); // Limit text for readability
-  ctx.shadowBlur = 0; // Reset shadow
-
-  // Cracker Bot watermark
+  ctx.fillText(description.slice(0, 50), 200, 150);
+  ctx.shadowBlur = 0;
   ctx.fillStyle = '#00ffff';
   ctx.font = 'italic 14px Arial';
   ctx.fillText('Cracker Bot Creation', 200, 280);
-
   await fsPromises.writeFile(outputFile, canvas.toBuffer(`image/${format}`));
   const content = (await fsPromises.readFile(outputFile)).toString('base64');
   await fsPromises.unlink(outputFile).catch((err) => log(`Failed to delete ${outputFile}: ${err.message}`));
   return content;
 }
 
-/** Generates a GIF from an array of text frames using ImageMagick */
 async function generateGif(frames, outputFile) {
   return new Promise((resolve, reject) => {
     const args = frames.flatMap((frame, i) => [
       '-delay', '50', '-size', '400x300',
-      '-background', i % 2 === 0 ? '#00ff00' : '#ff00ff', // Alternating neon colors
+      '-background', i % 2 === 0 ? '#00ff00' : '#ff00ff',
       '-fill', '#ffffff', '-font', 'Arial', '-pointsize', '24',
       `label:${frame}`,
     ]).concat(['-loop', '0', outputFile]);
-    
     const convert = spawn('convert', args);
     convert.on('close', async (code) => {
       if (code === 0) {
@@ -382,21 +382,20 @@ async function generateGif(frames, outputFile) {
   });
 }
 
-/** Generates an MP4 video from a script using FFmpeg */
 async function generateMp4(script, outputFile) {
   const slideTexts = script.split('. ').slice(0, 3);
   const slideFiles = [];
   for (let i = 0; i < slideTexts.length; i++) {
     const canvas = createCanvas(640, 480);
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = i % 2 === 0 ? '#00ff00' : '#ff00ff'; // Neon flair
+    ctx.fillStyle = i % 2 === 0 ? '#00ff00' : '#ff00ff';
     ctx.fillRect(0, 0, 640, 480);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 32px Arial';
     ctx.textAlign = 'center';
     ctx.fillText(slideTexts[i], 320, 240);
     ctx.font = 'italic 16px Arial';
-    ctx.fillText('Cracker Bot Vibes', 320, 460); // Watermark
+    ctx.fillText('Cracker Bot Vibes', 320, 460);
     const slideFile = `/tmp/slide-${Date.now()}-${i}.png`;
     await fsPromises.writeFile(slideFile, canvas.toBuffer('image/png'));
     slideFiles.push(slideFile);

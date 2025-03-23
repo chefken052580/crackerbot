@@ -1,9 +1,8 @@
-// bot_frontend/src/components/ChatRoom.jsx
+// ai_coders/bot_frontend/src/components/ChatRoom.jsx
 import React, { useState, useEffect, useRef } from "react";
 import io from "socket.io-client";
 import ChatMessage from "./ChatMessage";
 import WebSocketManager from "../utils/WebSocketManager";
-import TaskSelector from "./TaskSelector";
 import { commands, colorSchemes } from "../config/chatConfig";
 
 const WEBSOCKET_SERVER_URL = process.env.REACT_APP_WEBSOCKET_SERVER_URL || "wss://websocket-visually-sterling-spider.ngrok-free.app";
@@ -25,8 +24,7 @@ const ChatRoom = () => {
   const [isSending, setIsSending] = useState(false);
   const [postTaskOptions, setPostTaskOptions] = useState(null);
   const [retryAttempts, setRetryAttempts] = useState(0);
-  const [showTechStackSelector, setShowTechStackSelector] = useState(false);
-  const [forceRender, setForceRender] = useState(false); // New state to force render
+  const [forceRender, setForceRender] = useState(false);
   const chatEndRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
@@ -68,13 +66,13 @@ const ChatRoom = () => {
           taskFeatures: data.taskFeatures,
           progress: data.progress,
         };
-        
+
         setMessages((prev) => {
           const updatedMessages = [...prev, newMessage];
           console.log("ChatRoom: Appending message, new messages array:", updatedMessages);
           return updatedMessages;
         });
-        setForceRender((prev) => !prev); // Force re-render
+        setForceRender((prev) => !prev);
         setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
 
         if (data.type === "progress") {
@@ -261,7 +259,7 @@ const ChatRoom = () => {
     }
   }, [showCommands, filteredCommands]);
 
-  const sendMessage = (messageText, techStack = null, fileExtension = null) => {
+  const sendMessage = (messageText) => {
     if (!socketRef.current || !messageText.trim() || !isConnected || isSending) {
       console.warn("ChatRoom: Cannot send message", {
         socketExists: !!socketRef.current,
@@ -280,8 +278,6 @@ const ChatRoom = () => {
       userId: socketRef.current.socket.id,
       ip: window.location.hostname,
       frontendId: socketRef.current.socket.id,
-      techStack,
-      fileExtension,
     };
 
     setMessages((prev) => [...prev, {
@@ -301,20 +297,10 @@ const ChatRoom = () => {
       const command = commandParts[0].toLowerCase();
 
       switch (command) {
-        case "/create":
-          setShowTechStackSelector(true);
-          setIsSending(false);
-          setInput("");
-          return;
         case "/projects":
         case "/download":
           socketRef.current.emit("message", messageData);
-          setIsSending(false);
-          setInput("");
-          setShowCommands(false);
-          setCommandIndex(-1);
-          inputRef.current?.focus();
-          return;
+          break;
         case "/reset_name":
           localStorage.removeItem("userName");
           socketRef.current.emit("reset_user", { userId: socketRef.current.socket.id, ip: window.location.hostname });
@@ -326,15 +312,11 @@ const ChatRoom = () => {
             timestamp: new Date().toLocaleTimeString(),
           }]);
           setCurrentTask({ taskId: `initial_name:${socketRef.current.socket.id}`, step: "name", taskStatus: "pending" });
-          setIsSending(false);
-          setInput("");
-          setShowCommands(false);
-          setCommandIndex(-1);
-          inputRef.current?.focus();
-          return;
+          break;
         case "/tone":
           const tone = commandParts[1] || "default";
           messageData.text = `/tone ${tone}`;
+          socketRef.current.emit("message", messageData);
           break;
         case "/guide":
           setMessages((prev) => [...prev, {
@@ -344,12 +326,7 @@ const ChatRoom = () => {
             type: "system",
             timestamp: new Date().toLocaleTimeString(),
           }]);
-          setIsSending(false);
-          setInput("");
-          setShowCommands(false);
-          setCommandIndex(-1);
-          inputRef.current?.focus();
-          return;
+          break;
         default:
           setMessages((prev) => [...prev, {
             from: "Cracker Bot",
@@ -358,22 +335,11 @@ const ChatRoom = () => {
             type: "error",
             timestamp: new Date().toLocaleTimeString(),
           }]);
-          setIsSending(false);
-          setInput("");
-          setShowCommands(false);
-          setCommandIndex(-1);
-          inputRef.current?.focus();
-          return;
+          break;
       }
     } else if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
       messageData.type = "task_response";
       messageData.taskId = lastWelcome.taskId;
-      if (messageText === "Build-Something-Epic") {
-        setShowTechStackSelector(true);
-        setIsSending(false);
-        setInput("");
-        return;
-      }
     } else if (currentTask && currentTask.taskStatus !== "completed") {
       messageData.type = "task_response";
       messageData.taskId = currentTask.taskId;
@@ -383,11 +349,7 @@ const ChatRoom = () => {
         setCurrentTask((prev) => ({ ...prev, step: "choice" }));
       } else if (currentTask.step === "choice") {
         if (messageText.toLowerCase() === "build-something-epic") {
-          setCurrentTask((prev) => ({ ...prev, step: "tech_stack" }));
-          setShowTechStackSelector(true);
-          setIsSending(false);
-          setInput("");
-          return;
+          setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
         } else if (messageText.toLowerCase() === "chat") {
           setCurrentTask((prev) => ({ ...prev, step: "chat" }));
         }
@@ -503,26 +465,18 @@ const ChatRoom = () => {
     if (socketRef.current) {
       const oldUserId = socketRef.current.socket.id;
       const ip = window.location.hostname;
-
-      // Clear all state
       localStorage.removeItem("userName");
-      setMessages([]); // Clear messages immediately
+      setMessages([]);
       setTaskPending(null);
       setCurrentTask(null);
       setProgressMessages({});
       setEditMode(null);
       setRetryAttempts(0);
-
-      // Add reset message
       setMessages([{ from: "System", text: "Reset and reconnected", type: "system", timestamp: new Date().toLocaleTimeString() }]);
-      setForceRender((prev) => !prev); // Force render
-
-      // Disconnect and reinitialize socket
+      setForceRender((prev) => !prev);
       socketRef.current.emit("reset_user", { userId: oldUserId, ip });
       socketRef.current.disconnect();
-      initializeSocket(); // Reinitialize socket
-
-      // Emit frontend_connected with new ID
+      initializeSocket();
       setTimeout(() => {
         const newUserId = socketRef.current.socket.id;
         if (newUserId) {
@@ -534,7 +488,7 @@ const ChatRoom = () => {
           console.error("ChatRoom: New socket ID not available after reconnect");
           setMessages((prev) => [...prev, { from: "System", text: "Reconnect failed: No new ID", type: "error", timestamp: new Date().toLocaleTimeString() }]);
         }
-      }, 2000); // Increased to 2000ms
+      }, 2000);
     }
   };
 
@@ -576,10 +530,10 @@ const ChatRoom = () => {
     if (action === "Edit") {
       setCurrentTask({
         taskId: `${Date.now()}`,
-        step: "tech_stack",
+        step: "project_name",
         taskStatus: "pending",
       });
-      setTaskPending({ taskId: messageData.taskId, question: "Choose your tech stack!", options: [] });
+      setTaskPending({ taskId: messageData.taskId, question: "Enter a new name or keep it!", options: [] });
       setPostTaskOptions(null);
       setEditMode(null);
       setMessages((prev) => [...prev, {
@@ -653,12 +607,6 @@ const ChatRoom = () => {
       setTaskPending({ taskId: messageData.taskId, question: `Add features to enhance project ${projectId}`, options: [] });
       setCurrentTask({ taskId: messageData.taskId, step: "features", taskStatus: "pending" });
     }
-  };
-
-  const handleTaskSelection = ({ techStack, fileExtension }) => {
-    setCurrentTask((prev) => ({ ...prev, techStack, fileExtension, step: "project_name" }));
-    setShowTechStackSelector(false);
-    sendMessage("/create", techStack, fileExtension);
   };
 
   const currentScheme = colorSchemes[colorScheme];
@@ -756,7 +704,7 @@ const ChatRoom = () => {
           )}
 
           {showCommands && (
-            <div 
+            <div
               ref={commandsRef}
               tabIndex={0}
               onKeyDown={handleKeyDown}
@@ -774,27 +722,23 @@ const ChatRoom = () => {
             </div>
           )}
 
-          {showTechStackSelector && (
-            <TaskSelector onSelect={handleTaskSelection} onCancel={() => setShowTechStackSelector(false)} colorScheme={currentScheme} />
-          )}
-
           {postTaskOptions && (
             <div className="flex justify-center space-x-4 mt-4">
               <button
                 onClick={() => handlePostTaskAction("Edit")}
-                className={`px-4 py-2 rounded-full ${currentScheme.bubble}`}
+                className={`px-4 py-2 rounded-full ${currentScheme.bubble} text-lg font-semibold hover:scale-105 transition-transform`}
               >
                 Edit
               </button>
               <button
                 onClick={() => handlePostTaskAction("Add-More")}
-                className={`px-4 py-2 rounded-full ${currentScheme.bubble}`}
+                className={`px-4 py-2 rounded-full ${currentScheme.bubble} text-lg font-semibold hover:scale-105 transition-transform`}
               >
                 Add-More
               </button>
               <button
                 onClick={() => handlePostTaskAction("Done")}
-                className={`px-4 py-2 rounded-full ${currentScheme.bubble}`}
+                className={`px-4 py-2 rounded-full ${currentScheme.bubble} text-lg font-semibold hover:scale-105 transition-transform`}
               >
                 Done
               </button>

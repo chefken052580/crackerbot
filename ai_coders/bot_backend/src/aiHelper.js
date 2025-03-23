@@ -1,3 +1,4 @@
+// ai_coders/bot_backend/src/aiHelper.js
 import OpenAI from 'openai';
 import { log, error } from './logger.js';
 
@@ -5,7 +6,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export { openai }; // For taskExecution.js
+export { openai };
 
 export async function generateDatabaseSchema(prompt, userId) {
   if (!prompt || typeof prompt !== 'string') {
@@ -26,15 +27,19 @@ export async function generateDatabaseSchema(prompt, userId) {
   }
 }
 
-export async function generateResponse(prompt, userId, tone = "witty") {
+export async function generateResponse(prompt, userId, tone = "witty", options = {}) {
   if (!prompt || typeof prompt !== 'string') {
     throw new Error('Invalid prompt for response generation');
   }
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: `Respond in a ${tone} tone: ${prompt}` }],
+      messages: [
+        { role: "system", content: `You are Cracker Bot, a coding assistant. The user’s name is ${userId}—use this in your response and never call them 'Cracker Bot'. Respond in a ${tone} tone.` },
+        { role: "user", content: prompt }
+      ],
       max_tokens: 1000,
+      ...options,
     });
     const message = response.choices[0].message.content.trim();
     await log(`Generated response for user "${userId}" with tone "${tone}": ${message}`);
