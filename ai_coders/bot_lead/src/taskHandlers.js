@@ -507,7 +507,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
 }
 
 // Register taskResult listener once per botSocket instance
-export function registerTaskResultListener(botSocket) {
+export async function registerTaskResultListener(botSocket) {
   if (!taskListeners.has(botSocket)) {
     botSocket.on('taskResult', async (data) => {
       const { taskId, content, fileName, type, name, frontendId, ip, taskFeatures, version, error, requestId } = data;
@@ -605,10 +605,10 @@ export function registerTaskResultListener(botSocket) {
   }
 }
 
-async function getCompletedProjects(userName) {
-  return [];
+export async function getCompletedProjects(userName) { // Added async
+  return []; // Placeholder, replace with actual Redis logic if needed
 }
 
-async function getLatestProject(userName) {
-  return null;
+export async function getLatestProject(userName) { // Added async
+  return null; // Placeholder, replace with actual Redis logic if needed
 }
