@@ -25,7 +25,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       userInfo.favoriteTech = answer;
       await set(userInfoKey, userInfo);
       const nextQuestion = await generateResponse(
-        `Nice one, ${userName}! "${answer}" as your fave tech stack? I dig it. What’s your dream project?`,
+        `Yo ${userName}, "${answer}" as your fave tech? That’s fire! 🔥 What’s your dream project to unleash with it?`,
         userName,
         tone
       );
@@ -43,7 +43,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       userInfo.dreamProject = answer;
       await set(userInfoKey, userInfo);
       const nextQuestion = await generateResponse(
-        `"${answer}" sounds epic, ${userName}! What’s your coding superpower?`,
+        `"${answer}"? Epic vibes, ${userName}! 🌟 What’s your coding superpower to make it pop?`,
         userName,
         tone
       );
@@ -61,7 +61,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       userInfo.superpower = answer;
       await set(userInfoKey, userInfo);
       const chatEnd = await generateResponse(
-        `Sick, ${userName}! With ${userInfo.favoriteTech}, a dream like "${userInfo.dreamProject}", and your "${answer}" superpower, we’re a dynamic duo. What’s next?`,
+        `Sick move, ${userName}! With ${userInfo.favoriteTech}, a dream like "${userInfo.dreamProject}", and your "${answer}" superpower, we’re a cosmic duo! 🚀 What’s next on the horizon?`,
         userName,
         tone
       );
@@ -90,7 +90,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         taskState.step = "choice";
         await set(stateKey, taskState);
         const welcome = await generateResponse(
-          `Smooth move, ${userName}! I’m Cracker Bot, your code-slinging sidekick. What’s up?`,
+          `Smooth as butter, ${userName}! I’m Cracker Bot, your code-slinging wingman with swagger. What’s cooking in your genius brain? 🎸`,
           userName,
           tone
         );
@@ -105,10 +105,10 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
           taskId: taskState.taskId,
           frontendId,
         });
-        await log(`Set name to ${userName} for frontendId ${frontendId} and sent welcome`);
+        await log(`Set name to ${userName} for frontendId ${frontendId} and dropped a slick welcome`);
       } else {
         const errorMsg = await generateResponse(
-          `Yo, ${userName}, "${answer}" ain’t vibin’—keep it under 20 chars, alphanumeric with _ or -, try again! What’s your name?`,
+          `Yo ${userName}, "${answer}" ain’t vibin’—keep it tight under 20 chars, alphanumeric with _ or -, let’s try that again! What’s your name, legend?`,
           userName,
           tone
         );
@@ -133,7 +133,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         stateUpdate = { step: "project_name", taskId: newTaskId };
         await set(stateKey, stateUpdate);
         const namePrompt = await generateResponse(
-          `${userName}: Build-Something-Epic! Alright, let’s craft something epic! What’s this masterpiece called?`,
+          `${userName}, you’ve ignited Build-Something-Epic mode! Let’s craft a masterpiece that’ll shake the cosmos—what’s it called? 🌌`,
           userName,
           tone
         );
@@ -148,10 +148,10 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
           options: ["Name your project!"],
           frontendId,
         });
-        await log(`Started new task ${newTaskId} for ${userName} with step 'project_name'`);
+        await log(`Launched new task ${newTaskId} for ${userName} with step 'project_name'`);
       } else if (choice === "chat") {
         const chatPrompt = await generateResponse(
-          `${userName}: Chat! Cool vibes, let’s chat—what’s on your mind today?`,
+          `${userName}, Chat mode activated! Let’s vibe—what’s sparking in your mind today, fam? 🎤`,
           userName,
           tone
         );
@@ -165,10 +165,10 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
           user: userName,
           frontendId,
         });
-        await log(`Sent chat prompt to ${userName}`);
+        await log(`Dropped a chat prompt for ${userName}`);
       } else {
         const errorMsg = await generateResponse(
-          `Yo ${userName}, "${answer}" ain’t an option! Pick "Chat" or "Build-Something-Epic"!`,
+          `Whoa ${userName}, "${answer}" ain’t on the menu! Hit me with "Chat" or "Build-Something-Epic"—what’s your play?`,
           userName,
           tone
         );
@@ -196,7 +196,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         stateUpdate = { step: "type", taskId };
         await set(stateKey, stateUpdate);
         const typePrompt = await generateResponse(
-          `Slick choice, ${userName}! "${task.name}" is locked in. Pick your project type—tech stacks are up top, bold and ready to roll!`,
+          `Dope pick, ${userName}! "${task.name}" is locked and loaded. Pick your poison—tech stacks are bold up top, ready to rip! 🚀`,
           userName,
           tone
         );
@@ -217,7 +217,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         });
       } else {
         const errorMsg = await generateResponse(
-          `Yo ${userName}, "${answer}" ain’t cutting it—keep it under 50 chars, alphanumeric with _ or -, try again! What’s it called?`,
+          `Nah ${userName}, "${answer}" ain’t cutting it—keep it under 50 chars, alphanumeric with _ or -, give it another spin! What’s the name?`,
           userName,
           tone
         );
@@ -241,7 +241,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       const validTypes = [...TECH_STACKS.map(s => s.toLowerCase()), ...TASK_TYPES];
       if (!validTypes.includes(selectedType)) {
         const errorMsg = await generateResponse(
-          `Hold up, ${userName}, "${answer}" ain’t on the list! Pick a type or stack from the options!`,
+          `Hold the line, ${userName}! "${answer}" ain’t in the playbook—pick a type or stack from the lineup!`,
           userName,
           tone
         );
@@ -270,12 +270,12 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       await set(stateKey, stateUpdate);
       const nextPrompt = task.type === 'full stack'
         ? await generateResponse(
-            `${userName}: Full Stack! Sweet! What network we rolling with?`,
+            `${userName}, Full Stack in the house! What network’s fueling this beast? 🌐`,
             userName,
             tone
           )
         : await generateResponse(
-            `${userName}: ${task.type.toUpperCase()}! Awesome! What features we packing into "${task.name}"?`,
+            `${userName}, ${task.type.toUpperCase()} locked in! What epic features are we jamming into "${task.name}"? 💥`,
             userName,
             tone
           );
@@ -302,7 +302,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       stateUpdate = { step: "pending_features", taskId };
       await set(stateKey, stateUpdate);
       const featuresPrompt = await generateResponse(
-        `${userName}: ${task.network || 'no network'}! Nice! What features we packing into "${task.name}"?`,
+        `${userName}, ${task.network || 'no network'} set! What features are we stacking into "${task.name}" to make it legendary? 🎨`,
         userName,
         tone
       );
@@ -332,7 +332,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       await updateTaskStatus(taskId, 'in_progress');
 
       const startMsg = await generateResponse(
-        `Kicking off "${task.name}" v${task.version}, ${userName}! Let’s get this party started!`,
+        `Revving up "${task.name}" v${task.version}, ${userName}! Let’s blast this into orbit! 🚀`,
         userName,
         tone
       );
@@ -361,20 +361,20 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       break;
 
     case 'review':
-      if (choice === "add-more") {
+      if (choice === "refine project") {
         task.step = 'pending_features';
         task.status = 'pending';
         await hSet('tasks', taskId, task);
         stateUpdate = { step: "pending_features", taskId };
         await set(stateKey, stateUpdate);
         const previousProject = await get(`project:${userName}:${taskId}`);
-        const morePrompt = await generateResponse(
-          `${userName}: Add-More! What extra features we stacking onto "${taskName}"?`,
+        const refinePrompt = await generateResponse(
+          `${userName}, let’s juice up "${taskName}"! What extra flair or features are we pumping into this bad boy? ⚡️`,
           userName,
           tone
         );
         botSocket.emit('message', {
-          text: morePrompt,
+          text: refinePrompt,
           type: "question",
           taskId,
           from: 'Cracker Bot',
@@ -388,21 +388,21 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
           taskFeatures: task.features,
           previousContent: previousProject ? previousProject.content : null,
         });
-      } else if (choice === "edit") {
+      } else if (choice === "restart") {
         task.step = 'project_name';
         task.status = 'pending_restart';
         task.features = null;
         await hSet('tasks', taskId, task);
         stateUpdate = { step: "project_name", taskId };
         await set(stateKey, stateUpdate);
-        const namePrompt = await generateResponse(
-          `${userName}: Edit! Restarting "${taskName}" from scratch! What’s the new name or stick with "${taskName}"?`,
+        const restartPrompt = await generateResponse(
+          `${userName}, restarting "${taskName}"! Fresh slate, new fate—what’s the new name or we sticking with the OG vibe? 🎬`,
           userName,
           tone
         );
         await redisClient.del('lastGeneratedTask');
         botSocket.emit('message', {
-          text: namePrompt,
+          text: restartPrompt,
           type: "question",
           taskId,
           from: 'Cracker Bot',
@@ -414,7 +414,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         });
       } else if (choice === "done") {
         const doneMsg = await generateResponse(
-          `${userName}: Done! "${taskName}" is a wrap! This masterpiece is locked and loaded—what’s next?`,
+          `${userName}, "${taskName}" is a galactic hit! Locked in your vault—scope it with /projects or let’s spark something new! 🏆`,
           userName,
           tone
         );
@@ -437,7 +437,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         const latestProject = await getLatestProject(userName);
         const latestName = latestProject ? latestProject.name : 'none yet';
         const welcome = await generateResponse(
-          `Yo ${userName}, you’ve got ${projectCount} bangers in the stash—latest: "${latestName}". Hit /projects to check ’em or let’s cook up something new!`,
+          `Yo ${userName}, you’ve stacked ${projectCount} masterpieces—latest banger: "${latestName}". Hit /projects to flex or let’s drop another bomb! 💣`,
           userName,
           tone
         );
@@ -461,7 +461,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
           ? `data:text/plain;base64,${taskData.content}`
           : null;
         const reviewPrompt = await generateResponse(
-          `Yo ${userName}, pick your move for "${taskName}"—edit it, add more, or call it done?`,
+          `Yo ${userName}, "${taskName}" is live and kicking! Restart it, refine it, or seal the deal? 🎉`,
           userName,
           tone
         );
@@ -476,7 +476,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
           target: 'bot_frontend',
           ip,
           user: userName,
-          options: ["Edit", "Add-More", "Done"],
+          options: ["Restart", "Refine Project", "Done"],
           frontendId,
           taskName: taskName,
           taskType: taskType,
@@ -487,7 +487,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
 
     default:
       const lostMsg = await generateResponse(
-        `Lost the thread on "${taskId}", ${userName}! What’s the next step?`,
+        `Lost the plot on "${taskId}", ${userName}! Where we steering this ship next? 🌠`,
         userName,
         tone
       );
@@ -519,7 +519,7 @@ export async function registerTaskResultListener(botSocket) {
 
       if (error) {
         const errorMsg = await generateResponse(
-          `Yo ${userName}, something went sideways with "${name}": ${error}. Retry or tweak it?`,
+          `Yo ${userName}, "${name}" hit a cosmic snag: ${error}. Let’s rewind or remix it—your call! ⚠️`,
           userName,
           tone
         );
@@ -554,7 +554,7 @@ export async function registerTaskResultListener(botSocket) {
       await redisClient.set('lastGeneratedTask', name);
 
       const completeMsg = await generateResponse(
-        `${userName}, "${name}" (${type} v${version}) is live! Time to polish it or take it to the next level!`,
+        `${userName}, "${name}" (${type} v${version}) just dropped! It’s a certified banger—time to tweak or level it up! 🎵`,
         userName,
         tone
       );
@@ -581,7 +581,7 @@ export async function registerTaskResultListener(botSocket) {
       await updateTaskStatus(taskId, 'pending_review');
 
       const reviewPrompt = await generateResponse(
-        `Yo ${userName}, "${name}" is ready! Edit it, add more, or call it done?`,
+        `Yo ${userName}, "${name}" is ready to shine! Restart it, refine it, or lock it in the vault? ✨`,
         userName,
         tone
       );
@@ -593,7 +593,7 @@ export async function registerTaskResultListener(botSocket) {
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Edit", "Add-More", "Done"],
+        options: ["Restart", "Refine Project", "Done"],
         frontendId,
         taskName: name,
         taskType: type,
@@ -601,14 +601,23 @@ export async function registerTaskResultListener(botSocket) {
       });
     });
     taskListeners.add(botSocket);
-    await log('Registered taskResult listener for botSocket');
+    await log('Registered taskResult listener for botSocket with cosmic flair');
   }
 }
 
-export async function getCompletedProjects(userName) { // Added async
-  return []; // Placeholder, replace with actual Redis logic if needed
+export async function getCompletedProjects(userName) {
+  const projectKeys = await redisClient.keys(`project:${userName}:*`);
+  const projects = await Promise.all(
+    projectKeys.map(async (key) => {
+      const project = await get(key);
+      return project && project.completed ? project : null;
+    })
+  );
+  return projects.filter(p => p !== null);
 }
 
-export async function getLatestProject(userName) { // Added async
-  return null; // Placeholder, replace with actual Redis logic if needed
+export async function getLatestProject(userName) {
+  const projects = await getCompletedProjects(userName);
+  if (!projects.length) return null;
+  return projects.sort((a, b) => parseInt(b.taskId) - parseInt(a.taskId))[0];
 }

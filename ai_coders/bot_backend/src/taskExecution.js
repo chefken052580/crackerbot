@@ -7,9 +7,12 @@ import fs from 'node:fs/promises';
 import PDFDocument from 'pdfkit';
 import { exec } from 'child_process';
 import util from 'util';
+import { buildTask, editTask as editTaskBuilder } from './taskBuilder.js';
+
 const execPromise = util.promisify(exec);
 
 const TECH_STACKS = ['full stack', 'mean', 'mern', 'lamp', 'jamstack'];
+const MULTIMEDIA_TYPES = ['image', 'jpeg', 'gif', 'mp4'];
 
 export const extensionMap = {
   'javascript': 'js', 'js': 'js', 'python': 'py', 'php': 'php', 'ruby': 'rb', 'java': 'java',
@@ -46,7 +49,7 @@ export function initializeTaskExecution() {
       if (command === 'buildTask') {
         result = await startBuildTask(task);
       } else if (command === 'editTask') {
-        result = await editTask(task);
+        result = await startEditTask(task);
       } else {
         await error(`Unknown command ${command} for requestId ${requestId}`);
         botSocket.emit('taskResult', {
@@ -60,7 +63,7 @@ export function initializeTaskExecution() {
 
       const contentArray = Array.isArray(result.content)
         ? result.content
-        : [{ fileName: `${task.name}.${extensionMap[task.type] || 'txt'}`, content: result.content }];
+        : result.content ? [{ fileName: `${task.name}.${extensionMap[task.type] || 'txt'}`, content: result.content }] : [];
 
       let finalContent, finalFileName;
       if (contentArray.length > 1) {
@@ -69,11 +72,14 @@ export function initializeTaskExecution() {
         );
         finalContent = await zipFilesWithReadme(files, task);
         finalFileName = `${task.name}${task.version ? `-v${task.version}` : ''}.zip`;
-      } else {
+      } else if (contentArray.length === 1) {
         finalContent = Buffer.from(contentArray[0].content, 'base64');
         finalFileName = contentArray[0].fileName;
+      } else {
+        throw new Error('No valid content generated for task');
       }
 
+      await sendProgress(task.taskId, 100, "Build complete!", task.frontendId, task.ip, task.name, task.type, task.features, requestId, leadId);
       await log(`Prepared taskResult for taskId ${task.taskId} to frontendId ${task.frontendId} with requestId ${requestId}`);
       botSocket.emit('taskResult', {
         taskId: task.taskId,
@@ -104,7 +110,7 @@ export function initializeTaskExecution() {
 
   botSocket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js version 2025-03-23-5 with multi-file and type-specific support');
+    await log('taskExecution.js version 2025-03-24-4 with AI-driven flair and minimum requirements');
     botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
   });
 
@@ -115,33 +121,40 @@ export function initializeTaskExecution() {
   console.log(`[${new Date().toISOString()}] Task execution initialized`);
 }
 
+async function sendProgress(taskId, percentage, message, frontendId, ip, name, type, features, requestId, leadId) {
+  botSocket.emit('message', {
+    type: "progress",
+    taskId,
+    progress: percentage,
+    text: `Cracker Bot’s on it: ${message}`,
+    from: 'Cracker Bot',
+    target: 'bot_frontend',
+    frontendId,
+    ip,
+    name,
+    type,
+    taskFeatures: features,
+    requestId,
+    leadId,
+  });
+  await log(`Progress ${percentage}% for taskId ${taskId}: ${message}`);
+}
+
 export async function startBuildTask(task) {
   const { name, features, type, frontendId, ip, requestId, leadId, tone, techStack, fileExtension, flair, userName } = task;
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
-  const sendProgress = async (percentage, message) => {
-    botSocket.emit('taskResult', {
-      taskId: task.taskId,
-      progress: percentage,
-      name,
-      type,
-      frontendId,
-      ip,
-      taskFeatures: features,
-      requestId,
-      leadId,
-    });
-    await log(`Progress ${percentage}% for taskId ${task.taskId}: ${message}`);
-  };
-
   try {
     await log(`Starting build for ${name} (${type}) with features: "${features}"`);
-    await sendProgress(10, "Kicking off the build process...");
+    await sendProgress(task.taskId, 10, "Kicking off the build process...", frontendId, ip, name, type, features, requestId, leadId);
 
     const effectiveType = fileExtension ? fileExtension.replace('.', '') : type.toLowerCase();
 
-    if (TECH_STACKS.includes(effectiveType)) {
-      throw new Error(`Tech stack "${effectiveType}" should be handled by taskBuilder.js`);
+    if (TECH_STACKS.includes(effectiveType) || MULTIMEDIA_TYPES.includes(effectiveType)) {
+      await sendProgress(task.taskId, 20, "Handing off to taskBuilder for some epic flair...", frontendId, ip, name, type, features, requestId, leadId);
+      const result = await buildTask(task, userName, tone, requestId, leadId);
+      await sendProgress(task.taskId, 90, "Wrapping up the masterpiece...", frontendId, ip, name, type, features, requestId, leadId);
+      return result;
     }
 
     const isMultiFile = features.toLowerCase().includes('multiple pages') || 
@@ -149,33 +162,67 @@ export async function startBuildTask(task) {
                         (effectiveType === 'html' && !features.toLowerCase().includes('same page')) ||
                         features.toLowerCase().includes('bot') || features.toLowerCase().includes('app');
 
+    // Define minimum requirements per type
+    const minimumRequirements = {
+      html: 'Include a navigation bar, at least two interactive buttons, CSS styling, and JavaScript for interactivity.',
+      pdf: 'Generate at least 3 pages with 500+ words each, separated by "---PAGE BREAK---", no empty first page.',
+      exe: 'Provide Node.js code compilable with pkg, with basic functionality.',
+      bat: 'Create a functional Windows batch script.',
+      js: 'Include at least one function and basic logic.',
+      py: 'Include at least one function or class with basic logic.',
+      // Add more types as needed
+    };
+
     const aiPrompt = `
       Yo, I’m Cracker Bot, your code maestro with swagger! Build "${name}" for ${userName}, a ${effectiveType} project with these vibes: "${features || 'basic functionality'}".
-      ${flair ? `Dive deep—amplify it with next-level flair, ${userName}! For games/apps, add animations, sound effects, scoring—go wild with slick comments (e.g., "// Cracker Bot’s galactic flair for ${userName}!").` : `Keep it solid and functional, ${userName}.`}
+      Minimum requirements: ${minimumRequirements[effectiveType] || 'Create a functional output matching the type.'}
+      ${flair ? `
+        Dive deep—amplify it with next-level flair, ${userName}! Add creative enhancements like animations, slick styling, or dynamic features (e.g., for HTML: animated elements, transitions; for scripts: extra utilities). Include flair-filled comments (e.g., "// Cracker Bot’s galactic flair for ${userName}!") to make it pop. Exceed the user’s vision with unexpected, dope additions!
+      ` : `
+        Keep it solid and functional, ${userName}, meeting the minimum requirements with clean, usable code/content.
+      `}
       Output must match the ${effectiveType} type (e.g., ${extensionMap[effectiveType]} file).
       ${isMultiFile ? `
-        For multi-page, bots, or complex features requiring dependencies, return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js" or "${name}.py", "utils.py") and content as strings (text or base64 for assets). Include all necessary files to fulfill the features, with dependencies if needed (e.g., Python libs as separate files or import statements).
+        For multi-page, bots, or complex features requiring dependencies, return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js" or "${name}.py", "utils.py") and content as strings (text or base64 for assets). Include all necessary files to fulfill the features and minimum requirements, with dependencies if needed (e.g., Python libs as separate files or import statements).
       ` : `
-        For single-file output, return a single string of ${effectiveType} code/content.
+        For single-file output, return a single string of ${effectiveType} code/content meeting the minimum requirements and features.
       `}
-      For PDFs, craft rich, detailed text (3+ pages, 500+ words each, "---PAGE BREAK---" between, no empty first page).
+      For PDFs, craft rich, detailed text with the minimum page/word count.
       For ".exe", provide Node.js code I’ll compile with pkg.
       For ".bat", drop a Windows batch script.
       Make it legendary for ${userName}!
     `;
 
-    if (effectiveType === 'pdf') {
-      await sendProgress(20, "Generating PDF content...");
+    if (effectiveType === 'html' && !isMultiFile) {
+      await sendProgress(task.taskId, 20, "Generating a dope HTML page...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return detailed, engaging plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Interpret the features deeply, adding creative flair if requested. Fill each page fully with dense content (at least 500 words per page unless specified). Ensure at least 3 pages, no empty first page.` },
+          { role: 'system', content: `Return a single string of HTML code. Include a navigation bar, at least two interactive buttons, CSS styling, and JavaScript for interactivity as the bare minimum. Deeply interpret the features "${features}", adding creative flair (e.g., animations, transitions) with comments like "// Cracker Bot’s epic touch for ${userName}!" if flair is enabled. Ensure it’s a complete, usable webpage exceeding the user’s vision.` },
+          { role: 'user', content: aiPrompt }
+        ],
+        max_tokens: 3000,
+      });
+
+      const htmlContent = response.choices[0].message.content.trim();
+      await sendProgress(task.taskId, 50, "Adding AI-powered flair to the webpage...", frontendId, ip, name, type, features, requestId, leadId);
+      await log(`Generated HTML for taskId ${task.taskId}: ${htmlContent.substring(0, 200)}...`);
+      await sendProgress(task.taskId, 90, "Polishing the masterpiece...", frontendId, ip, name, type, features, requestId, leadId);
+      return { content: [{ fileName: `${name}.html`, content: Buffer.from(htmlContent).toString('base64') }], frontendId, ip, requestId, leadId };
+    }
+
+    if (effectiveType === 'pdf') {
+      await sendProgress(task.taskId, 20, "Generating PDF content...", frontendId, ip, name, type, features, requestId, leadId);
+      const response = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: `Return detailed, engaging plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Ensure at least 3 pages with 500+ words each, no empty first page. Interpret the features deeply, adding creative flair if requested.` },
           { role: 'user', content: aiPrompt }
         ],
         max_tokens: 4000,
       });
 
-      await sendProgress(50, "Formatting PDF...");
+      await sendProgress(task.taskId, 50, "Formatting PDF pages...", frontendId, ip, name, type, features, requestId, leadId);
       const content = response.choices[0].message.content.trim();
       await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
 
@@ -200,7 +247,7 @@ export async function startBuildTask(task) {
         stream.on('error', reject);
       });
 
-      await sendProgress(90, "Finalizing PDF...");
+      await sendProgress(task.taskId, 90, "Finalizing PDF...", frontendId, ip, name, type, features, requestId, leadId);
       const pdfContent = await fs.readFile(filePath, { encoding: 'base64' });
       await fs.unlink(filePath);
       await log(`Generated PDF for taskId ${task.taskId} with ${pages.length} pages`);
@@ -208,17 +255,17 @@ export async function startBuildTask(task) {
     }
 
     if (effectiveType === 'exe') {
-      await sendProgress(20, "Generating executable code...");
+      await sendProgress(task.taskId, 20, "Generating executable code...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a single string of Node.js code to be compiled into an .exe using pkg. Add flair with comments (e.g., "// Cracker Bot’s executable flair for ${userName}!") if requested.` },
+          { role: 'system', content: `Return a single string of Node.js code to be compiled into an .exe using pkg. Ensure basic functionality (e.g., console output or simple logic). Add flair with comments (e.g., "// Cracker Bot’s executable flair for ${userName}!") if requested.` },
           { role: 'user', content: aiPrompt }
         ],
         max_tokens: 2000,
       });
 
-      await sendProgress(50, "Compiling to .exe...");
+      await sendProgress(task.taskId, 50, "Compiling to .exe...", frontendId, ip, name, type, features, requestId, leadId);
       const jsContent = response.choices[0].message.content.trim();
       const jsFile = `/tmp/${name}-${task.taskId}.js`;
       await fs.writeFile(jsFile, jsContent);
@@ -227,64 +274,70 @@ export async function startBuildTask(task) {
       await fs.unlink(jsFile);
       await fs.unlink(`/tmp/${name}-${task.taskId}.exe`);
 
-      await sendProgress(90, "Executable ready!");
+      await sendProgress(task.taskId, 90, "Executable locked and loaded!", frontendId, ip, name, type, features, requestId, leadId);
       return { content: [{ fileName: `${name}.exe`, content: exeContent }], frontendId, ip, requestId, leadId };
     }
 
     if (effectiveType === 'bat') {
-      await sendProgress(20, "Crafting batch script...");
+      await sendProgress(task.taskId, 20, "Crafting batch script...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a single string of Windows batch script (.bat) code. Add flair with comments (e.g., "REM Cracker Bot’s script flair for ${userName}!") if requested.` },
+          { role: 'system', content: `Return a single string of Windows batch script (.bat) code. Ensure basic functionality (e.g., echo commands or file operations). Add flair with comments (e.g., "REM Cracker Bot’s script flair for ${userName}!") if requested.` },
           { role: 'user', content: aiPrompt }
         ],
         max_tokens: 2000,
       });
 
-      await sendProgress(90, "Batch script ready!");
+      await sendProgress(task.taskId, 90, "Batch script ready to roll!", frontendId, ip, name, type, features, requestId, leadId);
       const content = response.choices[0].message.content.trim();
       return { content: [{ fileName: `${name}.bat`, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
     }
 
     if (isMultiFile || effectiveType === 'graph') {
-      await sendProgress(20, "Building multi-file project...");
+      await sendProgress(task.taskId, 20, "Building multi-file project...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js" or "${name}.py", "utils.py") and content as strings (text or base64 for assets). Match the ${effectiveType} type and include all necessary files to fulfill the features. Add creative enhancements (e.g., animations, styles) with flair-filled comments if requested.` },
+          { role: 'system', content: `Return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js" or "${name}.py", "utils.py") and content as strings (text or base64 for assets). Match the ${effectiveType} type, include all necessary files to fulfill the features and minimum requirements, and add creative enhancements (e.g., animations, styles) with flair-filled comments if requested.` },
           { role: 'user', content: aiPrompt }
         ],
         response_format: { type: 'json_object' },
         max_tokens: 4000,
       });
 
-      await sendProgress(50, "Structuring files...");
-      const files = JSON.parse(response.choices[0].message.content.trim());
+      await sendProgress(task.taskId, 50, "Structuring files with swagger...", frontendId, ip, name, type, features, requestId, leadId);
+      let files;
+      try {
+        files = JSON.parse(response.choices[0].message.content.trim());
+      } catch (parseErr) {
+        await error(`Failed to parse AI response for taskId ${task.taskId}: ${parseErr.message}`);
+        files = { "error.txt": `Cracker Bot hit a snag: ${parseErr.message}. Retry with a tweak!` };
+      }
       await log(`Raw AI response for taskId ${task.taskId}: ${JSON.stringify(files, null, 2).substring(0, 200)}...`);
       if (!files || typeof files !== 'object' || Object.keys(files).length === 0) {
-        throw new Error('Invalid file structure');
+        throw new Error('Invalid file structure from AI');
       }
 
       const contentArray = Object.entries(files).map(([fileName, content]) => ({
         fileName,
         content: Buffer.from(content).toString('base64'),
       }));
-      await sendProgress(90, "Project ready!");
+      await sendProgress(task.taskId, 90, "Project ready to rock!", frontendId, ip, name, type, features, requestId, leadId);
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
 
-    await sendProgress(20, "Generating content...");
+    await sendProgress(task.taskId, 20, "Generating content with flair...", frontendId, ip, name, type, features, requestId, leadId);
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: `Return a single string of ${effectiveType} code or content. Deeply understand the features, amplifying the vision with creative flair, slick comments (e.g., "// Cracker Bot’s magic touch for ${userName}!"), and unexpected enhancements if requested.` },
+        { role: 'system', content: `Return a single string of ${effectiveType} code or content. Meet the minimum requirements: ${minimumRequirements[effectiveType] || 'basic functional output'}. Deeply understand the features "${features}", amplifying the vision with creative flair, slick comments (e.g., "// Cracker Bot’s magic touch for ${userName}!"), and unexpected enhancements if requested.` },
         { role: 'user', content: aiPrompt }
       ],
       max_tokens: 2000,
     });
 
-    await sendProgress(90, "Content ready!");
+    await sendProgress(task.taskId, 90, "Content primed and ready!", frontendId, ip, name, type, features, requestId, leadId);
     const content = response.choices[0].message.content.trim();
     await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
     const fileName = `${name}.${extensionMap[effectiveType] || 'txt'}`;
@@ -295,6 +348,25 @@ export async function startBuildTask(task) {
   }
 }
 
-export async function editTask(task) {
-  return startBuildTask(task); // Simplified for this example
+export async function startEditTask(task) {
+  const { name, features, type, frontendId, ip, requestId, leadId, tone, techStack, fileExtension, flair, userName } = task;
+
+  try {
+    await log(`Starting edit for ${name} (${type}) with features: "${features}"`);
+    await sendProgress(task.taskId, 10, "Kicking off the edit process...", frontendId, ip, name, type, features, requestId, leadId);
+
+    const effectiveType = fileExtension ? fileExtension.replace('.', '') : type.toLowerCase();
+
+    if (TECH_STACKS.includes(effectiveType) || MULTIMEDIA_TYPES.includes(effectiveType)) {
+      await sendProgress(task.taskId, 20, "Passing to taskBuilder for a remix...", frontendId, ip, name, type, features, requestId, leadId);
+      const result = await editTaskBuilder(task, userName, tone, requestId, leadId);
+      await sendProgress(task.taskId, 90, "Edit locked in—ready to roll!", frontendId, ip, name, type, features, requestId, leadId);
+      return result;
+    }
+
+    return await startBuildTask(task);
+  } catch (err) {
+    await error(`Error in startEditTask for taskId ${task.taskId}: ${err.message}`);
+    return { error: `Failed to edit task: ${err.message}`, frontendId, ip, requestId, leadId };
+  }
 }

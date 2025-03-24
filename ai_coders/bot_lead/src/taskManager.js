@@ -1,13 +1,13 @@
 // ai_coders/bot_lead/src/taskManager.js
 import { log, error } from './logger.js';
-import { redisClient, storeMessage, get, set, hGet, hSet, hDel, getCompletedProjects, getLatestProject, cacheTask } from './redisClient.js';
+import { redisClient, storeMessage, get, set, hGet, hSet, hDel } from './redisClient.js'; // Adjusted imports
+import { cacheCompletedTask, getCompletedProjects, getLatestProject } from './taskCache.js'; // Import from taskCache.js
 import { setLastGeneratedTask, delegateTask, updateTaskStatus } from './stateManager.js';
 import { generateResponse } from './aiHelper.js';
 import { zipFilesWithReadme } from './contentUtils.js';
 import { botSocket } from './socket.js';
 import { handleTaskResponse } from './taskHandlers.js';
 import { processGeneralMessage, fetchProjects } from './messageUtils.js';
-import { cacheCompletedTask } from './taskCache.js';
 import { DEFAULT_TONE, extensionMap } from './constants.js';
 
 export async function initTaskManager(botSocketArg) {
@@ -81,11 +81,12 @@ export async function initTaskManager(botSocketArg) {
     } else {
       taskState.step = 'choice';
       await set(stateKey, taskState);
-      const projectCount = (await getCompletedProjects(userName)).length;
-      const latestProject = await getLatestProject(userName);
-      const latestName = latestProject ? latestProject.name : 'none yet';
+      const projects = await getCompletedProjects(userName); // Use taskCache.js
+      const projectCount = projects.length;
+      const latestProject = await getLatestProject(userName); // Use taskCache.js
+      const latestName = latestProject ? latestProject.text.split(' - ')[0] : 'none yet';
       const welcome = await generateResponse(
-        `🎉 Welcome back, ${userName}! You’ve got ${projectCount} epic creation${projectCount === 1 ? '' : 's'} in the vault—latest banger: "${latestName}". Ready to drop the next hit? 🚀`,
+        `🎉 Welcome back, ${userName}! You’ve stacked ${projectCount} masterpiece${projectCount === 1 ? '' : 's'} in the vault—latest banger: "${latestName}". Ready to drop the next hit? 🚀`,
         userName,
         DEFAULT_TONE
       );
@@ -207,7 +208,7 @@ export async function initTaskManager(botSocketArg) {
       });
 
       const reviewPrompt = await generateResponse(
-        `🔥 Yo ${userName}, "${name}" is live! What’s next—polish it, pump it up, or seal the deal?`,
+        `🔥 Yo ${userName}, "${name}" is live! What’s next—restart it, refine it, or seal the deal?`,
         userName,
         tone
       );
@@ -219,7 +220,7 @@ export async function initTaskManager(botSocketArg) {
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ['Edit', 'Add-More', 'Done'],
+        options: ['Restart', 'Refine Project', 'Done'], // Updated to match your requirement
         frontendId,
         taskName: name,
         taskType: type,
@@ -248,9 +249,24 @@ export async function initTaskManager(botSocketArg) {
     const userInfoKey = `user:frontend:${frontendId}:info`;
     await redisClient.del(userKey);
     await redisClient.del(userInfoKey);
-    await redisClient.del(stateKey); // Fully reset state
-    await log(`Reset user for frontendId ${frontendId}`);
-    // No immediate message sent here—wait for frontend_connected
+    await redisClient.del(stateKey);
+    await log(`Reset user for frontendId ${frontendId} - fresh slate incoming!`);
+    const resetPrompt = await generateResponse(
+      `🌀 Yo, reset complete! I’m Cracker Bot—what’s your new name, champ? Drop it below! ✨`,
+      'Guest',
+      DEFAULT_TONE
+    );
+    socket.emit('message', {
+      text: resetPrompt,
+      type: 'question',
+      taskId: `initial_name:${frontendId}`,
+      from: 'Cracker Bot',
+      target: 'bot_frontend',
+      ip,
+      user: 'Guest',
+      options: ['Type your name below!'],
+      frontendId,
+    });
   });
 
   socket.on('error', (err) => {
@@ -291,34 +307,6 @@ export async function processMessage(botSocket, message) {
   let userName = await redisClient.get(userKey) || message.user || 'Guest';
   let tone = await get(toneKey) || DEFAULT_TONE;
   let taskState = await get(stateKey) || { step: 'name', taskId: `initial_name:${frontendId}` };
-
-  if (message.type === 'reset_user') {
-    await redisClient.del(userKey);
-    await redisClient.del(userInfoKey);
-    userName = 'Guest';
-    taskState = { step: 'name', taskId: `initial_name:${frontendId}` };
-    await set(stateKey, taskState);
-    const resetPrompt = await generateResponse(
-      `🌀 Yo, reset complete! I’m Cracker Bot—what’s your name, champ? Drop it below! ✨`,
-      userName,
-      tone
-    );
-    botSocket.emit('message', {
-      text: resetPrompt,
-      type: 'question',
-      taskId: taskState.taskId,
-      from: 'Cracker Bot',
-      target: 'bot_frontend',
-      ip,
-      user: userName,
-      options: ['Type your name below!'],
-      frontendId,
-    });
-    await log(`Reset user for frontendId ${frontendId} and prompted for name`);
-    return;
-  }
-
-  await log(`Processing type: ${message.type || 'general_message'}, taskId: ${message.taskId || 'none'}, step: ${taskState.step} - Cracker Bot’s on it!`);
 
   if (message.type === 'command') {
     const commandParts = message.text.split(' ');

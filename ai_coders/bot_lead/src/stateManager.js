@@ -1,3 +1,4 @@
+// ai_coders/bot_lead/src/stateManager.js
 import { log, error } from './logger.js';
 import { redisClient } from './redisClient.js';
 import { botSocket } from './socket.js';
@@ -23,17 +24,15 @@ export async function delegateTask(botSocketArg, botName, command, args) {
     throw new Error('WebSocket not connected');
   }
 
-  // Generate a unique requestId and include leadId (socket ID of bot_lead)
-  const requestId = Date.now().toString(); // Simple unique identifier
+  const requestId = Date.now().toString();
   const taskData = {
     type: 'message',
-    commandFlag: true, // Flag to identify as a command
+    commandFlag: true,
     target: botName,
     command,
     args: { ...args, frontendId, requestId, leadId: socket.id },
   };
 
-  // Log task delegation with requestId and leadId
   await log(`Delegating task to ${botName} with requestId ${requestId} and leadId ${socket.id}: ${JSON.stringify(taskData)}`);
   console.log(`[${new Date().toISOString()}] Emitting command as message to WebSocket server: ${JSON.stringify(taskData)}`);
   console.log(`[${new Date().toISOString()}] Socket state - connected: ${socket.connected}, id: ${socket.id}, transport: ${socket.io.engine.transport.name}`);
@@ -73,17 +72,21 @@ export async function delegateTask(botSocketArg, botName, command, args) {
 
     emitCommand();
 
-    // Listen for taskResult with matching requestId
-    const taskResultHandler = (data) => {
+    const taskResultHandler = async (data) => {
       console.log(`[${new Date().toISOString()}] Received taskResult for requestId ${data.requestId}: ${JSON.stringify(data)}`);
       if (data.requestId === requestId) {
-        socket.off('taskResult', taskResultHandler); // Clean up listener
-        if (!data.error) {
-          log(`Task ${command} completed by ${botName} for frontendId ${frontendId} with requestId ${requestId}`);
-          resolve(data);
-        } else {
-          error(`Task ${command} failed for frontendId ${frontendId} with requestId ${requestId}: ${data.error}`);
-          reject(new Error(data.error));
+        socket.off('taskResult', taskResultHandler);
+        try {
+          if (!data.error) {
+            await log(`Task ${command} completed by ${botName} for frontendId ${frontendId} with requestId ${requestId}`);
+            resolve(data);
+          } else {
+            await error(`Task ${command} failed for frontendId ${frontendId} with requestId ${requestId}: ${data.error}`);
+            reject(new Error(data.error));
+          }
+        } catch (err) {
+          await error(`Error handling taskResult for requestId ${requestId}: ${err.message}`);
+          reject(err);
         }
       }
     };
@@ -92,7 +95,7 @@ export async function delegateTask(botSocketArg, botName, command, args) {
 
     setTimeout(() => {
       if (!callbackReceived) {
-        socket.off('taskResult', taskResultHandler); // Clean up on timeout
+        socket.off('taskResult', taskResultHandler);
         error(`Task ${command} delegation to ${botName} timed out for frontendId ${frontendId} after ${maxAttempts} attempts with requestId ${requestId}`);
         reject(new Error('Task delegation timeout after 30s'));
       }
@@ -116,7 +119,7 @@ export async function updateTaskStatus(taskId, status) {
 
 (async () => {
   try {
-    await log('stateManager.js version 2025-03-17-1 loaded'); // Version bump for this update
+    await log('stateManager.js version 2025-03-24-1 loaded');
     const stored = await redisClient.get('lastGeneratedTask');
     if (stored) {
       lastGeneratedTask = JSON.parse(stored);
