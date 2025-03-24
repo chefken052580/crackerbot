@@ -42,7 +42,7 @@ const ChatRoom = () => {
           ...prev.filter(msg => msg.type !== "system" || !msg.text.includes("Reset and reconnected")),
           { 
             from: "System", 
-            text: "Cracker Bot’s fired up and ready to rock! 🚀", // Added flair
+            text: "Cracker Bot’s fired up and ready to rock! 🚀",
             type: "system", 
             timestamp: new Date().toLocaleTimeString() 
           }
@@ -75,34 +75,36 @@ const ChatRoom = () => {
         };
 
         setMessages((prev) => {
-          if (data.type === "progress" && data.taskId) {
-            const existingIndex = prev.findIndex(msg => msg.taskId === data.taskId && msg.type === "progress");
-            const updatedMessages = [...prev.filter(msg => msg.taskId !== data.taskId || msg.type !== "progress")];
+          if ((data.type === "progressUpdate" || data.type === "progress") && data.taskId) {
+            const existingIndex = prev.findIndex(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"));
             if (existingIndex !== -1) {
-              updatedMessages.push({ ...prev[existingIndex], progress: data.progress, text: data.text });
+              return [
+                ...prev.slice(0, existingIndex),
+                { ...prev[existingIndex], progress: data.progress, text: data.text, timestamp: new Date().toLocaleTimeString() },
+                ...prev.slice(existingIndex + 1)
+              ];
             } else {
-              updatedMessages.push(newMessage);
+              return [...prev, newMessage];
             }
-            return updatedMessages;
           } else if (data.type === "download" && data.taskId) {
-            const progressIndex = prev.findIndex(msg => msg.taskId === data.taskId && msg.type === "progress");
-            const updatedMessages = [...prev.filter(msg => msg.taskId !== data.taskId || msg.type !== "progress")];
+            const progressIndex = prev.findIndex(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"));
             if (progressIndex !== -1) {
-              updatedMessages.push({ 
-                ...prev[progressIndex], 
-                progress: 100, 
-                text: "Cracker Bot’s masterpiece is ready! 🎉" // Added flair
-              });
+              return [
+                ...prev.slice(0, progressIndex),
+                { ...prev[progressIndex], progress: 100, text: "Cracker Bot’s masterpiece is ready! 🎉", timestamp: new Date().toLocaleTimeString() },
+                ...prev.slice(progressIndex + 1),
+                newMessage
+              ];
             }
-            updatedMessages.push(newMessage);
-            return updatedMessages;
+            return [...prev, newMessage];
+          } else {
+            return [...prev, newMessage];
           }
-          return [...prev.filter(msg => msg.taskId !== data.taskId || msg.type !== "progress"), newMessage];
         });
         setForceRender((prev) => !prev);
         setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
 
-        if (data.type === "progress" && data.progress === 100) {
+        if (data.type === "progressUpdate" && data.progress === 100) {
           setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
         } else if (data.type === "download") {
           setTaskPending(null);
@@ -116,7 +118,7 @@ const ChatRoom = () => {
             text: proj.text,
             type: "project",
             taskId: data.taskId || `proj-${index}`,
-            options: proj.options.map(opt => opt.text), // e.g., ["Download", "Refine Project", "Delete"]
+            options: proj.options.map(opt => opt.text),
             projectData: proj,
             timestamp: new Date().toLocaleTimeString(),
           }));
@@ -161,7 +163,7 @@ const ChatRoom = () => {
         console.error("ChatRoom: WebSocket connect error:", error.message);
         setMessages((prev) => [...prev, { 
           from: "System", 
-          text: `Whoops! Connection glitch: ${error.message} (Retry ${retryAttempts + 1}/10) ⚡️`, // Added flair
+          text: `Whoops! Connection glitch: ${error.message} (Retry ${retryAttempts + 1}/10) ⚡️`,
           type: "error", 
           timestamp: new Date().toLocaleTimeString() 
         }]);
@@ -172,7 +174,7 @@ const ChatRoom = () => {
         console.log("ChatRoom: WebSocket disconnected:", reason);
         setMessages((prev) => [...prev, { 
           from: "System", 
-          text: `Offline: ${reason}—we’re staging a comeback! 💥`, // Added flair
+          text: `Offline: ${reason}—we’re staging a comeback! 💥`,
           type: "error", 
           timestamp: new Date().toLocaleTimeString() 
         }]);
@@ -290,16 +292,15 @@ const ChatRoom = () => {
       frontendId: socketRef.current.socket.id,
     };
 
-    if (!messageText.startsWith("/")) {
-      setMessages((prev) => [...prev, {
-        from: userName,
-        user: userName,
-        text: messageText.trim(),
-        type: "user",
-        timestamp: new Date().toLocaleTimeString(),
-        className: "user-message",
-      }]);
-    }
+    // Render all input as user messages, including commands
+    setMessages((prev) => [...prev, {
+      from: userName,
+      user: userName,
+      text: messageText.trim(),
+      type: "user",
+      timestamp: new Date().toLocaleTimeString(),
+      className: "user-message",
+    }]);
 
     const lastWelcome = messages.find(m => m.type === "success" && m.options && m.taskId);
     if (messageText.startsWith("/")) {
@@ -329,7 +330,7 @@ const ChatRoom = () => {
             setCurrentTask({ taskId: `initial_name:${socketRef.current.socket.id}`, step: "name", taskStatus: "pending" });
           }
           break;
-        case "/download": // Redirect to /projects for consistency
+        case "/download":
           socketRef.current.emit("message", { ...messageData, text: "/projects" });
           break;
         case "/guide":
@@ -539,6 +540,7 @@ const ChatRoom = () => {
       taskName,
       taskType,
       taskFeatures,
+      fileContent,
       commandFlag: action !== "Done",
       target: "bot_lead",
     };
@@ -586,7 +588,7 @@ const ChatRoom = () => {
         timestamp: new Date().toLocaleTimeString(),
       }]);
       setPostTaskOptions(null);
-      setCurrentTask(null); // Fully reset task
+      setCurrentTask(null);
       setTaskPending(null);
       setEditMode(null);
       setIsSending(false);
@@ -643,13 +645,13 @@ const ChatRoom = () => {
       )}
       <div className="flex-shrink-0 p-4 flex justify-between items-center relative z-10">
         <h2 className={`text-2xl font-bold ${currentScheme.accent}`}>
-          Cracker Bot Chat Room {editMode ? "(Edit Mode)" : ""} {/* Epic Hub */}
+          Cracker Bot Chat Room {editMode ? "(Edit Mode)" : ""}
         </h2>
         <div className="flex space-x-2">
           <select
             value={colorScheme}
             onChange={(e) => handleColorChange(e.target.value)}
-            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:shadow-glow transition-shadow`} // Added flair
+            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:shadow-glow transition-shadow`}
           >
             <option value="neon">Neon</option>
             <option value="cyberpunk">Cyberpunk</option>
@@ -659,7 +661,7 @@ const ChatRoom = () => {
           </select>
           <button
             onClick={toggleRecording}
-            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`} // Added flair
+            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
           >
             {isRecording ? "🎙️" : "🎤"}
           </button>
@@ -705,7 +707,7 @@ const ChatRoom = () => {
               </div>
             ))}
             {Object.entries(isTyping).map(([user, typing]) => typing && (
-              <div key={user} className="text-gray-500 italic animate-pulse">{`${user} is conjuring a message...`}</div> // Added flair
+              <div key={user} className="text-gray-500 italic animate-pulse">{`${user} is conjuring a message...`}</div>
             ))}
             <div ref={chatEndRef} />
           </div>

@@ -3,64 +3,60 @@ import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
 const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, colorScheme }) => {
-  const [progressValue, setProgressValue] = useState(progress || 0);
+  const [progressState, setProgressState] = useState({ value: progress || 0, text: '', taskId: null });
   const [isDelayed, setIsDelayed] = useState(false);
 
   useEffect(() => {
-    if (progress !== undefined) {
-      setProgressValue(progress);
+    if (message?.type === 'progressUpdate' || message?.type === 'progress') {
+      setProgressState({
+        value: message.progress || 0,
+        text: message.text || '',
+        taskId: message.taskId,
+      });
       const delayTimeout = setTimeout(() => {
-        if (progress < 100 && !taskResult) setIsDelayed(true);
+        if (message.progress < 100 && !taskResult) setIsDelayed(true);
       }, 10000);
       return () => clearTimeout(delayTimeout);
+    } else if (progress !== undefined) {
+      setProgressState(prev => ({ ...prev, value: progress }));
     }
-  }, [progress, taskResult]);
+  }, [message, progress, taskResult]);
 
   const msg = typeof message === 'string' ? { text: message } : message;
   const displayText = msg.type === 'user' && !msg.options ? `${msg.user}: ${msg.text}` : msg.text;
 
   const renderProgressBar = () => {
-    // Define neon colors for the gradient
-    const neonRed = '#ff1744';    // Start (0%)
-    const neonYellow = '#ffea00'; // Middle (50%)
-    const neonGreen = '#00e676';  // End (100%)
-
-    // Dynamic gradient based on progress
-    const gradientStops = [
-      `${neonRed} 0%`,
-      progressValue >= 50 ? `${neonYellow} ${progressValue}%` : `${neonRed} ${progressValue}%`,
-      progressValue >= 75 ? `${neonGreen} 100%` : `${neonYellow} 100%`,
-    ].join(', ');
-
+    if (!msg.taskId || progressState.value === 0) return null;
+  
+    const progressClass = progressState.value < 25 ? 'progress-start' :
+                          progressState.value < 75 ? 'progress-middle' : 'progress-end';
+  
     const barStyle = {
-      width: `${progressValue}%`,
-      background: `linear-gradient(to right, ${gradientStops})`,
-      transition: 'width 0.5s ease-in-out, box-shadow 0.3s ease-in-out', // Smooth transitions
-      boxShadow: `0 0 15px ${progressValue >= 75 ? neonGreen : progressValue >= 50 ? neonYellow : neonRed}, 0 0 5px ${progressValue >= 75 ? neonGreen : progressValue >= 50 ? neonYellow : neonRed} inset`, // Neon glow
-      borderRadius: '4px', // Slight rounding for flair
+      width: `${progressState.value}%`,
     };
-
-    // Dynamic progress text with flair
-    const progressText = isDelayed && progressValue < 100
-      ? 'Loading Project Download... ⚡️'
-      : progressValue < 25
-      ? 'Revving up! 🚀'
-      : progressValue < 50
-      ? 'Gaining steam! 💨'
-      : progressValue < 75
-      ? 'Halfway there! 🔥'
-      : progressValue < 100
-      ? 'Nailing it! 🎯'
-      : 'Done—epic win! 🏆';
-
-    const className = isDelayed ? 'progress-bar neon-pulse animate-bounce' : 'progress-bar';
-
+  
+    const progressText = progressState.text || (
+      isDelayed && progressState.value < 100
+        ? 'Loading Project Download... ⚡️'
+        : progressState.value < 25
+        ? 'Revving up! 🚀'
+        : progressState.value < 50
+        ? 'Gaining steam! 💨'
+        : progressState.value < 75
+        ? 'Halfway there! 🔥'
+        : progressState.value < 100
+        ? 'Nailing it! 🎯'
+        : 'Done—epic win! 🏆'
+    );
+  
+    const className = `progress-bar ${progressClass} ${isDelayed ? 'neon-pulse animate-bounce' : ''}`;
+  
     return (
-      <div className="progress-container mt-2 relative">
-        <div className={className} style={barStyle}></div>
-        <span className="progress-text absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-black font-semibold drop-shadow-md">
-          {progressText}
-        </span>
+      <div className="progress-container mt-2">
+        <p className="text-sm text-center mb-1 text-white">{progressText}</p>
+        <div className="w-full bg-gray-900 rounded-full h-6 overflow-hidden">
+          <div className={className} style={barStyle}></div>
+        </div>
       </div>
     );
   };
@@ -151,8 +147,8 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
 
   return (
     <div className={`chat-message ${messageClass}`} style={msg.type === 'user' ? { animation: 'none' } : {}}>
-      <p className="break-words">{displayText}</p>
-      {progress !== undefined && renderProgressBar()}
+      {(msg.type !== 'progressUpdate' && msg.type !== 'progress') && <p className="break-words">{displayText}</p>}
+      {(progressState.value > 0 || msg.type === 'progressUpdate' || msg.type === 'progress') && renderProgressBar()}
       {(taskResult || msg.fileContent) && renderTaskResult()}
       {msg.options && renderOptions()}
       {msg.projects && renderProjects()}

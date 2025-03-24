@@ -413,6 +413,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
           frontendId,
         });
       } else if (choice === "done") {
+        await log(`Processing 'Done' for taskId ${taskId} with taskName: ${taskName}`);
         const doneMsg = await generateResponse(
           `${userName}, "${taskName}" is a galactic hit! Locked in your vault—scope it with /projects or let’s spark something new! 🏆`,
           userName,
@@ -432,6 +433,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         if (taskData) {
           taskData.completed = true;
           await set(`project:${userName}:${taskId}`, taskData);
+          await log(`Marked project ${taskName} as completed for ${userName}`);
         }
         const projectCount = (await getCompletedProjects(userName)).length;
         const latestProject = await getLatestProject(userName);
@@ -610,7 +612,12 @@ export async function getCompletedProjects(userName) {
   const projects = await Promise.all(
     projectKeys.map(async (key) => {
       const project = await get(key);
-      return project && project.completed ? project : null;
+      try {
+        return project && project.completed ? project : null;
+      } catch (e) {
+        await log(`[ERROR] Failed to parse project ${key}: ${e.message}`);
+        return null; // Skip corrupted entries
+      }
     })
   );
   return projects.filter(p => p !== null);

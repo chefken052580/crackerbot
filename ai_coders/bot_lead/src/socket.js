@@ -37,7 +37,6 @@ botSocket.on('connect', async () => {
 botSocket.on('connect_error', async (error) => {
   console.error(`${BOT_NAME} hit a snag connecting to WebSocket: ${error.message}`);
   await log(`${BOT_NAME} WebSocket connection error: ${error.message}—retrying with grit!`);
-  // Do not emit to bot_frontend here; log only until a frontend connects
 });
 
 botSocket.on('disconnect', async (reason) => {
@@ -54,7 +53,7 @@ botSocket.on('taskResult', async (data) => {
 botSocket.on('command', async (data) => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${BOT_NAME} caught a command:`, data);
-  await log(`[${timestamp}] ${BOT_NAME} processing command: ${data.command} from frontendId ${data.frontendId}`);
+  await log(`[${timestamp}] ${BOT_NAME} processing command event: ${data.command} from frontendId ${data.frontendId}`);
 
   try {
     if (data.command === '/project_action') {
@@ -79,7 +78,7 @@ botSocket.on('command', async (data) => {
     await log(`${BOT_NAME} error handling command ${data.command}: ${error.message}`);
     botSocket.emit('message', {
       text: `Cracker Bot hit a wall with "${data.command}"—${error.message}. Retry?`,
-      type: "error",
+      type: 'error',
       from: 'Cracker Bot',
       target: 'bot_frontend',
       user: data.user || 'stranger',
@@ -90,6 +89,44 @@ botSocket.on('command', async (data) => {
 });
 
 botSocket.on('message', async (data) => {
-  console.log(`${BOT_NAME} received a message (non-command):`, data);
+  console.log(`${BOT_NAME} received a message:`, data);
   await log(`${BOT_NAME} got a message: ${JSON.stringify(data)}`);
+
+  // Handle commands sent as messages with type: "command"
+  if (data.type === 'command' && data.text && data.text.startsWith('/')) {
+    const timestamp = new Date().toISOString();
+    const command = data.text.split(' ')[0];
+    await log(`[${timestamp}] ${BOT_NAME} detected command in message: ${command} from frontendId ${data.frontendId}`);
+    try {
+      if (command === '/project_action') {
+        const userName = data.user || 'stranger';
+        await handleProjectAction(botSocket, data.action, {
+          userName,
+          taskId: data.taskId,
+          content: data.content,
+          fileName: data.fileName,
+          frontendId: data.frontendId,
+          ip: data.ip || 'unknown',
+        });
+        console.log(`${BOT_NAME} handled project action "${data.action}" for ${userName}`);
+        await log(`${BOT_NAME} executed project action: ${data.action} for task ${data.taskId}`);
+      } else {
+        await handleCommand(botSocket, command, data);
+        console.log(`${BOT_NAME} processed command "${command}" from message like a champ!`);
+        await log(`${BOT_NAME} handled command: ${command} from ${data.frontendId}`);
+      }
+    } catch (error) {
+      console.error(`${BOT_NAME} tripped over command "${command}" in message: ${error.message}`);
+      await log(`${BOT_NAME} error handling command ${command} in message: ${error.message}`);
+      botSocket.emit('message', {
+        text: `Cracker Bot hit a wall with "${command}"—${error.message}. Retry?`,
+        type: 'error',
+        from: 'Cracker Bot',
+        target: 'bot_frontend',
+        user: data.user || 'stranger',
+        ip: data.ip || 'unknown',
+        frontendId: data.frontendId,
+      });
+    }
+  }
 });

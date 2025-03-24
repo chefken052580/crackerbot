@@ -79,7 +79,7 @@ export function initializeTaskExecution() {
         throw new Error('No valid content generated for task');
       }
 
-      await sendProgress(task.taskId, 100, "Build complete!", task.frontendId, task.ip, task.name, task.type, task.features, requestId, leadId);
+      await sendProgress(task.taskId, 100, "Build complete—unleashing the beast! 🚀", task.frontendId, task.ip, task.name, task.type, task.features, requestId, leadId);
       await log(`Prepared taskResult for taskId ${task.taskId} to frontendId ${task.frontendId} with requestId ${requestId}`);
       botSocket.emit('taskResult', {
         taskId: task.taskId,
@@ -110,7 +110,7 @@ export function initializeTaskExecution() {
 
   botSocket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js version 2025-03-24-4 with AI-driven flair and minimum requirements');
+    await log('taskExecution.js version 2025-03-24-5 with single-line progress bar and AI flair');
     botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
   });
 
@@ -122,8 +122,8 @@ export function initializeTaskExecution() {
 }
 
 async function sendProgress(taskId, percentage, message, frontendId, ip, name, type, features, requestId, leadId) {
-  botSocket.emit('message', {
-    type: "progress",
+  const progressMessage = {
+    type: 'progressUpdate', // Changed to progressUpdate for single-line updates
     taskId,
     progress: percentage,
     text: `Cracker Bot’s on it: ${message}`,
@@ -132,11 +132,12 @@ async function sendProgress(taskId, percentage, message, frontendId, ip, name, t
     frontendId,
     ip,
     name,
-    type,
+    taskType: type,
     taskFeatures: features,
     requestId,
     leadId,
-  });
+  };
+  botSocket.emit('message', progressMessage);
   await log(`Progress ${percentage}% for taskId ${taskId}: ${message}`);
 }
 
@@ -146,14 +147,14 @@ export async function startBuildTask(task) {
 
   try {
     await log(`Starting build for ${name} (${type}) with features: "${features}"`);
-    await sendProgress(task.taskId, 10, "Kicking off the build process...", frontendId, ip, name, type, features, requestId, leadId);
+    await sendProgress(task.taskId, 10, "Kicking off the epic build... ⚡️", frontendId, ip, name, type, features, requestId, leadId);
 
     const effectiveType = fileExtension ? fileExtension.replace('.', '') : type.toLowerCase();
 
     if (TECH_STACKS.includes(effectiveType) || MULTIMEDIA_TYPES.includes(effectiveType)) {
-      await sendProgress(task.taskId, 20, "Handing off to taskBuilder for some epic flair...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 20, "Handing off to taskBuilder for some galactic flair...", frontendId, ip, name, type, features, requestId, leadId);
       const result = await buildTask(task, userName, tone, requestId, leadId);
-      await sendProgress(task.taskId, 90, "Wrapping up the masterpiece...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 90, "Polishing the cosmic masterpiece...", frontendId, ip, name, type, features, requestId, leadId);
       return result;
     }
 
@@ -170,7 +171,6 @@ export async function startBuildTask(task) {
       bat: 'Create a functional Windows batch script.',
       js: 'Include at least one function and basic logic.',
       py: 'Include at least one function or class with basic logic.',
-      // Add more types as needed
     };
 
     const aiPrompt = `
@@ -194,7 +194,7 @@ export async function startBuildTask(task) {
     `;
 
     if (effectiveType === 'html' && !isMultiFile) {
-      await sendProgress(task.taskId, 20, "Generating a dope HTML page...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 20, "Crafting a slick HTML page...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -205,14 +205,14 @@ export async function startBuildTask(task) {
       });
 
       const htmlContent = response.choices[0].message.content.trim();
-      await sendProgress(task.taskId, 50, "Adding AI-powered flair to the webpage...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 50, "Infusing HTML with AI-powered swagger...", frontendId, ip, name, type, features, requestId, leadId);
       await log(`Generated HTML for taskId ${task.taskId}: ${htmlContent.substring(0, 200)}...`);
-      await sendProgress(task.taskId, 90, "Polishing the masterpiece...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 90, "Polishing the webpage to perfection...", frontendId, ip, name, type, features, requestId, leadId);
       return { content: [{ fileName: `${name}.html`, content: Buffer.from(htmlContent).toString('base64') }], frontendId, ip, requestId, leadId };
     }
 
     if (effectiveType === 'pdf') {
-      await sendProgress(task.taskId, 20, "Generating PDF content...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 20, "Generating rich PDF content...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -222,7 +222,7 @@ export async function startBuildTask(task) {
         max_tokens: 4000,
       });
 
-      await sendProgress(task.taskId, 50, "Formatting PDF pages...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 50, "Formatting PDF with style...", frontendId, ip, name, type, features, requestId, leadId);
       const content = response.choices[0].message.content.trim();
       await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
 
@@ -247,7 +247,7 @@ export async function startBuildTask(task) {
         stream.on('error', reject);
       });
 
-      await sendProgress(task.taskId, 90, "Finalizing PDF...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 90, "Finalizing PDF with flair...", frontendId, ip, name, type, features, requestId, leadId);
       const pdfContent = await fs.readFile(filePath, { encoding: 'base64' });
       await fs.unlink(filePath);
       await log(`Generated PDF for taskId ${task.taskId} with ${pages.length} pages`);
@@ -255,7 +255,7 @@ export async function startBuildTask(task) {
     }
 
     if (effectiveType === 'exe') {
-      await sendProgress(task.taskId, 20, "Generating executable code...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 20, "Crafting executable code...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -265,7 +265,7 @@ export async function startBuildTask(task) {
         max_tokens: 2000,
       });
 
-      await sendProgress(task.taskId, 50, "Compiling to .exe...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 50, "Compiling to .exe with swagger...", frontendId, ip, name, type, features, requestId, leadId);
       const jsContent = response.choices[0].message.content.trim();
       const jsFile = `/tmp/${name}-${task.taskId}.js`;
       await fs.writeFile(jsFile, jsContent);
@@ -279,7 +279,7 @@ export async function startBuildTask(task) {
     }
 
     if (effectiveType === 'bat') {
-      await sendProgress(task.taskId, 20, "Crafting batch script...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 20, "Crafting a dope batch script...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -289,13 +289,13 @@ export async function startBuildTask(task) {
         max_tokens: 2000,
       });
 
-      await sendProgress(task.taskId, 90, "Batch script ready to roll!", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 90, "Batch script ready to rock!", frontendId, ip, name, type, features, requestId, leadId);
       const content = response.choices[0].message.content.trim();
       return { content: [{ fileName: `${name}.bat`, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
     }
 
     if (isMultiFile || effectiveType === 'graph') {
-      await sendProgress(task.taskId, 20, "Building multi-file project...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 20, "Building multi-file project with flair...", frontendId, ip, name, type, features, requestId, leadId);
       const response = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
@@ -323,11 +323,11 @@ export async function startBuildTask(task) {
         fileName,
         content: Buffer.from(content).toString('base64'),
       }));
-      await sendProgress(task.taskId, 90, "Project ready to rock!", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 90, "Multi-file project primed to shine!", frontendId, ip, name, type, features, requestId, leadId);
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
 
-    await sendProgress(task.taskId, 20, "Generating content with flair...", frontendId, ip, name, type, features, requestId, leadId);
+    await sendProgress(task.taskId, 20, "Generating content with epic flair...", frontendId, ip, name, type, features, requestId, leadId);
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
@@ -337,7 +337,7 @@ export async function startBuildTask(task) {
       max_tokens: 2000,
     });
 
-    await sendProgress(task.taskId, 90, "Content primed and ready!", frontendId, ip, name, type, features, requestId, leadId);
+    await sendProgress(task.taskId, 90, "Content locked and loaded!", frontendId, ip, name, type, features, requestId, leadId);
     const content = response.choices[0].message.content.trim();
     await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
     const fileName = `${name}.${extensionMap[effectiveType] || 'txt'}`;

@@ -1,17 +1,17 @@
 // ai_coders/bot_lead/src/commandHandler.js
-import { log } from './logger.js';
-import { redisClient } from './redisClient.js';
+import { log, error } from './logger.js';
+import { redisClient, storeMessage } from './redisClient.js';
 import { generateResponse } from './aiHelper.js';
 import { botSocket } from './socket.js';
-import { getCompletedProjects, deleteProject } from './taskCache.js'; // Import from taskCache.js
+import { getCompletedProjects, deleteProject } from './taskCache.js';
 
 export async function handleCommand(socket, command, data) {
   const ip = data.ip || 'unknown';
   const frontendId = data.frontendId || socket.id;
   const userKey = `user:frontend:${frontendId}:name`;
   const toneKey = `user:frontend:${frontendId}:tone`;
-  let userName = await redisClient.get(userKey) || 'stranger';
-  const tone = await redisClient.get(toneKey) || 'Cool, Edgy, Smooth, Super Smart'; // Default tone updated
+  let userName = (await redisClient.get(userKey)) || 'stranger';
+  const tone = (await redisClient.get(toneKey)) || 'Cool, Edgy, Smooth, Super Smart';
   await log(`Cracker Bot’s on it: Processing ${command} from ${frontendId} (${userName}) with ${tone} swagger`);
   botSocket.emit('typing', { target: 'bot_frontend', frontendId });
 
@@ -27,7 +27,7 @@ export async function handleCommand(socket, command, data) {
             userName,
             tone
           ),
-          type: "question",
+          type: 'question',
           taskId: `reset_name:${frontendId}:${Date.now()}`,
         };
         break;
@@ -43,7 +43,7 @@ export async function handleCommand(socket, command, data) {
               userName,
               toneArg
             ),
-            type: "success",
+            type: 'success',
           };
         } else {
           response = {
@@ -52,7 +52,7 @@ export async function handleCommand(socket, command, data) {
               userName,
               tone
             ),
-            type: "error",
+            type: 'error',
           };
         }
         break;
@@ -64,7 +64,7 @@ export async function handleCommand(socket, command, data) {
             userName,
             tone
           ),
-          type: "success",
+          type: 'success',
         };
         break;
 
@@ -75,12 +75,13 @@ export async function handleCommand(socket, command, data) {
             userName,
             tone
           ),
-          type: "success",
+          type: 'success',
         };
         break;
 
       case '/projects':
-        const projects = await getCompletedProjects(userName); // Use taskCache.js function
+        const projects = await getCompletedProjects(userName);
+        await log(`Fetched ${projects.length} projects for ${userName}: ${JSON.stringify(projects.map(p => p.text))}`);
         if (projects.length === 0) {
           response = {
             text: await generateResponse(
@@ -88,7 +89,7 @@ export async function handleCommand(socket, command, data) {
               userName,
               tone
             ),
-            type: "success",
+            type: 'success',
           };
         } else {
           response = {
@@ -97,10 +98,13 @@ export async function handleCommand(socket, command, data) {
               userName,
               tone
             ),
-            type: "success",
-            projects: projects.map(p => ({
-              ...p,
-              options: ["Restart", "Refine Project", "Delete"], // Standardize bubbles, remove "Download" from list
+            type: 'success',
+            projects: projects.map((p) => ({
+              taskId: p.taskId,
+              text: p.text || `${p.name || 'Unnamed'} (v${p.version || 1}, ${p.type || 'unknown'})`,
+              content: p.content,
+              fileName: p.fileName,
+              options: ['Download', 'Refine Project', 'Delete'],
             })),
           };
         }
@@ -118,18 +122,18 @@ export async function handleCommand(socket, command, data) {
             userName,
             tone
           ),
-          type: "question",
+          type: 'question',
           taskId,
         };
         break;
 
       case '/help':
         const helpOptions = [
-          "/start_task - Kick off a fresh project with flair!",
-          "/projects - Scope your vault of epic builds!",
-          "/check_bot_health - Check my ${tone} pulse!",
-          "/reset_name - Swap your tag for a new vibe!",
-          "/tone <style> - Tune my ${tone} edge (e.g., blunt, unhinged, polite)"
+          '/start_task - Kick off a fresh project with flair!',
+          '/projects - Scope your vault of epic builds!',
+          '/check_bot_health - Check my ${tone} pulse!',
+          '/reset_name - Swap your tag for a new vibe!',
+          '/tone <style> - Tune my ${tone} edge (e.g., blunt, unhinged, polite)',
         ];
         response = {
           text: await generateResponse(
@@ -137,7 +141,7 @@ export async function handleCommand(socket, command, data) {
             userName,
             tone
           ),
-          type: "success",
+          type: 'success',
         };
         break;
 
@@ -148,7 +152,7 @@ export async function handleCommand(socket, command, data) {
             userName,
             tone
           ),
-          type: "success",
+          type: 'success',
         };
         break;
 
@@ -159,40 +163,46 @@ export async function handleCommand(socket, command, data) {
             userName,
             tone
           ),
-          type: "error",
+          type: 'error',
         };
     }
 
-    botSocket.emit('message', {
+    const messageData = {
       ...response,
       from: 'Cracker Bot',
       target: 'bot_frontend',
       user: userName,
       ip,
       frontendId,
-    });
-  } catch (error) {
-    await error(`Cracker Bot hit a glitch on ${command} for ${userName}: ${error.message}`);
-    botSocket.emit('message', {
+    };
+    await log(`Sending response for ${command}: ${JSON.stringify(messageData)}`);
+    botSocket.emit('message', messageData);
+    await storeMessage(frontendId, messageData);
+    await log(`Command ${command} processed and sent successfully for ${userName}`);
+  } catch (err) {
+    await error(`Cracker Bot hit a glitch on ${command} for ${userName}: ${err.message}`);
+    const errorMessage = {
       text: await generateResponse(
-        `Whoops ${userName}, Cracker Bot tripped on "${command}"—${error.message}! Retry with some ${tone} grit? ⚡️`,
+        `Whoops ${userName}, Cracker Bot tripped on "${command}"—${err.message}! Retry with some ${tone} grit? ⚡️`,
         userName,
         tone
       ),
-      type: "error",
+      type: 'error',
       from: 'Cracker Bot',
       target: 'bot_frontend',
       user: userName,
       ip,
       frontendId,
-      options: ["Retry"],
-    });
+      options: ['Retry'],
+    };
+    botSocket.emit('message', errorMessage);
+    await storeMessage(frontendId, errorMessage);
   }
 }
 
 export async function handleProjectAction(socket, action, data) {
   const { userName, taskId, content, fileName, frontendId, ip } = data;
-  const tone = await redisClient.get(`user:frontend:${frontendId}:tone`) || 'Cool, Edgy, Smooth, Super Smart';
+  const tone = (await redisClient.get(`user:frontend:${frontendId}:tone`)) || 'Cool, Edgy, Smooth, Super Smart';
 
   try {
     switch (action.toLowerCase()) {
@@ -203,7 +213,7 @@ export async function handleProjectAction(socket, action, data) {
             userName,
             tone
           ),
-          type: "download",
+          type: 'download',
           content,
           fileName,
           from: 'Cracker Bot',
@@ -212,6 +222,7 @@ export async function handleProjectAction(socket, action, data) {
           frontendId,
           user: userName,
         });
+        await log(`Delivered download for ${fileName} to ${userName}`);
         break;
 
       case 'refine project':
@@ -222,38 +233,20 @@ export async function handleProjectAction(socket, action, data) {
             userName,
             tone
           ),
-          type: "question",
+          type: 'question',
           taskId,
           from: 'Cracker Bot',
           target: 'bot_frontend',
           ip,
           frontendId,
           user: userName,
-          options: ["Type your additional features!"],
+          options: ['Type your additional features!'],
         });
-        break;
-
-      case 'restart':
-        await redisClient.hSet('tasks', taskId, JSON.stringify({ taskId, step: 'project_name', user: userName, ip, frontendId, status: 'pending_restart' }));
-        botSocket.emit('message', {
-          text: await generateResponse(
-            `Cracker Bot’s rewinding for ${userName}! Restarting task ${taskId}—new name or keep the OG? 🎬`,
-            userName,
-            tone
-          ),
-          type: "question",
-          taskId,
-          from: 'Cracker Bot',
-          target: 'bot_frontend',
-          ip,
-          frontendId,
-          user: userName,
-          options: ["Type a new name or keep it!"],
-        });
+        await log(`Started refine for task ${taskId} for ${userName}`);
         break;
 
       case 'delete':
-        const deleted = await deleteProject(userName, taskId); // Use taskCache.js function
+        const deleted = await deleteProject(userName, taskId);
         if (deleted) {
           await redisClient.hDel('tasks', taskId);
           botSocket.emit('message', {
@@ -262,13 +255,14 @@ export async function handleProjectAction(socket, action, data) {
               userName,
               tone
             ),
-            type: "success",
+            type: 'success',
             from: 'Cracker Bot',
             target: 'bot_frontend',
             ip,
             frontendId,
             user: userName,
           });
+          await log(`Deleted task ${taskId} for ${userName}`);
         } else {
           throw new Error('Deletion failed');
         }
@@ -285,13 +279,13 @@ export async function handleProjectAction(socket, action, data) {
         userName,
         tone
       ),
-      type: "error",
+      type: 'error',
       from: 'Cracker Bot',
       target: 'bot_frontend',
       ip,
       frontendId,
       user: userName,
-      options: ["Retry"],
+      options: ['Retry'],
     });
   }
 }
