@@ -1,9 +1,15 @@
-// ai_coders/bot_lead/src/taskHandlers.js
+// bot_lead/src/taskHandlers.js
 import { log } from './logger.js';
 import { redisClient, get, set, hGet, hSet, hDel } from './redisClient.js';
 import { delegateTask, updateTaskStatus } from './stateManager.js';
 import { generateResponse } from './aiHelper.js';
 import { DEFAULT_TONE, extensionMap } from './constants.js';
+import { getCompletedProjects, getLatestProject } from './redisUtils.js';
+import { handleProjects } from './commands/projects.js';
+import { handleDownload } from './commands/download.js';
+import { handleResetName } from './commands/reset_name.js';
+import { handleGuide } from './commands/guide.js';
+import { handleDelete } from './commands/delete.js';
 
 const TECH_STACKS = ['Full Stack', 'MEAN', 'MERN', 'LAMP', 'JAMstack'];
 const TASK_TYPES = Object.keys(extensionMap)
@@ -12,7 +18,7 @@ const TASK_TYPES = Object.keys(extensionMap)
 
 const taskListeners = new Set();
 
-export async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip, userInfoKey, frontendId, stateKey, taskState, commandFlag, taskName, taskType, taskFeatures, userKey, techStack, fileExtension) {
+export async function handleTaskResponse(botSocket, taskId, answer, userName, tone = DEFAULT_TONE, ip, userInfoKey, frontendId, stateKey, taskState, commandFlag, taskName, taskType, taskFeatures, userKey, techStack, fileExtension) {
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   let stateUpdate;
@@ -79,6 +85,61 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
   }
 
   const task = await hGet('tasks', taskId) || { user: userName };
+
+  if (commandFlag || answer.startsWith('/')) {
+    const commandParts = answer.trim().split(' ');
+    const command = commandParts[0].toLowerCase();
+    switch (command) {
+      case '/projects':
+        await handleProjects(botSocket, userName, tone, ip, frontendId);
+        return;
+      case '/download':
+        await handleDownload(botSocket, userName, tone, ip, frontendId);
+        return;
+      case '/reset_name':
+        await handleResetName(botSocket, userName, tone, ip, userKey, frontendId, stateKey);
+        return;
+      case '/guide':
+        await handleGuide(botSocket, userName, tone, ip, frontendId);
+        return;
+      case '/delete':
+        if (commandParts.length < 2) {
+          const errorMsg = await generateResponse(
+            `Yo ${userName}, gotta tell me which project to nuke! Use /delete <taskId>—check /projects for IDs. 💥`,
+            userName,
+            tone
+          );
+          botSocket.emit('message', {
+            text: errorMsg,
+            type: 'error',
+            from: 'Cracker Bot',
+            target: 'bot_frontend',
+            ip,
+            user: userName,
+            frontendId,
+          });
+        } else {
+          await handleDelete(botSocket, userName, tone, ip, frontendId, commandParts[1]);
+        }
+        return;
+      default:
+        const errorMsg = await generateResponse(
+          `Whoa ${userName}, "${command}" ain’t in the playbook! Hit /guide for the real deal. 🔧`,
+          userName,
+          tone
+        );
+        botSocket.emit('message', {
+          text: errorMsg,
+          type: 'error',
+          from: 'Cracker Bot',
+          target: 'bot_frontend',
+          ip,
+          user: userName,
+          frontendId,
+        });
+        return;
+    }
+  }
 
   switch (taskState.step) {
     case 'name':
@@ -337,7 +398,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       );
       botSocket.emit('message', {
         text: startMsg,
-        type: "info", // Changed from "progress" to avoid duplicate bar
+        type: "info",
         taskId,
         from: 'Cracker Bot',
         target: 'bot_frontend',
@@ -515,7 +576,7 @@ export async function registerTaskResultListener(botSocket) {
       if (!task) return;
 
       const userName = task.user;
-      const tone = 'Cool, Edgy, Smooth, Super Smart';
+      const tone = DEFAULT_TONE; // Use DEFAULT_TONE instead of hardcoded value
 
       if (error) {
         const errorMsg = await generateResponse(
@@ -604,26 +665,4 @@ export async function registerTaskResultListener(botSocket) {
     taskListeners.add(botSocket);
     await log('Registered taskResult listener for botSocket with cosmic flair');
   }
-}
-
-export async function getCompletedProjects(userName) {
-  const projectKeys = await redisClient.keys(`project:${userName}:*`);
-  const projects = await Promise.all(
-    projectKeys.map(async (key) => {
-      const project = await get(key);
-      try {
-        return project && project.completed ? project : null;
-      } catch (e) {
-        await log(`[ERROR] Failed to parse project ${key}: ${e.message}`);
-        return null;
-      }
-    })
-  );
-  return projects.filter(p => p !== null);
-}
-
-export async function getLatestProject(userName) {
-  const projects = await getCompletedProjects(userName);
-  if (!projects.length) return null;
-  return projects.sort((a, b) => parseInt(b.taskId) - parseInt(a.taskId))[0];
 }

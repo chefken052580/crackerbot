@@ -110,6 +110,20 @@ code {
   @apply text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform rotate-1;
 }
 
+/* Command-specific styles for neon theme */
+.neon .user-message.command {
+  @apply text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform rotate-1;
+}
+
+.neon .user-message.command p {
+  @apply mt-1;
+}
+
+.neon .user-message.command::before {
+  content: attr(data-user);
+  @apply block text-sm font-bold text-neon-yellow border-b border-neon-yellow pb-1;
+}
+
 .cyberpunk .user-message {
   @apply text-cyber-pink bg-gray-900 shadow-md border-2 border-cyber-pink rounded-md p-2 transform -rotate-1 animate-glow;
 }
@@ -128,7 +142,7 @@ code {
 
 /* Theme-specific AI response styles */
 .neon .chat-message:not(.user-message) {
-  @apply text-[#00ff9f] bg-gray-800; /* Neon green for AI responses */
+  @apply text-[#00ff9f] bg-gray-800;
 }
 
 .cyberpunk .chat-message:not(.user-message) {
@@ -136,7 +150,7 @@ code {
 }
 
 .retro .chat-message:not(.user-message) {
-  @apply text-[#e9e2e2] bg-retro-dark;
+  @apply text-retro-green bg-retro-dark;
 }
 
 .pastel .chat-message:not(.user-message) {

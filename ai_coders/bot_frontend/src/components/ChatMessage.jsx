@@ -131,7 +131,7 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
               {project.options.map((opt, optIdx) => (
                 <button
                   key={optIdx}
-                  onClick={() => onOptionClick(opt, { action: opt, taskId: project.taskId, content: project.content, fileName: project.fileName })}
+                  onClick={() => onOptionClick(opt, { projectData: project })}
                   className={`${colorScheme.bubble} px-2 py-1 text-base rounded-full shadow-md hover:scale-105 hover:shadow-[0_0_10px_#00ff9f] transition-all duration-200`}
                 >
                   {opt}
@@ -145,7 +145,7 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
   };
 
   const messageClass = `${
-    msg.type === 'user'
+    msg.type === 'user' || msg.type === 'command'
       ? `${colorScheme.user} no-animation`
       : msg.type === 'system'
       ? colorScheme.system
@@ -153,13 +153,13 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
   }`;
 
   return (
-    <div className={`chat-message ${messageClass}`} style={msg.type === 'user' ? { animation: 'none' } : {}}>
+    <div className={`chat-message ${messageClass}`} style={msg.type === 'user' || msg.type === 'command' ? { animation: 'none' } : {}} data-user={msg.user}>
       {(msg.type !== 'progressUpdate' && msg.type !== 'progress') && (
-        <p className="break-words">{displayText}</p>
+        <p className="break-words whitespace-pre-line">{displayText}</p>
       )}
       {renderProgressBar()}
       {(taskResult || msg.fileContent) && renderTaskResult()}
-      {msg.options && renderOptions()}
+      {msg.options && !msg.projects && renderOptions()}
       {msg.projects && renderProjects()}
     </div>
   );

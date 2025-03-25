@@ -75,12 +75,15 @@ const ChatRoom = () => {
         };
 
         setMessages((prev) => {
+          if (data.type === "command" && prev.some(msg => msg.text === data.text && msg.timestamp === newMessage.timestamp)) {
+            return prev;
+          }
+
           const progressIndex = data.taskId && (data.type === "progressUpdate" || data.type === "progress")
             ? prev.findIndex(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"))
             : -1;
 
           if (progressIndex !== -1) {
-            // Update existing progress message for single bar
             return [
               ...prev.slice(0, progressIndex),
               { ...prev[progressIndex], ...newMessage, timestamp: new Date().toLocaleTimeString() },
@@ -92,10 +95,10 @@ const ChatRoom = () => {
               return [
                 ...prev.filter(msg => msg.taskId !== data.taskId || (msg.type !== "progressUpdate" && msg.type !== "progress")),
                 { ...existingProgress, progress: 100, text: "Cracker Bot’s masterpiece is ready! 🎉", timestamp: new Date().toLocaleTimeString() },
-                newMessage,
+                { ...newMessage, progress: undefined },
               ];
             }
-            return [...prev, newMessage];
+            return [...prev, { ...newMessage, progress: undefined }];
           } else {
             return [...prev, newMessage];
           }
@@ -111,17 +114,6 @@ const ChatRoom = () => {
           setEditMode(data.taskId);
           setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures, fileContent: data.content });
         } else if (data.type === "success" && data.projects) {
-          const projectMessages = data.projects.map((proj, index) => ({
-            from: "Cracker Bot",
-            user: userName,
-            text: proj.text,
-            type: "project",
-            taskId: data.taskId || `proj-${index}`,
-            options: proj.options,
-            projectData: proj,
-            timestamp: new Date().toLocaleTimeString(),
-          }));
-          setMessages((prev) => [...prev, ...projectMessages]);
           setTaskPending(null);
           setCurrentTask(null);
           setEditMode(null);
@@ -291,17 +283,15 @@ const ChatRoom = () => {
       frontendId: socketRef.current.socket.id,
     };
 
-    setMessages((prev) => [...prev, {
-      from: userName,
-      user: userName,
-      text: messageText.trim(),
-      type: "user",
-      timestamp: new Date().toLocaleTimeString(),
-      className: "user-message",
-    }]);
-
-    const lastWelcome = messages.find(m => m.type === "success" && m.options && m.taskId);
     if (messageText.startsWith("/")) {
+      setMessages((prev) => [...prev, {
+        from: userName,
+        user: userName,
+        text: messageText.trim(),
+        type: "command",
+        timestamp: new Date().toLocaleTimeString(),
+        className: "user-message command",
+      }]);
       messageData.type = "command";
       messageData.target = "bot_lead";
       const commandParts = messageText.split(" ");
@@ -315,6 +305,7 @@ const ChatRoom = () => {
         case "/stop_bots":
         case "/start_task":
         case "/help":
+        case "/guide":
           socketRef.current.emit("message", messageData);
           if (command === "/reset_name") {
             localStorage.removeItem("userName");
@@ -331,14 +322,18 @@ const ChatRoom = () => {
         case "/download":
           socketRef.current.emit("message", { ...messageData, text: "/projects" });
           break;
-        case "/guide":
-          setMessages((prev) => [...prev, {
-            from: "Cracker Bot",
-            user: userName,
-            text: "Behold the Cracker Bot Codex:\n" + commands.map(cmd => `${cmd.command}: ${cmd.description}`).join("\n"),
-            type: "system",
-            timestamp: new Date().toLocaleTimeString(),
-          }]);
+        case "/delete":
+          if (commandParts.length < 2) {
+            setMessages((prev) => [...prev, {
+              from: "Cracker Bot",
+              user: userName,
+              text: `Yo ${userName}, gotta tell me which project to nuke! Use /delete <taskId>—check /projects for IDs. 💥`,
+              type: "error",
+              timestamp: new Date().toLocaleTimeString(),
+            }]);
+          } else {
+            socketRef.current.emit("message", messageData);
+          }
           break;
         default:
           if (command.startsWith("/start_template") || command.startsWith("/build") || command.startsWith("/create")) {
@@ -354,34 +349,46 @@ const ChatRoom = () => {
           }
           break;
       }
-    } else if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
-      messageData.type = "task_response";
-      messageData.taskId = lastWelcome.taskId;
-    } else if (currentTask && currentTask.taskStatus !== "completed") {
-      messageData.type = "task_response";
-      messageData.taskId = currentTask.taskId;
-      if (currentTask.step === "name" && !localStorage.getItem("userName")) {
-        localStorage.setItem("userName", messageText.trim());
-        messageData.user = messageText.trim();
-        setCurrentTask((prev) => ({ ...prev, step: "choice" }));
-      } else if (currentTask.step === "choice") {
-        if (messageText.toLowerCase() === "build-something-epic") {
-          setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
-        } else if (messageText.toLowerCase() === "chat") {
-          setCurrentTask((prev) => ({ ...prev, step: "chat" }));
-        }
-      } else if (currentTask.step === "project_name") {
-        setCurrentTask((prev) => ({ ...prev, name: messageText, step: "type" }));
-      } else if (currentTask.step === "type") {
-        setCurrentTask((prev) => ({ ...prev, type: messageText, step: "features" }));
-      } else if (currentTask.step === "features") {
-        setCurrentTask((prev) => ({ ...prev, features: messageText, step: "building" }));
-      }
     } else {
-      messageData.type = "general_message";
+      setMessages((prev) => [...prev, {
+        from: userName,
+        user: userName,
+        text: messageText.trim(),
+        type: "user",
+        timestamp: new Date().toLocaleTimeString(),
+        className: "user-message",
+      }]);
+
+      const lastWelcome = messages.find(m => m.type === "success" && m.options && m.taskId);
+      if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
+        messageData.type = "task_response";
+        messageData.taskId = lastWelcome.taskId;
+      } else if (currentTask && currentTask.taskStatus !== "completed") {
+        messageData.type = "task_response";
+        messageData.taskId = currentTask.taskId;
+        if (currentTask.step === "name" && !localStorage.getItem("userName")) {
+          localStorage.setItem("userName", messageText.trim());
+          messageData.user = messageText.trim();
+          setCurrentTask((prev) => ({ ...prev, step: "choice" }));
+        } else if (currentTask.step === "choice") {
+          if (messageText.toLowerCase() === "build-something-epic") {
+            setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
+          } else if (messageText.toLowerCase() === "chat") {
+            setCurrentTask((prev) => ({ ...prev, step: "chat" }));
+          }
+        } else if (currentTask.step === "project_name") {
+          setCurrentTask((prev) => ({ ...prev, name: messageText, step: "type" }));
+        } else if (currentTask.step === "type") {
+          setCurrentTask((prev) => ({ ...prev, type: messageText, step: "features" }));
+        } else if (currentTask.step === "features") {
+          setCurrentTask((prev) => ({ ...prev, features: messageText, step: "building" }));
+        }
+      } else {
+        messageData.type = "general_message";
+      }
+      socketRef.current.emit("message", messageData);
     }
 
-    socketRef.current.emit("message", messageData);
     setInput("");
     setShowCommands(false);
     setCommandIndex(-1);
@@ -607,27 +614,58 @@ const ChatRoom = () => {
   const handleOptionClick = (option, projectData) => {
     const userName = localStorage.getItem("userName") || "Guest";
     if (projectData) {
-      const messageData = {
-        text: option,
-        type: "command",
-        command: "/project_action",
-        action: option,
-        taskId: projectData.projectData?.taskId,
-        content: projectData.projectData?.content,
-        fileName: projectData.projectData?.fileName,
-        user: userName,
-        userId: socketRef.current.socket.id,
-        ip: window.location.hostname,
-        frontendId: socketRef.current.socket.id,
-        target: "bot_lead",
-      };
-      socketRef.current.emit("message", messageData);
+      const { taskId, content, fileName } = projectData.projectData || {};
+      if (!taskId) return;
+
       if (option === "Refine Project") {
-        setTaskPending({ taskId: messageData.taskId, question: `Add epic features to "${projectData.text}"!`, options: [] });
-        setCurrentTask({ taskId: messageData.taskId, step: "features", taskStatus: "pending" });
-      } else if (option === "Restart") {
-        setTaskPending({ taskId: messageData.taskId, question: `Restart "${projectData.text}"—new name, new destiny?`, options: [] });
-        setCurrentTask({ taskId: messageData.taskId, step: "project_name", taskStatus: "pending" });
+        setCurrentTask({ taskId, step: "features", taskStatus: "pending" });
+        setTaskPending({ taskId, question: `Add epic features to "${projectData.text}"!`, options: [] });
+        socketRef.current.emit("message", {
+          text: "Refine Project",
+          type: "task_response",
+          taskId,
+          frontendId: socketRef.current.socket.id,
+          user: userName,
+          userId: socketRef.current.socket.id,
+          ip: window.location.hostname,
+          commandFlag: true,
+          target: "bot_lead",
+        });
+      } else if (option === "Download") {
+        if (content && fileName) {
+          const link = document.createElement("a");
+          link.href = `data:text/plain;base64,${content}`;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setMessages((prev) => [...prev, {
+            from: "System",
+            user: userName,
+            text: `Downloading "${projectData.text}"—grab it now! 📥`,
+            type: "system",
+            timestamp: new Date().toLocaleTimeString(),
+          }]);
+        } else {
+          setMessages((prev) => [...prev, {
+            from: "System",
+            user: userName,
+            text: `Whoops! "${projectData.text}" has no content to download. 🤔`,
+            type: "error",
+            timestamp: new Date().toLocaleTimeString(),
+          }]);
+        }
+      } else if (option === "Delete") {
+        socketRef.current.emit("message", {
+          text: `/delete ${taskId}`,
+          type: "command",
+          taskId,
+          frontendId: socketRef.current.socket.id,
+          user: userName,
+          userId: socketRef.current.socket.id,
+          ip: window.location.hostname,
+          target: "bot_lead",
+        });
       }
     } else {
       sendMessage(option);
