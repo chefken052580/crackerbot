@@ -110,7 +110,7 @@ export function initializeTaskExecution() {
 
   botSocket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js version 2025-03-24-5 with single-line progress bar and AI flair');
+    await log('taskExecution.js version 2025-03-24-6 with enhanced progress updates and AI flair');
     botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
   });
 
@@ -123,7 +123,7 @@ export function initializeTaskExecution() {
 
 async function sendProgress(taskId, percentage, message, frontendId, ip, name, type, features, requestId, leadId) {
   const progressMessage = {
-    type: 'progressUpdate', // Changed to progressUpdate for single-line updates
+    type: 'progressUpdate',
     taskId,
     progress: percentage,
     text: `Cracker Bot’s on it: ${message}`,
@@ -163,7 +163,6 @@ export async function startBuildTask(task) {
                         (effectiveType === 'html' && !features.toLowerCase().includes('same page')) ||
                         features.toLowerCase().includes('bot') || features.toLowerCase().includes('app');
 
-    // Define minimum requirements per type
     const minimumRequirements = {
       html: 'Include a navigation bar, at least two interactive buttons, CSS styling, and JavaScript for interactivity.',
       pdf: 'Generate at least 3 pages with 500+ words each, separated by "---PAGE BREAK---", no empty first page.',
@@ -206,6 +205,7 @@ export async function startBuildTask(task) {
 
       const htmlContent = response.choices[0].message.content.trim();
       await sendProgress(task.taskId, 50, "Infusing HTML with AI-powered swagger...", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 70, "Adding neon animations and polish...", frontendId, ip, name, type, features, requestId, leadId);
       await log(`Generated HTML for taskId ${task.taskId}: ${htmlContent.substring(0, 200)}...`);
       await sendProgress(task.taskId, 90, "Polishing the webpage to perfection...", frontendId, ip, name, type, features, requestId, leadId);
       return { content: [{ fileName: `${name}.html`, content: Buffer.from(htmlContent).toString('base64') }], frontendId, ip, requestId, leadId };
@@ -247,6 +247,7 @@ export async function startBuildTask(task) {
         stream.on('error', reject);
       });
 
+      await sendProgress(task.taskId, 70, "Adding PDF flair and structure...", frontendId, ip, name, type, features, requestId, leadId);
       await sendProgress(task.taskId, 90, "Finalizing PDF with flair...", frontendId, ip, name, type, features, requestId, leadId);
       const pdfContent = await fs.readFile(filePath, { encoding: 'base64' });
       await fs.unlink(filePath);
@@ -269,6 +270,7 @@ export async function startBuildTask(task) {
       const jsContent = response.choices[0].message.content.trim();
       const jsFile = `/tmp/${name}-${task.taskId}.js`;
       await fs.writeFile(jsFile, jsContent);
+      await sendProgress(task.taskId, 70, "Packaging executable with flair...", frontendId, ip, name, type, features, requestId, leadId);
       await execPromise(`npx pkg ${jsFile} --output /tmp/${name}-${task.taskId}.exe`);
       const exeContent = await fs.readFile(`/tmp/${name}-${task.taskId}.exe`, { encoding: 'base64' });
       await fs.unlink(jsFile);
@@ -289,8 +291,9 @@ export async function startBuildTask(task) {
         max_tokens: 2000,
       });
 
-      await sendProgress(task.taskId, 90, "Batch script ready to rock!", frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(task.taskId, 70, "Batch script infused with swagger...", frontendId, ip, name, type, features, requestId, leadId);
       const content = response.choices[0].message.content.trim();
+      await sendProgress(task.taskId, 90, "Batch script ready to rock!", frontendId, ip, name, type, features, requestId, leadId);
       return { content: [{ fileName: `${name}.bat`, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
     }
 
@@ -323,6 +326,7 @@ export async function startBuildTask(task) {
         fileName,
         content: Buffer.from(content).toString('base64'),
       }));
+      await sendProgress(task.taskId, 70, "Adding multi-file polish and flair...", frontendId, ip, name, type, features, requestId, leadId);
       await sendProgress(task.taskId, 90, "Multi-file project primed to shine!", frontendId, ip, name, type, features, requestId, leadId);
       return { content: contentArray, frontendId, ip, requestId, leadId };
     }
@@ -337,9 +341,10 @@ export async function startBuildTask(task) {
       max_tokens: 2000,
     });
 
-    await sendProgress(task.taskId, 90, "Content locked and loaded!", frontendId, ip, name, type, features, requestId, leadId);
+    await sendProgress(task.taskId, 70, "Infusing content with swagger...", frontendId, ip, name, type, features, requestId, leadId);
     const content = response.choices[0].message.content.trim();
     await log(`Raw AI response for taskId ${task.taskId}: ${content.substring(0, 200)}...`);
+    await sendProgress(task.taskId, 90, "Content locked and loaded!", frontendId, ip, name, type, features, requestId, leadId);
     const fileName = `${name}.${extensionMap[effectiveType] || 'txt'}`;
     return { content: [{ fileName, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
   } catch (err) {

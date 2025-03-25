@@ -7,16 +7,25 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
   const [isDelayed, setIsDelayed] = useState(false);
 
   useEffect(() => {
+    console.log('ChatMessage: Received message:', JSON.stringify(message));
     if (message?.type === 'progressUpdate' || message?.type === 'progress') {
       setProgressState({
         value: message.progress || 0,
         text: message.text || '',
         taskId: message.taskId,
       });
+      console.log('ChatMessage: Progress set to:', message.progress);
       const delayTimeout = setTimeout(() => {
         if (message.progress < 100 && !taskResult) setIsDelayed(true);
       }, 10000);
       return () => clearTimeout(delayTimeout);
+    } else if (message?.type === 'download' && message.taskId) {
+      setProgressState(prev => ({
+        ...prev,
+        text: message.text || 'Task complete—neon glory achieved! 🏆',
+        taskId: message.taskId,
+      }));
+      console.log('ChatMessage: Updated text for download, taskId:', message.taskId);
     } else if (progress !== undefined) {
       setProgressState(prev => ({ ...prev, value: progress }));
     }
@@ -26,37 +35,35 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
   const displayText = msg.type === 'user' && !msg.options ? `${msg.user}: ${msg.text}` : msg.text;
 
   const renderProgressBar = () => {
-    if (!msg.taskId || progressState.value === 0) return null;
-  
-    const progressClass = progressState.value < 25 ? 'progress-start' :
-                          progressState.value < 75 ? 'progress-middle' : 'progress-end';
-  
-    const barStyle = {
-      width: `${progressState.value}%`,
-    };
-  
-    const progressText = progressState.text || (
-      isDelayed && progressState.value < 100
-        ? 'Loading Project Download... ⚡️'
-        : progressState.value < 25
-        ? 'Revving up! 🚀'
-        : progressState.value < 50
-        ? 'Gaining steam! 💨'
-        : progressState.value < 75
-        ? 'Halfway there! 🔥'
-        : progressState.value < 100
-        ? 'Nailing it! 🎯'
-        : 'Done—epic win! 🏆'
-    );
-  
-    const className = `progress-bar ${progressClass} ${isDelayed ? 'neon-pulse animate-bounce' : ''}`;
-  
+    if (!progressState.taskId || progressState.value === 0 || (msg.type !== 'progressUpdate' && msg.type !== 'progress')) {
+      console.log('ChatMessage: Skipping progress bar, taskId:', progressState.taskId, 'value:', progressState.value, 'type:', msg.type);
+      return null;
+    }
+
+    console.log('ChatMessage: Rendering progress bar with value:', progressState.value);
     return (
-      <div className="progress-container mt-2">
-        <p className="text-sm text-center mb-1 text-white">{progressText}</p>
-        <div className="w-full bg-gray-900 rounded-full h-6 overflow-hidden">
-          <div className={className} style={barStyle}></div>
-        </div>
+      <div className="progress-container">
+        <span className="progress-text">
+          {progressState.text || (
+            isDelayed && progressState.value < 100
+              ? 'Cracker Bot’s powering through... ⚡️'
+              : progressState.value < 20
+              ? 'Ignition sequence started! 🚀'
+              : progressState.value < 40
+              ? 'Warming up the engines! 🔥'
+              : progressState.value < 60
+              ? 'Halfway to epicness! 🌌'
+              : progressState.value < 80
+              ? 'Cranking up the juice! 💪'
+              : progressState.value < 100
+              ? 'Final flair incoming! ✨'
+              : 'Masterpiece unleashed! 🏆'
+          )}
+        </span>
+        <div
+          className="progress-bar"
+          style={{ width: `${progressState.value}%` }}
+        />
       </div>
     );
   };
@@ -72,13 +79,13 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
             <a
               href={downloadLink || `data:text/plain;base64,${msg.fileContent || taskResult.content}`}
               download={msg.fileName || 'download'}
-              className={`${colorScheme.accent} hover:underline hover:text-neon-green transition-colors duration-200 font-semibold`}
+              className={`${colorScheme.accent} hover:underline hover:text-[#00ff9f] transition-colors duration-200 font-semibold`}
             >
               Download
             </a>
             <button
               onClick={onPreview}
-              className={`${colorScheme.button} ${colorScheme.buttonText} hover:scale-105 hover:shadow-neon transition-all duration-200 px-3 py-1 rounded-full`}
+              className={`${colorScheme.button} ${colorScheme.buttonText} hover:scale-105 hover:shadow-[0_0_10px_#00ff9f] transition-all duration-200 px-3 py-1 rounded-full`}
             >
               Preview
             </button>
@@ -103,7 +110,7 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
               onClick={() => onOptionClick(text)}
               className={`${colorScheme.bubble} ${
                 isLarge ? 'px-4 py-2 text-lg font-semibold' : 'px-2 py-1 text-base'
-              } rounded-full shadow-md hover:scale-105 hover:shadow-neon transition-all duration-200`}
+              } rounded-full shadow-md hover:scale-105 hover:shadow-[0_0_10px_#00ff9f] transition-all duration-200`}
             >
               {text}
             </button>
@@ -125,7 +132,7 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
                 <button
                   key={optIdx}
                   onClick={() => onOptionClick(opt, { action: opt, taskId: project.taskId, content: project.content, fileName: project.fileName })}
-                  className={`${colorScheme.bubble} px-2 py-1 text-base rounded-full shadow-md hover:scale-105 hover:shadow-neon transition-all duration-200`}
+                  className={`${colorScheme.bubble} px-2 py-1 text-base rounded-full shadow-md hover:scale-105 hover:shadow-[0_0_10px_#00ff9f] transition-all duration-200`}
                 >
                   {opt}
                 </button>
@@ -143,12 +150,14 @@ const ChatMessage = ({ message, progress, taskResult, onPreview, onOptionClick, 
       : msg.type === 'system'
       ? colorScheme.system
       : colorScheme.bot
-  } p-2 mb-2 rounded shadow-sm`;
+  }`;
 
   return (
     <div className={`chat-message ${messageClass}`} style={msg.type === 'user' ? { animation: 'none' } : {}}>
-      {(msg.type !== 'progressUpdate' && msg.type !== 'progress') && <p className="break-words">{displayText}</p>}
-      {(progressState.value > 0 || msg.type === 'progressUpdate' || msg.type === 'progress') && renderProgressBar()}
+      {(msg.type !== 'progressUpdate' && msg.type !== 'progress') && (
+        <p className="break-words">{displayText}</p>
+      )}
+      {renderProgressBar()}
       {(taskResult || msg.fileContent) && renderTaskResult()}
       {msg.options && renderOptions()}
       {msg.projects && renderProjects()}

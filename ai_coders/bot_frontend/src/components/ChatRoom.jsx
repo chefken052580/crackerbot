@@ -75,25 +75,24 @@ const ChatRoom = () => {
         };
 
         setMessages((prev) => {
-          if ((data.type === "progressUpdate" || data.type === "progress") && data.taskId) {
-            const existingIndex = prev.findIndex(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"));
-            if (existingIndex !== -1) {
-              return [
-                ...prev.slice(0, existingIndex),
-                { ...prev[existingIndex], progress: data.progress, text: data.text, timestamp: new Date().toLocaleTimeString() },
-                ...prev.slice(existingIndex + 1)
-              ];
-            } else {
-              return [...prev, newMessage];
-            }
+          const progressIndex = data.taskId && (data.type === "progressUpdate" || data.type === "progress")
+            ? prev.findIndex(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"))
+            : -1;
+
+          if (progressIndex !== -1) {
+            // Update existing progress message for single bar
+            return [
+              ...prev.slice(0, progressIndex),
+              { ...prev[progressIndex], ...newMessage, timestamp: new Date().toLocaleTimeString() },
+              ...prev.slice(progressIndex + 1),
+            ];
           } else if (data.type === "download" && data.taskId) {
-            const progressIndex = prev.findIndex(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"));
-            if (progressIndex !== -1) {
+            const existingProgress = prev.find(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"));
+            if (existingProgress) {
               return [
-                ...prev.slice(0, progressIndex),
-                { ...prev[progressIndex], progress: 100, text: "Cracker Bot’s masterpiece is ready! 🎉", timestamp: new Date().toLocaleTimeString() },
-                ...prev.slice(progressIndex + 1),
-                newMessage
+                ...prev.filter(msg => msg.taskId !== data.taskId || (msg.type !== "progressUpdate" && msg.type !== "progress")),
+                { ...existingProgress, progress: 100, text: "Cracker Bot’s masterpiece is ready! 🎉", timestamp: new Date().toLocaleTimeString() },
+                newMessage,
               ];
             }
             return [...prev, newMessage];
@@ -118,7 +117,7 @@ const ChatRoom = () => {
             text: proj.text,
             type: "project",
             taskId: data.taskId || `proj-${index}`,
-            options: proj.options.map(opt => opt.text),
+            options: proj.options,
             projectData: proj,
             timestamp: new Date().toLocaleTimeString(),
           }));
@@ -197,7 +196,7 @@ const ChatRoom = () => {
   }, []);
 
   useEffect(() => {
-    console.log("ChatRoom: Messages state updated:", messages);
+    console.log("ChatRoom: Messages updated:", messages);
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, forceRender]);
 
@@ -292,7 +291,6 @@ const ChatRoom = () => {
       frontendId: socketRef.current.socket.id,
     };
 
-    // Render all input as user messages, including commands
     setMessages((prev) => [...prev, {
       from: userName,
       user: userName,

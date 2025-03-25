@@ -10,7 +10,6 @@ const TASK_TYPES = Object.keys(extensionMap)
   .filter(ext => !TECH_STACKS.map(s => s.toLowerCase()).includes(ext.toLowerCase()))
   .filter(ext => ext !== 'zip');
 
-// Store active task listeners to prevent duplicates
 const taskListeners = new Set();
 
 export async function handleTaskResponse(botSocket, taskId, answer, userName, tone, ip, userInfoKey, frontendId, stateKey, taskState, commandFlag, taskName, taskType, taskFeatures, userKey, techStack, fileExtension) {
@@ -338,9 +337,8 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
       );
       botSocket.emit('message', {
         text: startMsg,
-        type: "progress",
+        type: "info", // Changed from "progress" to avoid duplicate bar
         taskId,
-        progress: 0,
         from: 'Cracker Bot',
         target: 'bot_frontend',
         ip,
@@ -350,6 +348,7 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
         taskType: task.type,
         taskFeatures: task.features,
       });
+      await log(`Emitted start info for taskId ${taskId}, taskName: ${task.name}`);
 
       const previousProject = await get(`project:${userName}:${taskId}`);
       await delegateTask(botSocket, 'bot_backend', 'buildTask', {
@@ -508,7 +507,6 @@ export async function handleTaskResponse(botSocket, taskId, answer, userName, to
   }
 }
 
-// Register taskResult listener once per botSocket instance
 export async function registerTaskResultListener(botSocket) {
   if (!taskListeners.has(botSocket)) {
     botSocket.on('taskResult', async (data) => {
@@ -517,7 +515,7 @@ export async function registerTaskResultListener(botSocket) {
       if (!task) return;
 
       const userName = task.user;
-      const tone = 'Cool, Edgy, Smooth, Super Smart'; // Default tone
+      const tone = 'Cool, Edgy, Smooth, Super Smart';
 
       if (error) {
         const errorMsg = await generateResponse(
@@ -576,6 +574,7 @@ export async function registerTaskResultListener(botSocket) {
         taskType: type,
         taskFeatures,
       });
+      await log(`Emitted download for taskId ${taskId}, taskName: ${name}`);
 
       task.step = 'review';
       task.status = 'pending_review';
@@ -616,7 +615,7 @@ export async function getCompletedProjects(userName) {
         return project && project.completed ? project : null;
       } catch (e) {
         await log(`[ERROR] Failed to parse project ${key}: ${e.message}`);
-        return null; // Skip corrupted entries
+        return null;
       }
     })
   );

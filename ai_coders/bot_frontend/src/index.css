@@ -95,6 +95,11 @@ code {
   50% { box-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
 }
 
+/* Chat message base styles */
+.chat-message {
+  @apply p-2 mb-2 rounded shadow-sm;
+}
+
 /* User message enhancements */
 .user-message {
   @apply transition-all duration-300;
@@ -119,6 +124,27 @@ code {
 
 .matrix .user-message {
   @apply text-matrix-green bg-matrix-bg shadow-lg border-2 border-matrix-green rounded-sm p-2 animate-matrix-glitch font-mono;
+}
+
+/* Theme-specific AI response styles */
+.neon .chat-message:not(.user-message) {
+  @apply text-[#00ff9f] bg-gray-800; /* Neon green for AI responses */
+}
+
+.cyberpunk .chat-message:not(.user-message) {
+  @apply text-cyber-cyan bg-gray-900;
+}
+
+.retro .chat-message:not(.user-message) {
+  @apply text-[#e9e2e2] bg-retro-dark;
+}
+
+.pastel .chat-message:not(.user-message) {
+  @apply text-pastel-dark bg-pastel-light;
+}
+
+.matrix .chat-message:not(.user-message) {
+  @apply text-matrix-green bg-matrix-bg;
 }
 
 /* Theme-specific enhancements */
@@ -208,62 +234,29 @@ code {
 .progress-container {
   position: relative;
   width: 100%;
-  height: 16px; /* Slightly taller for visibility */
-  background: #222;
-  border-radius: 8px;
+  height: 24px;
+  background: #1a1a1a !important;
+  border-radius: 12px;
   margin-top: 8px;
   overflow: hidden;
+  border: 1px solid #4a4a4a !important;
   box-shadow: inset 0 0 5px #000, 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
 .progress-bar {
   height: 100%;
-  border-radius: 8px;
-  transition: width 0.5s ease-in-out, box-shadow 0.3s ease-in-out;
+  border-radius: 12px;
+  background: linear-gradient(to right, #ff2d55, #ffcc00 50%, #00ff9f) !important;
+  transition: width 0.8s ease-in-out;
 }
 
-/* Neon theme progress bar */
-.neon .progress-bar {
-  background: linear-gradient(to right, #ff1744 0%, #ffea00 50%, #00e676 75%, #00e676 100%);
-}
-
-.neon .progress-bar.progress-start {
-  box-shadow: 0 0 15px #ff1744;
-}
-
-.neon .progress-bar.progress-middle {
-  box-shadow: 0 0 15px #ffea00;
-}
-
-.neon .progress-bar.progress-end {
-  box-shadow: 0 0 15px #00e676;
-}
-
-/* Other theme progress bar styles */
-.cyberpunk .progress-bar {
-  background: linear-gradient(to right, #00e5ff, #ff00ff);
-  box-shadow: 0 0 15px #00e5ff;
-}
-
-.retro .progress-bar {
-  background: linear-gradient(to right, #ff8c00, #ffd700);
-  box-shadow: inset 0 0 5px #ff8c00;
-}
-
-.pastel .progress-bar {
-  background: linear-gradient(to right, #ff85a2, #80deea);
-  box-shadow: 0 0 8px #ff85a2;
-}
-
+/* Ensure gradient persists across all themes */
+.neon .progress-bar,
+.cyberpunk .progress-bar,
+.retro .progress-bar,
+.pastel .progress-bar,
 .matrix .progress-bar {
-  background: #00ff00;
-  box-shadow: 0 0 10px #00ff00;
-  animation: matrixGlitch 0.5s infinite alternate;
-}
-
-/* Neon pulse animation */
-.neon-pulse {
-  animation: neonPulse 1.5s infinite;
+  background: linear-gradient(to right, #ff2d55, #ffcc00 50%, #00ff9f) !important;
 }
 
 /* Progress text */
@@ -272,18 +265,24 @@ code {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #fff;
-  font-size: 10px;
+  color: #fff !important;
+  font-size: 12px;
   font-weight: bold;
   text-shadow: 0 0 5px #000, 0 0 10px #000;
+  z-index: 10;
+}
+
+/* Neon pulse animation */
+.neon-pulse {
+  animation: neonPulse 1.5s infinite;
 }
 
 /* Hover effects */
 .hover\:shadow-neon:hover {
-  box-shadow: 0 0 15px #00ff00, 0 0 30px #00ff00;
+  box-shadow: 0 0 15px #00ff9f, 0 0 30px #00ff9f80;
 }
 
 .hover\:text-neon-green:hover {
-  color: #00ff00;
-  text-shadow: 0 0 10px #00ff00;
+  color: #00ff9f;
+  text-shadow: 0 0 10px #00ff9f;
 }
