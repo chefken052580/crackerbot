@@ -1,8 +1,8 @@
 // ai_coders/bot_lead/src/messageUtils.js
 import { log } from './logger.js';
-import { getCompletedProjects, getLatestProject, get, hSet, set } from './redisClient.js';
+import { getCompletedProjects, getLatestProject, get, hSet, set, storeMessage } from './redisClient.js'; // Added storeMessage import
 import { generateResponse } from './aiHelper.js';
-import { DEFAULT_TONE } from './constants.js';
+import { DEFAULT_TONE, extensionMap } from './constants.js';
 
 export async function processGeneralMessage(botSocket, text, userName, tone, ip, frontendId) {
   if (!text || text.trim() === '') {
@@ -75,7 +75,9 @@ export async function processGeneralMessage(botSocket, text, userName, tone, ip,
         frontendId,
       });
     }
-    await storeMessage(userName, text);
+    // Store message with JSON format for consistency
+    const messageData = JSON.stringify({ text, timestamp: new Date().toISOString(), frontendId });
+    await storeMessage(userName, messageData); // Use imported storeMessage
     await log(`Processed general message for ${userName}: ${text}`);
   }
 }

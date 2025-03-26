@@ -1,11 +1,11 @@
-// ai_coders/bot_frontend/src/components/ChatRoom.jsx
 import React, { useState, useEffect, useRef } from "react";
-import io from "socket.io-client";
-import ChatMessage from "./ChatMessage";
 import WebSocketManager from "../utils/WebSocketManager";
+import ChatMessage from "./ChatMessage";
+import PreviewPopup from "./PreviewPopup"; // New import
 import { commands, colorSchemes } from "../config/chatConfig";
 
-const WEBSOCKET_SERVER_URL = process.env.REACT_APP_WEBSOCKET_SERVER_URL || "wss://websocket-visually-sterling-spider.ngrok-free.app";
+const WEBSOCKET_SERVER_URL =
+  process.env.REACT_APP_WEBSOCKET_SERVER_URL || "wss://websocket-visually-sterling-spider.ngrok-free.app";
 
 const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
@@ -18,13 +18,13 @@ const ChatRoom = () => {
   const [taskPending, setTaskPending] = useState(null);
   const [currentTask, setCurrentTask] = useState(null);
   const [editMode, setEditMode] = useState(null);
-  const [colorScheme, setColorScheme] = useState(localStorage.getItem('colorScheme') || "neon");
+  const [colorScheme, setColorScheme] = useState(localStorage.getItem("colorScheme") || "neon");
   const [isRecording, setIsRecording] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [postTaskOptions, setPostTaskOptions] = useState(null);
   const [retryAttempts, setRetryAttempts] = useState(0);
-  const [forceRender, setForceRender] = useState(false);
-  const chatEndRef = useRef(null);
+  const [taskProgress, setTaskProgress] = useState({});
+  const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
@@ -32,37 +32,31 @@ const ChatRoom = () => {
   const canvasRef = useRef(null);
 
   const initializeSocket = () => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-    }
+    if (socketRef.current) socketRef.current.disconnect();
     socketRef.current = new WebSocketManager(WEBSOCKET_SERVER_URL, {
       onConnect: (id) => {
         console.log("ChatRoom: WebSocket connected, ID:", id);
         setMessages((prev) => [
-          ...prev.filter(msg => msg.type !== "system" || !msg.text.includes("Reset and reconnected")),
-          { 
-            from: "System", 
-            text: "Cracker Bot’s fired up and ready to rock! 🚀",
-            type: "system", 
-            timestamp: new Date().toLocaleTimeString() 
-          }
+          ...prev.filter((msg) => msg.type !== "system" || !msg.text.includes("Reset and reconnected")),
+          { from: "System", text: "Cracker Bot’s fired up and ready to rock! 🚀", type: "system", timestamp: new Date().toLocaleTimeString() },
         ]);
         setIsConnected(true);
         setRetryAttempts(0);
-        const userName = localStorage.getItem('userName') || "Guest";
+        const userName = localStorage.getItem("userName") || "Guest";
         socketRef.current.emit("register", { name: userName, role: "frontend", frontendId: id, userName });
         socketRef.current.emit("frontend_connected", { ip: window.location.hostname, frontendId: id, userName });
       },
       onMessage: (data) => {
         console.log("ChatRoom: Message received:", data);
-        const userName = localStorage.getItem('userName') || "Guest";
+        const userName = localStorage.getItem("userName") || "Guest";
         const newMessage = {
           from: data.from || "Cracker Bot",
           user: data.user || userName,
           text: data.text || "",
           type: data.type || "bot",
           fileName: data.fileName,
-          fileContent: data.content,
+          content: data.content,
+          downloadLink: data.downloadLink,
           taskId: data.taskId,
           options: data.options,
           timestamp: new Date().toLocaleTimeString(),
@@ -70,105 +64,97 @@ const ChatRoom = () => {
           taskName: data.taskName,
           taskType: data.taskType,
           taskFeatures: data.taskFeatures,
-          progress: data.progress,
           projects: data.projects,
+          progress: data.type === "progressUpdate" ? data.progress : undefined,
         };
 
-        setMessages((prev) => {
-          if (data.type === "command" && prev.some(msg => msg.text === data.text && msg.timestamp === newMessage.timestamp)) {
-            return prev;
-          }
-
-          const progressIndex = data.taskId && (data.type === "progressUpdate" || data.type === "progress")
-            ? prev.findIndex(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"))
-            : -1;
-
-          if (progressIndex !== -1) {
-            return [
-              ...prev.slice(0, progressIndex),
-              { ...prev[progressIndex], ...newMessage, timestamp: new Date().toLocaleTimeString() },
-              ...prev.slice(progressIndex + 1),
-            ];
-          } else if (data.type === "download" && data.taskId) {
-            const existingProgress = prev.find(msg => msg.taskId === data.taskId && (msg.type === "progressUpdate" || msg.type === "progress"));
-            if (existingProgress) {
-              return [
-                ...prev.filter(msg => msg.taskId !== data.taskId || (msg.type !== "progressUpdate" && msg.type !== "progress")),
-                { ...existingProgress, progress: 100, text: "Cracker Bot’s masterpiece is ready! 🎉", timestamp: new Date().toLocaleTimeString() },
-                { ...newMessage, progress: undefined },
-              ];
-            }
-            return [...prev, { ...newMessage, progress: undefined }];
-          } else {
-            return [...prev, newMessage];
-          }
-        });
-        setForceRender((prev) => !prev);
-        setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
-
-        if (data.type === "progressUpdate" && data.progress === 100) {
-          setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "building_complete" } : null));
-        } else if (data.type === "download") {
-          setTaskPending(null);
-          setCurrentTask((prev) => (prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null));
-          setEditMode(data.taskId);
-          setPostTaskOptions({ taskId: data.taskId, frontendId: data.frontendId, taskName: data.taskName, taskType: data.taskType, taskFeatures: data.taskFeatures, fileContent: data.content });
-        } else if (data.type === "success" && data.projects) {
-          setTaskPending(null);
-          setCurrentTask(null);
-          setEditMode(null);
-          setPostTaskOptions(null);
-        } else if (data.type === "question" && data.taskId) {
-          setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
-          setCurrentTask((prev) => ({
-            taskId: data.taskId,
-            name: data.taskName || prev?.name || "Pending",
-            type: data.taskType || prev?.type || "Pending",
-            features: data.taskFeatures || prev?.features || "Pending",
-            step: data.text.toLowerCase().includes("name") && !localStorage.getItem('userName') ? "name" :
-                  data.text.toLowerCase().includes("type") ? "type" :
-                  data.text.toLowerCase().includes("features") ? "features" :
-                  data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build") ? "choice" : "review",
-            taskStatus: "pending",
+        if (data.type === "progressUpdate" && data.taskId) {
+          setTaskProgress((prev) => ({
+            ...prev,
+            [data.taskId]: data.progress,
           }));
-          setEditMode(data.taskId && data.text.toLowerCase().includes("restart") ? data.taskId : null);
-          setPostTaskOptions(null);
-        } else if (data.type === "success" && data.options) {
-          setTaskPending(null);
-          setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
-        } else if (data.type === "error" && data.taskId) {
-          setTaskPending(null);
-          setCurrentTask(null);
-          setEditMode(null);
-          setPostTaskOptions(null);
+          setMessages((prev) => {
+            const existingIdx = prev.findIndex((msg) => msg.taskId === data.taskId && msg.type === "progressUpdate");
+            if (existingIdx >= 0) {
+              const updatedMessages = [...prev];
+              updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], progress: data.progress, text: data.text };
+              return updatedMessages;
+            } else {
+              return [...prev, newMessage];
+            }
+          });
+        } else {
+          setMessages((prev) => [...prev, newMessage]);
+          if (data.type === "download") {
+            setTaskPending(null);
+            setCurrentTask((prev) =>
+              prev ? { ...prev, taskStatus: "completed", name: data.taskName, type: data.taskType, features: data.taskFeatures } : null
+            );
+            setEditMode(data.taskId);
+            setPostTaskOptions({
+              taskId: data.taskId,
+              frontendId: data.frontendId,
+              taskName: data.taskName,
+              taskType: data.taskType,
+              taskFeatures: data.taskFeatures,
+              fileContent: data.content,
+            });
+          } else if (data.type === "success" && data.projects) {
+            setTaskPending(null);
+            setCurrentTask(null);
+            setEditMode(null);
+            setPostTaskOptions(null);
+          } else if (data.type === "question" && data.taskId) {
+            setTaskPending({ taskId: data.taskId, question: data.text, options: data.options });
+            setCurrentTask((prev) => ({
+              taskId: data.taskId,
+              name: data.taskName || prev?.name || "Pending",
+              type: data.taskType || prev?.type || "Pending",
+              features: data.taskFeatures || prev?.features || "Pending",
+              step: data.text.toLowerCase().includes("name") && !localStorage.getItem("userName")
+                ? "name"
+                : data.text.toLowerCase().includes("type")
+                ? "type"
+                : data.text.toLowerCase().includes("features")
+                ? "features"
+                : data.text.toLowerCase().includes("chat") || data.text.toLowerCase().includes("build")
+                ? "choice"
+                : "review",
+              taskStatus: "pending",
+            }));
+            setEditMode(data.taskId && data.text.toLowerCase().includes("restart") ? data.taskId : null);
+            setPostTaskOptions(null);
+          } else if (data.type === "success" && data.options) {
+            setTaskPending(null);
+            setCurrentTask((prev) => (prev ? { ...prev, step: "choice" } : null));
+          } else if (data.type === "error" && data.taskId) {
+            setTaskPending(null);
+            setCurrentTask(null);
+            setEditMode(null);
+            setPostTaskOptions(null);
+          }
         }
 
-        if (data.user && data.user !== "Guest") {
+        setIsTyping((prev) => ({ ...prev, [data.from || "Cracker Bot"]: false }));
+        if (data.user && data.user !== userName && data.user !== "Guest") {
           localStorage.setItem("userName", data.user);
         }
       },
-      onTyping: (data) => {
-        setIsTyping((prev) => ({ ...prev, [data.target === "bot_frontend" ? "Cracker Bot" : data.user || "Unknown"]: true }));
-      },
       onConnectError: (error) => {
         console.error("ChatRoom: WebSocket connect error:", error.message);
-        setMessages((prev) => [...prev, { 
-          from: "System", 
-          text: `Whoops! Connection glitch: ${error.message} (Retry ${retryAttempts + 1}/10) ⚡️`,
-          type: "error", 
-          timestamp: new Date().toLocaleTimeString() 
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          { from: "System", text: `Connection glitch: ${error.message} (Retry ${retryAttempts + 1}/10) ⚡️`, type: "error", timestamp: new Date().toLocaleTimeString() },
+        ]);
         setIsConnected(false);
         setRetryAttempts((prev) => prev + 1);
       },
       onDisconnect: (reason) => {
         console.log("ChatRoom: WebSocket disconnected:", reason);
-        setMessages((prev) => [...prev, { 
-          from: "System", 
-          text: `Offline: ${reason}—we’re staging a comeback! 💥`,
-          type: "error", 
-          timestamp: new Date().toLocaleTimeString() 
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          { from: "System", text: `Offline: ${reason}—rebooting soon! 💥`, type: "error", timestamp: new Date().toLocaleTimeString() },
+        ]);
         setIsConnected(false);
       },
     });
@@ -178,19 +164,10 @@ const ChatRoom = () => {
     console.log("ChatRoom: Mounting component...");
     initializeSocket();
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
+      if (socketRef.current) socketRef.current.disconnect();
+      if (recognitionRef.current) recognitionRef.current.stop();
     };
   }, []);
-
-  useEffect(() => {
-    console.log("ChatRoom: Messages updated:", messages);
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, forceRender]);
 
   useEffect(() => {
     document.body.className = `${colorSchemes[colorScheme].bg} relative`;
@@ -200,22 +177,28 @@ const ChatRoom = () => {
     } else {
       document.body.style.backgroundImage = "none";
       if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
+        const ctx = canvasRef.current.getContext("2d");
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
     }
     return () => {
       if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
+        const ctx = canvasRef.current.getContext("2d");
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
     };
   }, [colorScheme]);
 
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages, isTyping]);
+
   const initMatrixRain = () => {
     if (colorScheme !== "matrix" || !canvasRef.current) return;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%^&*()_+-=[]{}|;:,.<>?";
@@ -226,16 +209,14 @@ const ChatRoom = () => {
     const draw = () => {
       ctx.fillStyle = "rgba(10, 15, 10, 0.1)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#00ff00";
+      ctx.fillStyle = "#00ff85";
       ctx.font = `${fontSize}px monospace`;
       for (let i = 0; i < drops.length; i++) {
         const text = characters.charAt(Math.floor(Math.random() * characters.length));
         const yPos = drops[i] * fontSize;
-        ctx.fillStyle = `rgba(0, 255, 0, ${Math.max(1 - yPos / canvas.height, 0.2)})`;
+        ctx.fillStyle = `rgba(0, 255, 133, ${Math.max(1 - yPos / canvas.height, 0.2)})`;
         ctx.fillText(text, i * fontSize, yPos);
-        if (yPos > canvas.height && Math.random() > 0.975) {
-          drops[i] = 0;
-        }
+        if (yPos > canvas.height && Math.random() > 0.975) drops[i] = 0;
         drops[i]++;
       }
     };
@@ -252,26 +233,12 @@ const ChatRoom = () => {
       drops.length = Math.floor(canvas.width / fontSize);
       drops.fill(1);
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   };
 
-  useEffect(() => {
-    if (showCommands && commandsRef.current) {
-      commandsRef.current.focus();
-    }
-  }, [showCommands, filteredCommands]);
-
   const sendMessage = (messageText) => {
-    if (!socketRef.current || !messageText.trim() || !isConnected || isSending) {
-      console.warn("ChatRoom: Cannot send message", {
-        socketExists: !!socketRef.current,
-        messageText,
-        isConnected,
-        isSending,
-      });
-      return;
-    }
+    if (!socketRef.current || !messageText.trim() || !isConnected || isSending) return;
 
     setIsSending(true);
     const userName = localStorage.getItem("userName") || "Guest";
@@ -283,106 +250,105 @@ const ChatRoom = () => {
       frontendId: socketRef.current.socket.id,
     };
 
+    const userMessage = {
+      from: userName,
+      user: userName,
+      text: messageText.trim(),
+      type: messageText.startsWith("/") ? "command" : "user",
+      timestamp: new Date().toLocaleTimeString(),
+      className: "user-message" + (messageText.startsWith("/") ? " command" : ""),
+      taskId: currentTask?.taskId,
+    };
+    setMessages((prev) => [...prev, userMessage]);
+
     if (messageText.startsWith("/")) {
-      setMessages((prev) => [...prev, {
-        from: userName,
-        user: userName,
-        text: messageText.trim(),
-        type: "command",
-        timestamp: new Date().toLocaleTimeString(),
-        className: "user-message command",
-      }]);
       messageData.type = "command";
+      messageData.commandFlag = true;
       messageData.target = "bot_lead";
       const commandParts = messageText.split(" ");
       const command = commandParts[0].toLowerCase();
 
+      if (command === "/commands") {
+        const commandList = commands.map((cmd) => `${cmd.command}: ${cmd.description}`).join("\n");
+        setMessages((prev) => [
+          ...prev,
+          {
+            from: "System",
+            user: userName,
+            text: `Available commands:\n${commandList}`,
+            type: "system",
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+        setIsSending(false);
+        setInput("");
+        setShowCommands(false);
+        setCommandIndex(-1);
+        inputRef.current?.focus();
+        return;
+      }
+
       switch (command) {
-        case "/projects":
         case "/reset_name":
-        case "/tone":
-        case "/check_bot_health":
-        case "/stop_bots":
-        case "/start_task":
-        case "/help":
-        case "/guide":
-          socketRef.current.emit("message", messageData);
-          if (command === "/reset_name") {
-            localStorage.removeItem("userName");
-            setMessages((prev) => [...prev, {
+          localStorage.removeItem("userName");
+          setMessages((prev) => [
+            ...prev,
+            {
               from: "System",
               user: userName,
               text: "Name reset! Unleash a new identity. 🌟",
               type: "system",
               timestamp: new Date().toLocaleTimeString(),
-            }]);
-            setCurrentTask({ taskId: `initial_name:${socketRef.current.socket.id}`, step: "name", taskStatus: "pending" });
-          }
-          break;
-        case "/download":
-          socketRef.current.emit("message", { ...messageData, text: "/projects" });
+            },
+          ]);
+          setCurrentTask({ taskId: `initial_name:${socketRef.current.socket.id}`, step: "name", taskStatus: "pending" });
           break;
         case "/delete":
           if (commandParts.length < 2) {
-            setMessages((prev) => [...prev, {
-              from: "Cracker Bot",
-              user: userName,
-              text: `Yo ${userName}, gotta tell me which project to nuke! Use /delete <taskId>—check /projects for IDs. 💥`,
-              type: "error",
-              timestamp: new Date().toLocaleTimeString(),
-            }]);
-          } else {
-            socketRef.current.emit("message", messageData);
+            setMessages((prev) => [
+              ...prev,
+              {
+                from: "Cracker Bot",
+                user: userName,
+                text: `Yo ${userName}, gotta tell me which project to nuke! Use /delete <taskId>—check /projects for IDs. 💥`,
+                type: "error",
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ]);
+            setIsSending(false);
+            inputRef.current?.focus();
+            return;
           }
           break;
         default:
-          if (command.startsWith("/start_template") || command.startsWith("/build") || command.startsWith("/create")) {
-            socketRef.current.emit("message", messageData);
-          } else {
-            setMessages((prev) => [...prev, {
-              from: "Cracker Bot",
-              user: userName,
-              text: `Oops! "${command}" isn’t in my spellbook. Cast /guide for the secrets! 🔮`,
-              type: "error",
-              timestamp: new Date().toLocaleTimeString(),
-            }]);
-          }
+          socketRef.current.emit("message", messageData);
           break;
       }
     } else {
-      setMessages((prev) => [...prev, {
-        from: userName,
-        user: userName,
-        text: messageText.trim(),
-        type: "user",
-        timestamp: new Date().toLocaleTimeString(),
-        className: "user-message",
-      }]);
-
-      const lastWelcome = messages.find(m => m.type === "success" && m.options && m.taskId);
-      if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
-        messageData.type = "task_response";
-        messageData.taskId = lastWelcome.taskId;
-      } else if (currentTask && currentTask.taskStatus !== "completed") {
+      const lastWelcome = messages.find((m) => m.type === "success" && m.options && m.taskId);
+      if (currentTask && currentTask.taskStatus !== "completed") {
         messageData.type = "task_response";
         messageData.taskId = currentTask.taskId;
         if (currentTask.step === "name" && !localStorage.getItem("userName")) {
           localStorage.setItem("userName", messageText.trim());
           messageData.user = messageText.trim();
           setCurrentTask((prev) => ({ ...prev, step: "choice" }));
-        } else if (currentTask.step === "choice") {
-          if (messageText.toLowerCase() === "build-something-epic") {
-            setCurrentTask((prev) => ({ ...prev, step: "project_name" }));
-          } else if (messageText.toLowerCase() === "chat") {
-            setCurrentTask((prev) => ({ ...prev, step: "chat" }));
-          }
-        } else if (currentTask.step === "project_name") {
-          setCurrentTask((prev) => ({ ...prev, name: messageText, step: "type" }));
-        } else if (currentTask.step === "type") {
-          setCurrentTask((prev) => ({ ...prev, type: messageText, step: "features" }));
         } else if (currentTask.step === "features") {
-          setCurrentTask((prev) => ({ ...prev, features: messageText, step: "building" }));
+          setMessages((prev) => [
+            ...prev,
+            {
+              from: "Cracker Bot",
+              text: "Cracker Bot is cooking your epic build! 🍳",
+              type: "progressUpdate",
+              taskId: currentTask.taskId,
+              progress: 0,
+              timestamp: new Date().toLocaleTimeString(),
+            },
+          ]);
         }
+      } else if (lastWelcome && (messageText === "Chat" || messageText === "Build-Something-Epic")) {
+        messageData.type = "task_response";
+        messageData.taskId = lastWelcome.taskId;
       } else {
         messageData.type = "general_message";
       }
@@ -402,10 +368,10 @@ const ChatRoom = () => {
     const value = e.target.value;
     setInput(value);
     if (value.startsWith("/")) {
-      const query = value.split(" ")[0].toLowerCase();
+      const query = value.slice(1).toLowerCase();
       const filtered = commands.filter((cmd) => cmd.command.toLowerCase().startsWith(query));
       setFilteredCommands(filtered);
-      setShowCommands(filtered.length > 0);
+      setShowCommands(true);
       setCommandIndex(filtered.length > 0 ? 0 : -1);
     } else {
       setShowCommands(false);
@@ -417,8 +383,8 @@ const ChatRoom = () => {
     if (e.key === "Enter" && input.trim()) {
       e.preventDefault();
       if (showCommands && commandIndex >= 0) {
-        const selectedCommand = filteredCommands[commandIndex].command + " ";
-        setInput(selectedCommand);
+        const selectedCommand = filteredCommands[commandIndex].command;
+        setInput(selectedCommand + " ");
         setShowCommands(false);
         setCommandIndex(-1);
         inputRef.current?.focus();
@@ -432,6 +398,15 @@ const ChatRoom = () => {
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
         setCommandIndex((prev) => Math.min(prev + 1, filteredCommands.length - 1));
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        if (commandIndex >= 0) {
+          const selectedCommand = filteredCommands[commandIndex].command;
+          setInput(selectedCommand + " ");
+          setShowCommands(false);
+          setCommandIndex(-1);
+          inputRef.current?.focus();
+        }
       }
     }
   };
@@ -447,12 +422,10 @@ const ChatRoom = () => {
     if (!isRecording) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        setMessages((prev) => [...prev, {
-          from: "System",
-          text: "Mic’s a no-go—type it out, maestro! 🎹",
-          type: "error",
-          timestamp: new Date().toLocaleTimeString(),
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          { from: "System", text: "Mic’s a no-go—type it out, maestro! 🎹", type: "error", timestamp: new Date().toLocaleTimeString() },
+        ]);
         return;
       }
       const recognition = new SpeechRecognition();
@@ -466,17 +439,18 @@ const ChatRoom = () => {
         sendMessage(transcript);
       };
       recognition.onerror = (event) => {
-        setMessages((prev) => [...prev, {
-          from: "System",
-          text: `Mic meltdown: ${event.error === "no-speech" ? "Silence detected!" : event.error}. Back to the keyboard!`,
-          type: "error",
-          timestamp: new Date().toLocaleTimeString(),
-        }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            from: "System",
+            text: `Mic meltdown: ${event.error === "no-speech" ? "Silence detected!" : event.error}. Back to the keyboard!`,
+            type: "error",
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
         setIsRecording(false);
       };
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
+      recognition.onend = () => setIsRecording(false);
       recognition.start();
       setIsRecording(true);
     } else {
@@ -487,41 +461,17 @@ const ChatRoom = () => {
 
   const manualReconnect = () => {
     if (!socketRef.current) return;
-
     const oldUserId = socketRef.current.socket.id;
     const ip = window.location.hostname;
     localStorage.removeItem("userName");
     socketRef.current.emit("reset_user", { userId: oldUserId, ip });
     socketRef.current.disconnect();
-
     setMessages([]);
     setTaskPending(null);
     setCurrentTask(null);
     setEditMode(null);
     setRetryAttempts(0);
-    setForceRender((prev) => !prev);
-
     initializeSocket();
-  };
-
-  const handlePreview = (fileContent) => {
-    try {
-      const decoded = atob(fileContent);
-      const lines = decoded.split("\n").slice(0, 5).join("\n");
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: `Sneak peek unlocked:\n\`\`\`\n${lines}\n\`\`\` 🎬`, 
-        type: "system", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
-    } catch (e) {
-      setMessages((prev) => [...prev, { 
-        from: "System", 
-        text: "Preview crashed—binary blues! 💾", 
-        type: "error", 
-        timestamp: new Date().toLocaleTimeString() 
-      }]);
-    }
   };
 
   const handleColorChange = (scheme) => {
@@ -550,55 +500,76 @@ const ChatRoom = () => {
       target: "bot_lead",
     };
 
+    setMessages((prev) => [
+      ...prev,
+      {
+        from: userName,
+        user: userName,
+        text: action,
+        type: "user",
+        timestamp: new Date().toLocaleTimeString(),
+        className: "user-message",
+      },
+    ]);
+
     if (action === "Restart") {
-      setCurrentTask({
-        taskId: `${Date.now()}`,
-        step: "project_name",
-        taskStatus: "pending",
-      });
-      setTaskPending({ taskId: messageData.taskId, question: "Enter a new name or keep it!", options: [] });
+      setCurrentTask({ taskId: `${Date.now()}`, step: "choice", taskStatus: "pending" });
+      setTaskPending({ taskId: messageData.taskId, question: "Chat or Build-Something-Epic—what’s your vibe?", options: ["Chat", "Build-Something-Epic"] });
       setPostTaskOptions(null);
       setEditMode(null);
-      setMessages((prev) => [...prev, {
-        from: "System",
-        user: userName,
-        text: `Resetting "${taskName}"—new adventure awaits! 🌈`,
-        type: "system",
-        timestamp: new Date().toLocaleTimeString(),
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: "System",
+          user: userName,
+          text: `Resetting "${taskName}"—new cosmic journey begins! 🌈`,
+          type: "system",
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]);
     } else if (action === "Refine Project") {
       setCurrentTask((prev) => ({
         ...prev,
-        step: "features",
+        step: "pending_features",
         taskStatus: "pending",
         previousContent: fileContent,
       }));
       setTaskPending({ taskId: messageData.taskId, question: `Supercharge "${taskName}"—what’s the next big idea?`, options: [] });
       setPostTaskOptions(null);
       setEditMode(null);
-      setMessages((prev) => [...prev, {
-        from: "System",
-        user: userName,
-        text: `Refining "${taskName}"—let’s crank it to 11! 🎸`,
-        type: "system",
-        timestamp: new Date().toLocaleTimeString(),
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: "System",
+          user: userName,
+          text: `Refining "${taskName}"—let’s crank it to 11! 🎸`,
+          type: "system",
+          timestamp: new Date().toLocaleTimeString(),
+        },
+        {
+          from: "Cracker Bot",
+          text: "Cracker Bot is refining your epic build! 🍳",
+          type: "progressUpdate",
+          taskId: taskId,
+          progress: 0,
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]);
     } else if (action === "Done") {
-      socketRef.current.emit("message", messageData);
-      setMessages((prev) => [...prev, {
-        from: "System",
-        user: userName,
-        text: `"${taskName}" is sealed in the vault! Fetch it anytime with /projects. 🏆`,
-        type: "system",
-        timestamp: new Date().toLocaleTimeString(),
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: "System",
+          user: userName,
+          text: `"${taskName}" is sealed in the vault! Fetch it with /projects. 🏆`,
+          type: "system",
+          timestamp: new Date().toLocaleTimeString(),
+        },
+      ]);
       setPostTaskOptions(null);
       setCurrentTask(null);
       setTaskPending(null);
       setEditMode(null);
-      setIsSending(false);
-      inputRef.current?.focus();
-      return;
     }
 
     socketRef.current.emit("message", messageData);
@@ -618,7 +589,7 @@ const ChatRoom = () => {
       if (!taskId) return;
 
       if (option === "Refine Project") {
-        setCurrentTask({ taskId, step: "features", taskStatus: "pending" });
+        setCurrentTask({ taskId, step: "pending_features", taskStatus: "pending" });
         setTaskPending({ taskId, question: `Add epic features to "${projectData.text}"!`, options: [] });
         socketRef.current.emit("message", {
           text: "Refine Project",
@@ -634,26 +605,21 @@ const ChatRoom = () => {
       } else if (option === "Download") {
         if (content && fileName) {
           const link = document.createElement("a");
-          link.href = `data:text/plain;base64,${content}`;
+          link.href = `data:application/zip;base64,${content}`;
           link.download = fileName;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          setMessages((prev) => [...prev, {
-            from: "System",
-            user: userName,
-            text: `Downloading "${projectData.text}"—grab it now! 📥`,
-            type: "system",
-            timestamp: new Date().toLocaleTimeString(),
-          }]);
-        } else {
-          setMessages((prev) => [...prev, {
-            from: "System",
-            user: userName,
-            text: `Whoops! "${projectData.text}" has no content to download. 🤔`,
-            type: "error",
-            timestamp: new Date().toLocaleTimeString(),
-          }]);
+          setMessages((prev) => [
+            ...prev,
+            {
+              from: "System",
+              user: userName,
+              text: `Downloading "${projectData.text}"—grab it now! 📥`,
+              type: "system",
+              timestamp: new Date().toLocaleTimeString(),
+            },
+          ]);
         }
       } else if (option === "Delete") {
         socketRef.current.emit("message", {
@@ -664,6 +630,7 @@ const ChatRoom = () => {
           user: userName,
           userId: socketRef.current.socket.id,
           ip: window.location.hostname,
+          commandFlag: true,
           target: "bot_lead",
         });
       }
@@ -729,23 +696,29 @@ const ChatRoom = () => {
 
       <div className="flex-1 flex items-center justify-center relative z-10">
         <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? "border-2 border-matrix-green shadow-glow" : ""}`}>
-          <div className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}>
+          <div
+            ref={chatContainerRef}
+            className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}
+          >
             {messages.map((msg, index) => (
-              <div key={index}>
+              <div key={index} className="message-wrapper mb-2">
                 <ChatMessage
                   message={msg}
-                  progress={msg.progress}
-                  taskResult={msg.fileContent ? { content: msg.fileContent, downloadLink: `data:text/plain;base64,${msg.fileContent}` } : null}
-                  onPreview={msg.fileContent ? () => handlePreview(msg.fileContent) : null}
-                  onOptionClick={(option) => handleOptionClick(option, msg.type === "project" ? msg : null)}
+                  taskResult={msg.content ? { content: msg.content, downloadLink: msg.downloadLink } : null}
+                  onPreview={
+                    msg.content
+                      ? () => PreviewPopup({ fileContent: msg.content, fileName: msg.fileName, socket: socketRef.current, postTaskOptions, setMessages })
+                      : null
+                  }
+                  onOptionClick={(option) => handleOptionClick(option, msg.projects ? msg : null)}
                   colorScheme={currentScheme}
+                  progress={taskProgress[msg.taskId]}
                 />
               </div>
             ))}
             {Object.entries(isTyping).map(([user, typing]) => typing && (
-              <div key={user} className="text-gray-500 italic animate-pulse">{`${user} is conjuring a message...`}</div>
+              <div key={user} className="text-gray-500 italic animate-pulse mb-2">{`${user} is conjuring a message...`}</div>
             ))}
-            <div ref={chatEndRef} />
           </div>
 
           {currentTask && (
@@ -759,17 +732,21 @@ const ChatRoom = () => {
               ref={commandsRef}
               tabIndex={0}
               onKeyDown={handleKeyDown}
-              className={`absolute ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 mt-2 z-10 max-h-40 overflow-y-auto`}
+              className={`absolute bottom-12 left-0 w-full max-w-3xl ${currentScheme.chatBg} border border-gray-600 rounded-md shadow-md p-2 z-20 max-h-64 overflow-y-auto`}
             >
-              {filteredCommands.map((cmd, idx) => (
-                <div
-                  key={cmd.command}
-                  onClick={() => handleCommandSelect(cmd.command)}
-                  className={`cursor-pointer p-2 rounded-md ${idx === commandIndex ? "bg-gray-600" : "hover:bg-gray-700"} transition-colors`}
-                >
-                  <span className={`${currentScheme.accent} font-bold`}>{cmd.command}</span> - {cmd.description}
-                </div>
-              ))}
+              {filteredCommands.length > 0 ? (
+                filteredCommands.map((cmd, idx) => (
+                  <div
+                    key={cmd.command}
+                    onClick={() => handleCommandSelect(cmd.command)}
+                    className={`cursor-pointer p-2 rounded-md ${idx === commandIndex ? "bg-gray-600" : "hover:bg-gray-700"} transition-colors`}
+                  >
+                    <span className={`${currentScheme.accent} font-bold`}>{cmd.command}</span> - {cmd.description}
+                  </div>
+                ))
+              ) : (
+                <div className="p-2 text-gray-500">No matching commands</div>
+              )}
             </div>
           )}
 
@@ -777,19 +754,19 @@ const ChatRoom = () => {
             <div className="flex justify-center space-x-4 mt-4">
               <button
                 onClick={() => handlePostTaskAction("Restart")}
-                className={`px-4 py-2 rounded-full ${currentScheme.bubble} text-lg font-semibold hover:scale-105 transition-transform shadow-glow`}
+                className={`px-3 py-1 rounded-full ${currentScheme.bubble} text-sm font-semibold hover:scale-105 transition-transform shadow-glow`}
               >
                 Restart
               </button>
               <button
                 onClick={() => handlePostTaskAction("Refine Project")}
-                className={`px-4 py-2 rounded-full ${currentScheme.bubble} text-lg font-semibold hover:scale-105 transition-transform shadow-glow`}
+                className={`px-3 py-1 rounded-full ${currentScheme.bubble} text-sm font-semibold hover:scale-105 transition-transform shadow-glow`}
               >
                 Refine Project
               </button>
               <button
                 onClick={() => handlePostTaskAction("Done")}
-                className={`px-4 py-2 rounded-full ${currentScheme.bubble} text-lg font-semibold hover:scale-105 transition-transform shadow-glow`}
+                className={`px-3 py-1 rounded-full ${currentScheme.bubble} text-sm font-semibold hover:scale-105 transition-transform shadow-glow`}
               >
                 Done
               </button>
@@ -803,7 +780,13 @@ const ChatRoom = () => {
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={taskPending ? `Answer: ${taskPending.question}` : editMode ? "Tweak your masterpiece..." : "Type your message or /command..."}
+              placeholder={
+                taskPending
+                  ? `Answer: ${taskPending.question}`
+                  : editMode
+                  ? "Tweak your masterpiece..."
+                  : "Type your message or /command..."
+              }
               className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-gray-600 ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-${currentScheme.accent.split("-")[1]} transition-shadow`}
             />
             <button
@@ -815,7 +798,11 @@ const ChatRoom = () => {
             <button
               onClick={() => sendMessage(input)}
               disabled={!isConnected || !input.trim() || isSending}
-              className={`px-4 py-2 rounded-r-md transition ${isConnected && input.trim() && !isSending ? `${currentScheme.button} ${currentScheme.buttonText} hover:shadow-glow` : "bg-gray-500 text-gray-300 cursor-not-allowed"}`}
+              className={`px-4 py-2 rounded-r-md transition ${
+                isConnected && input.trim() && !isSending
+                  ? `${currentScheme.button} ${currentScheme.buttonText} hover:shadow-glow`
+                  : "bg-gray-500 text-gray-300 cursor-not-allowed"
+              }`}
             >
               Send
             </button>

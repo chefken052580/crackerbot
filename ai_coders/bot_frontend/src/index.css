@@ -95,6 +95,13 @@ code {
   50% { box-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
 }
 
+@keyframes radiantGlow {
+  0% { box-shadow: 0 0 5px #ff004f, 0 0 10px #ff004f80; }
+  33% { box-shadow: 0 0 10px #fff700, 0 0 20px #fff70080; }
+  66% { box-shadow: 0 0 15px #00ff85, 0 0 30px #00ff8580; }
+  100% { box-shadow: 0 0 5px #ff004f, 0 0 10px #ff004f80; }
+}
+
 /* Chat message base styles */
 .chat-message {
   @apply p-2 mb-2 rounded shadow-sm;
@@ -142,7 +149,7 @@ code {
 
 /* Theme-specific AI response styles */
 .neon .chat-message:not(.user-message) {
-  @apply text-[#00ff9f] bg-gray-800;
+  @apply text-[#00ff85] bg-gray-800;
 }
 
 .cyberpunk .chat-message:not(.user-message) {
@@ -241,49 +248,74 @@ code {
 }
 
 .shadow-matrix-glow {
-  box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+  box-shadow: 0 0 10px #00ff85, 0 0 20px #00ff85;
 }
 
-/* Progress bar styles */
-.progress-container {
-  position: relative;
-  width: 100%;
-  height: 24px;
-  background: #1a1a1a !important;
-  border-radius: 12px;
-  margin-top: 8px;
-  overflow: hidden;
-  border: 1px solid #4a4a4a !important;
-  box-shadow: inset 0 0 5px #000, 0 0 10px rgba(0, 0, 0, 0.5);
+/* Progress bar styles with radiant glow */
+.task-progress-container {
+  @apply mt-2 w-full max-w-md mx-auto; /* Centered */
 }
 
-.progress-bar {
-  height: 100%;
-  border-radius: 12px;
-  background: linear-gradient(to right, #ff2d55, #ffcc00 50%, #00ff9f) !important;
-  transition: width 0.8s ease-in-out;
+.task-progress-bar {
+  @apply h-6 rounded-full bg-gray-800 border border-gray-600 relative overflow-hidden; /* Thicker: 24px */
+  animation: radiantGlow 2s infinite;
 }
 
-/* Ensure gradient persists across all themes */
-.neon .progress-bar,
-.cyberpunk .progress-bar,
-.retro .progress-bar,
-.pastel .progress-bar,
-.matrix .progress-bar {
-  background: linear-gradient(to right, #ff2d55, #ffcc00 50%, #00ff9f) !important;
+.task-progress-fill {
+  @apply h-full rounded-full;
+  background: linear-gradient(to right, #ff004f, #fff700 50%, #00ff85); /* Neon red to yellow to green */
+  transition: width 0.5s ease-in-out;
 }
 
-/* Progress text */
-.progress-text {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: #fff !important;
-  font-size: 12px;
-  font-weight: bold;
-  text-shadow: 0 0 5px #000, 0 0 10px #000;
-  z-index: 10;
+.task-progress-text {
+  @apply absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-sm font-bold;
+  text-shadow: 0 0 5px #000, 0 0 10px #000; /* Readable contrast */
+}
+
+/* Theme-specific progress bar enhancements */
+.neon .task-progress-bar {
+  border-color: #00ff85;
+}
+
+.cyberpunk .task-progress-bar {
+  border-color: #00e5ff;
+}
+
+.retro .task-progress-bar {
+  border-color: #ff8c00;
+}
+
+.pastel .task-progress-bar {
+  border-color: #ff85a2;
+}
+
+.matrix .task-progress-bar {
+  border-color: #00ff85;
+}
+
+/* Progress message styling */
+.progress-message {
+  @apply border-l-2;
+}
+
+.neon .progress-message {
+  border-color: #00ff85; /* Neon green */
+}
+
+.cyberpunk .progress-message {
+  border-color: #00e5ff;
+}
+
+.retro .progress-message {
+  border-color: #ff8c00;
+}
+
+.pastel .progress-message {
+  border-color: #ff85a2;
+}
+
+.matrix .progress-message {
+  border-color: #00ff85; /* Neon green */
 }
 
 /* Neon pulse animation */
@@ -293,10 +325,10 @@ code {
 
 /* Hover effects */
 .hover\:shadow-neon:hover {
-  box-shadow: 0 0 15px #00ff9f, 0 0 30px #00ff9f80;
+  box-shadow: 0 0 15px #00ff85, 0 0 30px #00ff8580; /* Neon green */
 }
 
 .hover\:text-neon-green:hover {
-  color: #00ff9f;
-  text-shadow: 0 0 10px #00ff9f;
+  color: #00ff85; /* Neon green */
+  text-shadow: 0 0 10px #00ff85;
 }
