@@ -1,30 +1,65 @@
-// bot_lead/src/commands/guide.js
-import { generateResponse } from '../aiHelper.js';
+// ai_coders/bot_lead/src/commands/guide.js (ESM, v2025-03-28-1)
+/**
+ * Guide Command Handler
+ * Displays the list of available commands with Matrix-green flair.
+ *
+ * @version 2025-03-28-1
+ * @author CrackerBot Team, enhanced by xAI
+ */
 
-export async function handleGuide(botSocket, userName, tone, ip, frontendId) {
-  const commandsList = [
-    { command: "/projects", description: "Lists your completed projects with options to refine or restart." },
-    { command: "/download", description: "Same as /projects—shows your masterpieces." },
-    { command: "/reset_name", description: "Clears your name to start fresh." },
-    { command: "/guide", description: "Displays this epic command list." },
-    { command: "/tone", description: "Sets the bot’s vibe (not implemented yet)." },
-    { command: "/check_bot_health", description: "Pings the bots’ status (coming soon)." },
-    { command: "/stop_bots", description: "Halts the bot crew (future feature)." },
-    { command: "/start_task", description: "Kicks off a new task (in progress)." },
-    { command: "/help", description: "Alias for /guide—your command cheat sheet." },
-  ];
-  const guideMsg = await generateResponse(
-    `Yo ${userName}, here’s the Cracker Bot command codex:\n\n${commandsList.map(cmd => `${cmd.command}: ${cmd.description}`).join('\n')}`,
-    userName,
-    tone
-  );
-  botSocket.emit('message', {
-    text: guideMsg,
-    type: 'system',
-    from: 'Cracker Bot',
-    target: 'bot_frontend',
-    ip,
-    user: userName,
-    frontendId,
-  });
+import { generateResponse } from '../aiHelper.js';
+import { sendMessage } from '../taskHandlers.js';
+import { getCommandList } from './index.js';
+import { log, error } from '../logger.js';
+
+/**
+ * Shows the command guide.
+ * @param {Object} socket - Socket.IO instance.
+ * @param {string} userName - User requesting guide.
+ * @param {string} tone - Response tone.
+ * @param {string} ip - User IP.
+ * @param {string} frontendId - Frontend ID.
+ * @param {string} taskId - Optional task ID.
+ * @param {string} userKey - Redis key for user info.
+ * @param {string} stateKey - Redis key for task state.
+ * @param {Object} redisClient - Redis client instance.
+ */
+export default async function handleGuide(socket, userName, tone, ip, frontendId, taskId, userKey, stateKey, redisClient) {
+  try {
+    const commandList = getCommandList();
+    const commandsText = Object.entries(commandList)
+      .map(([cmd, desc]) => `/${cmd}: ${desc}`)
+      .join('\n');
+    const guideMsg = await generateResponse(
+      `Yo ${userName}, here’s the cosmic command codex—Matrix-green and ready to roll:\n${commandsText}`,
+      userName,
+      tone
+    );
+    await sendMessage(socket, {
+      text: guideMsg,
+      type: 'success',
+      from: 'CrackerBot Prime',
+      target: 'bot_frontend',
+      ip,
+      user: userName,
+      frontendId,
+    });
+    await log(`Displayed guide for ${userName} (frontendId: ${frontendId})`);
+  } catch (err) {
+    const errorMsg = await generateResponse(
+      `Yo ${userName}, guide fetch glitched: ${err.message}. Retry or holler! ⚠️`,
+      userName,
+      tone
+    );
+    await sendMessage(socket, {
+      text: errorMsg,
+      type: 'error',
+      from: 'CrackerBot Prime',
+      target: 'bot_frontend',
+      ip,
+      user: userName,
+      frontendId,
+    });
+    await error(`Guide fetch failed for ${userName}: ${err.message}`);
+  }
 }

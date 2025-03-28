@@ -1,74 +1,100 @@
-// bot_lead/src/commands/projects.js
-import { getCompletedProjects } from '../redisUtils.js';
+// ai_coders/bot_lead/src/commands/projects.js (ESM, v2025-03-28-2)
+/**
+ * Projects Command Handler
+ * Fetches and lists completed projects from Redis with cosmic flair.
+ *
+ * @version 2025-03-28-2
+ * @author CrackerBot Team, enhanced by xAI
+ */
+
 import { generateResponse } from '../aiHelper.js';
-import { log } from '../logger.js'; // Added for debugging
+import { sendMessage } from '../taskHandlers.js';
+import { log, error } from '../logger.js';
 
-export async function handleProjects({ user, frontendId }, botSocket) {
-  const userName = user; // Match parameter name from taskHandlers.js
-  const tone = 'Cool, Edgy, Smooth, Super Smart'; // Default tone from taskHandlers.js
-  const ip = '::ffff:172.18.0.7'; // Placeholder IP, could be passed from caller if needed
-
+/**
+ * Lists user’s completed projects.
+ * @param {Object} socket - Socket.IO instance.
+ * @param {string} userName - User requesting projects.
+ * @param {string} tone - Response tone.
+ * @param {string} ip - User IP.
+ * @param {string} frontendId - Frontend ID.
+ * @param {string} taskId - Optional task ID.
+ * @param {string} userKey - Redis key for user info.
+ * @param {string} stateKey - Redis key for task state.
+ * @param {Object} redisClient - Redis client instance.
+ */
+export default async function handleProjects(socket, userName, tone, ip, frontendId, taskId, userKey, stateKey, redisClient) {
   try {
-    const projects = await getCompletedProjects(userName);
-    await log(`Fetched ${projects.length} completed projects for ${userName}`);
+    // Fetch projects directly from Redis
+    const projectKeys = await redisClient.keys(`project:${userName}:*`);
+    const projects = await Promise.all(
+      projectKeys.map(async (key) => {
+        const projectData = await redisClient.get(key);
+        return projectData ? JSON.parse(projectData) : null;
+      })
+    );
+    const validProjects = projects.filter((p) => p && p.taskId);
 
-    if (projects.length === 0) {
+    await log(`Fetched ${validProjects.length} projects for ${userName} (frontendId: ${frontendId})`);
+
+    if (validProjects.length === 0) {
       const noProjectsMsg = await generateResponse(
-        `Yo ${userName}, no projects in the vault yet! Let’s build something epic—what’s your vibe? 🚀`,
+        `Yo ${userName}, your project vault’s empty! Let’s craft something stellar—what’s your vibe? 🚀`,
         userName,
         tone
       );
-      botSocket.emit('message', {
+      await sendMessage(socket, {
         text: noProjectsMsg,
         type: 'success',
-        from: 'Cracker Bot',
+        from: 'CrackerBot Prime',
         target: 'bot_frontend',
         ip,
         user: userName,
-        options: ["Chat", "Build-Something-Epic"],
         frontendId,
+        options: ["Chat", "Build-Something-Epic"],
       });
-      await log(`Sent no-projects message to ${userName} (frontendId: ${frontendId})`);
     } else {
-      const projectList = projects.map(p => ({
-        text: `${p.name} (v${p.version || 1}) - ${p.type}`,
+      const projectList = validProjects.map(p => ({
+        text: `${p.name} (v${p.version || 1}) - ${p.type} (${p.features || 'No features yet'})`,
         taskId: p.taskId,
-        options: ["Refine Project", "Download", "Delete"],
-        content: p.content, // ZIP base64 from Redis
-        fileName: p.fileName || `${p.name}-v${p.version || 1}.zip`,
+        options: p.status === 'completed' ? ["Refine Project", "Download", "Delete"] : ["Refine Project"],
+        projectData: {
+          taskId: p.taskId,
+          content: p.content,
+          fileName: p.fileName || `${p.name}-v${p.version || 1}.zip`,
+        },
       }));
       const projectsMsg = await generateResponse(
-        `Check it, ${userName}! Your cosmic creations:\n${projectList.map(p => `- ${p.text}`).join('\n')}`,
+        `Check it, ${userName}! Your interstellar portfolio has ${validProjects.length} masterpiece${validProjects.length === 1 ? '' : 's'}:\n${projectList.map(p => `- ${p.text}`).join('\n')}`,
         userName,
         tone
       );
-      botSocket.emit('message', {
+      await sendMessage(socket, {
         text: projectsMsg,
         type: 'success',
-        from: 'Cracker Bot',
+        from: 'CrackerBot Prime',
         target: 'bot_frontend',
         ip,
         user: userName,
-        projects: projectList,
         frontendId,
+        projects: projectList,
       });
-      await log(`Sent project list to ${userName} (frontendId: ${frontendId}) with ${projectList.length} projects`);
     }
-  } catch (error) {
+  } catch (err) {
     const errorMsg = await generateResponse(
-      `Yo ${userName}, hit a snag fetching your projects: ${error.message}. Retry or holler for a fix! ⚠️`,
+      `Yo ${userName}, project fetch hit a wormhole: ${err.message}. Retry or ping for help! ⚠️`,
       userName,
       tone
     );
-    botSocket.emit('message', {
+    await sendMessage(socket, {
       text: errorMsg,
       type: 'error',
-      from: 'Cracker Bot',
+      from: 'CrackerBot Prime',
       target: 'bot_frontend',
       ip,
       user: userName,
       frontendId,
     });
-    await log(`Error fetching projects for ${userName}: ${error.message}`);
+    await error(`Projects fetch failed for ${userName}: ${err.message}`);
   }
 }

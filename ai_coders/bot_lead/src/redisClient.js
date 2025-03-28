@@ -1,8 +1,9 @@
-// ai_coders/bot_lead/src/redisClient.js
+// ai_coders/bot_lead/src/redisClient.js (ESM, v2025-03-28-2)
+/* CrackerBot’s cosmic Redis wrapper—storing data with interstellar precision! 🌌 */
 import { createClient } from 'redis';
 import { log, error } from './logger.js';
 import config from './config.js';
-import { botSocket } from './socket.js'; // Import botSocket for system notifications
+import { botSocket } from './socket.js';
 
 export const redisClient = createClient({
   url: 'redis://redis:6379',
@@ -11,7 +12,7 @@ export const redisClient = createClient({
   socket: {
     reconnectStrategy: (retries) => {
       if (retries > 10) return new Error('Redis reconnect retries exhausted');
-      return Math.min(retries * 100, 3000); // Backoff: 100ms to 3s
+      return Math.min(retries * 100, 3000);
     },
   },
 });
@@ -64,7 +65,6 @@ async function connectWithRetry() {
   await connectWithRetry();
 })();
 
-// Store a message in a user's message list (up to 10 entries)
 export async function storeMessage(user, text) {
   const key = `messages:${user || 'anonymous'}`;
   try {
@@ -76,12 +76,11 @@ export async function storeMessage(user, text) {
   }
 }
 
-// Cache a completed task
 export async function cacheTask(task) {
   const { taskId, user, frontendId, ip, name, type, fileName, content, features, version, network } = task;
   const taskKey = `project:${user}:${taskId}`;
   try {
-    const taskData = JSON.stringify({
+    const taskData = {
       taskId,
       frontendId,
       ip,
@@ -95,9 +94,9 @@ export async function cacheTask(task) {
       network: network || null,
       completed: true,
       timestamp: new Date().toISOString(),
-    });
-    await redisClient.set(taskKey, taskData);
-    await redisClient.set(`project:${user}:latest`, taskData);
+    };
+    await redisClient.set(taskKey, JSON.stringify(taskData));
+    await redisClient.set(`project:${user}:latest`, JSON.stringify(taskData));
     await redisClient.sAdd(`completedProjects:${user}`, taskId);
     await redisClient.hSet('tasks', taskId, JSON.stringify({ ...task, status: 'completed' }));
     await log(`Cached task ${taskId} for ${user} at ${taskKey}`);
@@ -107,46 +106,40 @@ export async function cacheTask(task) {
   }
 }
 
-// Fetch a specific task by ID
 export async function getTask(user, taskId) {
   const taskKey = `project:${user}:${taskId}`;
   try {
     const taskData = await redisClient.get(taskKey);
-    if (!taskData) return null;
-    return JSON.parse(taskData);
+    return taskData ? JSON.parse(taskData) : null;
   } catch (err) {
     await error(`Failed to fetch task ${taskId} for ${user}: ${err.message}`);
     return null;
   }
 }
 
-// Fetch all completed project IDs for a user
 export async function getCompletedProjects(user) {
   try {
-    const taskIds = await redisClient.sMembers(`completedProjects:${user}`);
-    return taskIds;
+ recalled = await redisClient.sMembers(`completedProjects:${user}`);
+    return recalled;
   } catch (err) {
     await error(`Failed to fetch completed projects for ${user}: ${err.message}`);
     return [];
   }
 }
 
-// Fetch the latest completed project for a user
 export async function getLatestProject(user) {
   try {
     const latestData = await redisClient.get(`project:${user}:latest`);
-    if (!latestData) return null;
-    return JSON.parse(latestData);
+    return latestData ? JSON.parse(latestData) : null;
   } catch (err) {
     await error(`Failed to fetch latest project for ${user}: ${err.message}`);
     return null;
   }
 }
 
-// Generic Redis wrappers for consistency
 export async function set(key, value) {
   try {
-    await redisClient.set(key, typeof value === 'object' ? JSON.stringify(value) : value);
+    await redisClient.set(key, JSON.stringify(value));
     await log(`Set key ${key}`);
   } catch (err) {
     await error(`Failed to set ${key}: ${err.message}`);
@@ -186,7 +179,7 @@ export async function sMembers(setKey) {
 
 export async function hSet(hashKey, field, value) {
   try {
-    await redisClient.hSet(hashKey, field, typeof value === 'object' ? JSON.stringify(value) : value);
+    await redisClient.hSet(hashKey, field, JSON.stringify(value));
     await log(`Set hash ${hashKey} field ${field}`);
   } catch (err) {
     await error(`Failed to set hash ${hashKey} field ${field}: ${err.message}`);

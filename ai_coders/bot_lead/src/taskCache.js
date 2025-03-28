@@ -1,48 +1,63 @@
-// ai_coders/bot_lead/src/taskCache.js
+// ai_coders/bot_lead/src/taskCache.js (ESM, v2025-03-28-4)
+/* CrackerBot’s cosmic vault—caching completed tasks with interstellar flair! 🌌 */
 import { log, error } from './logger.js';
-import { set, get, del } from './redisClient.js'; // Only import exported functions
-import { redisClient } from './redisClient.js'; // Import redisClient for keys method
+import { set, get, del } from './redisClient.js';
+import { redisClient } from './redisClient.js';
 
-// Cache a completed task in Redis
+/**
+ * Caches a completed task in Redis with cosmic flair.
+ * @param {Object} task - Task data to cache
+ * @returns {Promise<Object|null>} Cached task data or null on failure
+ */
 export async function cacheCompletedTask(task) {
   try {
     const { taskId, frontendId, ip, name, type, fileName, content, user, features, version, network } = task;
+    if (!taskId || !user) {
+      throw new Error('Missing taskId or user—cosmic coordinates incomplete!');
+    }
+
     const cacheKey = `project:${user}:${taskId}`;
     const taskData = {
       taskId,
-      frontendId,
-      ip,
-      name,
-      type,
-      fileName,
-      content,
+      frontendId: frontendId || 'unknown',
+      ip: ip || 'unknown',
+      name: name || 'unnamed_project',
+      type: type || 'unknown',
+      fileName: fileName || `${name || 'project'}.zip`,
+      content: content || null,
       user,
       features: features || 'basic functionality',
       version: version || 1,
       network: network || null,
-      completed: true,
+      status: 'completed', // Fixed to align with getCompletedProjects
       timestamp: new Date().toISOString(),
     };
     await set(cacheKey, taskData);
-    await log(`Cached task ${taskId} for ${user} - locked, loaded, and ready to rock! 🚀`);
+    await log(`Cached task ${taskId} for ${user} - locked, loaded, and ready to rock! 🚀 Content present: ${!!content}`);
     return taskData;
   } catch (err) {
-    await error(`Caching task ${task.taskId} for ${user} crashed and burned: ${err.message} 🔥`);
-    throw err;
+    await error(`Caching task ${task?.taskId || 'unknown'} for ${task?.user || 'unknown'} crashed: ${err.message} 🔥`);
+    return null;
   }
 }
 
-// Fetch all completed projects for a user
+/**
+ * Retrieves all completed projects for a user from Redis.
+ * @param {string} user - User identifier
+ * @returns {Promise<Array>} List of completed projects
+ */
 export async function getCompletedProjects(user) {
   try {
-    const projectKeys = await redisClient.keys(`project:${user}:*`); // Use redisClient.keys directly
+    const projectKeys = await redisClient.keys(`project:${user}:*`);
     const projects = await Promise.all(
       projectKeys.map(async (key) => {
         const project = await get(key);
-        return project && project.completed ? project : null;
+        return project && project.status === 'completed' ? project : null;
       })
     );
-    const validProjects = projects.filter(p => p !== null).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const validProjects = projects
+      .filter(p => p !== null)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     await log(`Fetched ${validProjects.length} epic projects for ${user} - ready to roll! 🎸`);
     return validProjects.map(project => ({
       text: `${project.name} (v${project.version}, ${project.type}) - "${project.features}"`,
@@ -57,7 +72,12 @@ export async function getCompletedProjects(user) {
   }
 }
 
-// Delete a cached project
+/**
+ * Deletes a project from Redis.
+ * @param {string} user - User identifier
+ * @param {string} taskId - Task ID
+ * @returns {Promise<boolean>} Success status
+ */
 export async function deleteProject(user, taskId) {
   try {
     const cacheKey = `project:${user}:${taskId}`;
@@ -70,7 +90,11 @@ export async function deleteProject(user, taskId) {
   }
 }
 
-// Get the latest completed project for a user
+/**
+ * Retrieves the latest completed project for a user.
+ * @param {string} user - User identifier
+ * @returns {Promise<Object|null>} Latest project or null
+ */
 export async function getLatestProject(user) {
   try {
     const projects = await getCompletedProjects(user);
