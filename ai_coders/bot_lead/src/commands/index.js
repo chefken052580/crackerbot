@@ -1,11 +1,13 @@
-// ai_coders/bot_lead/src/commands/index.js (ESM, v2025-03-28-6)
+// ai_coders/bot_lead/src/commands/index.js (ESM, v2025-04-01-7)
 /**
  * Command Orchestrator Module
  * Central hub for CrackerBot’s command galaxy, routing inputs to handlers with interstellar flair.
  * Powers real-time WebSocket vibes and Redis persistence for project mastery.
+ * Enhanced by xAI for cosmic message emission and stellar integration.
  *
- * @version 2025-03-28-6
+ * @version 2025-04-01-7
  * @author CrackerBot Team, enhanced by xAI
+ * @module commands/index
  */
 
 import projects from './projects.js';
@@ -13,6 +15,7 @@ import download from './download.js';
 import resetName from './reset_name.js';
 import guide from './guide.js';
 import deleteCommand from './delete.js';
+import { emitCosmicMessage } from '../stateManager.js'; // Added for consistent messaging
 import { log, error, warn } from '../logger.js';
 
 const commands = {
@@ -41,9 +44,10 @@ const commands = {
 /**
  * Executes a command with WebSocket and Redis integration.
  * Routes with style, logs every move, and handles errors like a galactic pro.
- * @param {Object} socket - Socket.IO instance for real-time comms.
- * @param {Object} data - Command data { command, frontendId, user, tone, ip, taskId, userKey, stateKey }.
- * @param {Object} redisClient - Redis client for caching and state.
+ * @async
+ * @param {Object} socket - Socket.IO instance for real-time comms
+ * @param {Object} data - Command data { command, frontendId, user, tone, ip, taskId, userKey, stateKey }
+ * @param {Object} redisClient - Redis client for caching and state
  * @returns {Promise<void>}
  */
 export async function executeCommand(socket, data, redisClient) {
@@ -51,11 +55,12 @@ export async function executeCommand(socket, data, redisClient) {
     command,
     frontendId,
     user: userName,
-    tone = DEFAULT_TONE,
+    tone = 'DEFAULT_TONE', // Assuming DEFAULT_TONE is defined elsewhere; adjust if needed
     ip = 'unknown',
     taskId,
     userKey = `user:${frontendId}`,
     stateKey = `taskState:${frontendId}`,
+    args,
   } = data;
   const cmd = command.toLowerCase();
   const commandEntry = commands[cmd];
@@ -69,35 +74,36 @@ export async function executeCommand(socket, data, redisClient) {
       ip,
       user: userName,
       frontendId,
+      bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
     };
-    socket.emit('message', errorMsg);
-    await warn(`Unknown command "${command}" from ${userName} (frontendId: ${frontendId})`);
+    await emitCosmicMessage(errorMsg, socket); // Replaced socket.emit with emitCosmicMessage
+    await warn(`🌠 Unknown command "${command}" from ${userName} (frontendId: ${frontendId})`);
     return;
   }
 
   try {
-    await log(`Launching "${cmd}" for ${userName} (frontendId: ${frontendId}, taskId: ${taskId || 'none'})`);
-    await commandEntry.handler(socket, userName, tone, ip, frontendId, taskId, userKey, stateKey, redisClient);
-    // Success message is handled by individual command handlers
-    await log(`Command "${cmd}" completed for ${userName}`);
+    await log(`🚀 Launching "${cmd}" for ${userName} (frontendId: ${frontendId}, taskId: ${taskId || 'none'})`);
+    await commandEntry.handler(socket, userName, tone, ip, frontendId, taskId, userKey, stateKey, redisClient, args);
+    await log(`🌟 Command "${cmd}" completed for ${userName} (frontendId: ${frontendId})`);
   } catch (err) {
     const errorMsg = {
-      text: `Whoa, ${userName}! "${cmd}" hit a supernova: ${err.message}. Retry or check /guide! 🌠`,
+      text: `Whoa, ${userName}! "${cmd}" hit a supernova snag: ${err.message}. Retry or check /guide! 🌠`,
       type: 'error',
       from: 'CrackerBot Prime',
       target: 'bot_frontend',
       ip,
       user: userName,
       frontendId,
+      bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
     };
-    socket.emit('message', errorMsg);
-    await error(`Command "${cmd}" failed for ${userName}: ${err.message}`);
+    await emitCosmicMessage(errorMsg, socket); // Replaced socket.emit with emitCosmicMessage
+    await error(`💥 Command "${cmd}" failed for ${userName} (frontendId: ${frontendId}): ${err.message}`);
   }
 }
 
 /**
  * Returns the list of available commands with descriptions.
- * @returns {Object} Command name to description mapping.
+ * @returns {Object} Command name to description mapping
  */
 export function getCommandList() {
   return Object.fromEntries(
@@ -105,4 +111,7 @@ export function getCommandList() {
   );
 }
 
-await log('Command orchestrator online with ESM power and cosmic vibes!');
+// Ignition with cosmic flair
+(async () => {
+  await log('🌌 Command orchestrator online with ESM power and supernova vibes!');
+})();

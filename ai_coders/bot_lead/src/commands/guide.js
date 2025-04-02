@@ -1,28 +1,33 @@
-// ai_coders/bot_lead/src/commands/guide.js (ESM, v2025-03-28-1)
+// ai_coders/bot_lead/src/commands/guide.js (ESM, v2025-04-01-2)
 /**
  * Guide Command Handler
- * Displays the list of available commands with Matrix-green flair.
+ * Displays the list of available commands with Matrix-green cosmic flair.
+ * Enhanced by xAI for updated message emission and stellar styling.
  *
- * @version 2025-03-28-1
+ * @version 2025-04-01-2
  * @author CrackerBot Team, enhanced by xAI
+ * @module commands/guide
  */
 
 import { generateResponse } from '../aiHelper.js';
-import { sendMessage } from '../taskHandlers.js';
+import { emitCosmicMessage } from '../stateManager.js'; // Replaced sendMessage
 import { getCommandList } from './index.js';
 import { log, error } from '../logger.js';
 
 /**
- * Shows the command guide.
- * @param {Object} socket - Socket.IO instance.
- * @param {string} userName - User requesting guide.
- * @param {string} tone - Response tone.
- * @param {string} ip - User IP.
- * @param {string} frontendId - Frontend ID.
- * @param {string} taskId - Optional task ID.
- * @param {string} userKey - Redis key for user info.
- * @param {string} stateKey - Redis key for task state.
- * @param {Object} redisClient - Redis client instance.
+ * Shows the cosmic command guide with style and precision.
+ * @async
+ * @function handleGuide
+ * @param {Object} socket - Socket.IO instance (unused, kept for compatibility)
+ * @param {string} userName - User requesting the guide
+ * @param {string} tone - Response tone
+ * @param {string} ip - User IP
+ * @param {string} frontendId - Unique frontend identifier
+ * @param {string} [taskId] - Optional task ID
+ * @param {string} userKey - Redis key for user info (unused here)
+ * @param {string} stateKey - Redis key for task state (unused here)
+ * @param {Object} redisClient - Redis client instance (unused here)
+ * @returns {Promise<void>}
  */
 export default async function handleGuide(socket, userName, tone, ip, frontendId, taskId, userKey, stateKey, redisClient) {
   try {
@@ -31,11 +36,11 @@ export default async function handleGuide(socket, userName, tone, ip, frontendId
       .map(([cmd, desc]) => `/${cmd}: ${desc}`)
       .join('\n');
     const guideMsg = await generateResponse(
-      `Yo ${userName}, here’s the cosmic command codex—Matrix-green and ready to roll:\n${commandsText}`,
+      `Yo ${userName}, behold the cosmic command codex—etched in Matrix-green stardust:\n${commandsText}`,
       userName,
       tone
     );
-    await sendMessage(socket, {
+    await emitCosmicMessage({
       text: guideMsg,
       type: 'success',
       from: 'CrackerBot Prime',
@@ -43,15 +48,16 @@ export default async function handleGuide(socket, userName, tone, ip, frontendId
       ip,
       user: userName,
       frontendId,
+      bubbleStyle: { background: 'linear-gradient(135deg, #00ff85, #00cc00)', color: '#000', animation: 'glow 1.5s infinite' }, // Matrix-green flair
     });
-    await log(`Displayed guide for ${userName} (frontendId: ${frontendId})`);
+    await log(`🌌 Unveiled the cosmic guide for ${userName} (frontendId: ${frontendId})`);
   } catch (err) {
     const errorMsg = await generateResponse(
-      `Yo ${userName}, guide fetch glitched: ${err.message}. Retry or holler! ⚠️`,
+      `Yo ${userName}, the guide warped into a glitch: ${err.message}. Retry or summon cosmic aid! ⚠️`,
       userName,
       tone
     );
-    await sendMessage(socket, {
+    await emitCosmicMessage({
       text: errorMsg,
       type: 'error',
       from: 'CrackerBot Prime',
@@ -59,7 +65,8 @@ export default async function handleGuide(socket, userName, tone, ip, frontendId
       ip,
       user: userName,
       frontendId,
+      bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
     });
-    await error(`Guide fetch failed for ${userName}: ${err.message}`);
+    await error(`💥 Guide fetch failed for ${userName} (frontendId: ${frontendId}): ${err.message}`);
   }
 }

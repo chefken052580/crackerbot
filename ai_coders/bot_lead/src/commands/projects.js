@@ -1,27 +1,32 @@
-// ai_coders/bot_lead/src/commands/projects.js (ESM, v2025-03-28-2)
+// ai_coders/bot_lead/src/commands/projects.js (ESM, v2025-04-01-3)
 /**
  * Projects Command Handler
- * Fetches and lists completed projects from Redis with cosmic flair.
+ * Fetches and lists completed projects from Redis with cosmic flair and supernova precision.
+ * Enhanced by xAI for compatibility with updated message emission.
  *
- * @version 2025-03-28-2
+ * @version 2025-04-01-3
  * @author CrackerBot Team, enhanced by xAI
+ * @module commands/projects
  */
 
 import { generateResponse } from '../aiHelper.js';
-import { sendMessage } from '../taskHandlers.js';
+import { emitCosmicMessage } from '../stateManager.js'; // Replaced sendMessage with emitCosmicMessage
 import { log, error } from '../logger.js';
 
 /**
- * Lists user’s completed projects.
- * @param {Object} socket - Socket.IO instance.
- * @param {string} userName - User requesting projects.
- * @param {string} tone - Response tone.
- * @param {string} ip - User IP.
- * @param {string} frontendId - Frontend ID.
- * @param {string} taskId - Optional task ID.
- * @param {string} userKey - Redis key for user info.
- * @param {string} stateKey - Redis key for task state.
- * @param {Object} redisClient - Redis client instance.
+ * Lists a user’s completed projects with options for interaction.
+ * @async
+ * @function handleProjects
+ * @param {Object} socket - Socket.IO instance (unused, kept for compatibility)
+ * @param {string} userName - User requesting projects
+ * @param {string} tone - Response tone
+ * @param {string} ip - User IP
+ * @param {string} frontendId - Unique frontend identifier
+ * @param {string} [taskId] - Optional task ID
+ * @param {string} userKey - Redis key for user info (unused here)
+ * @param {string} stateKey - Redis key for task state (unused here)
+ * @param {Object} redisClient - Redis client instance
+ * @returns {Promise<void>}
  */
 export default async function handleProjects(socket, userName, tone, ip, frontendId, taskId, userKey, stateKey, redisClient) {
   try {
@@ -35,15 +40,15 @@ export default async function handleProjects(socket, userName, tone, ip, fronten
     );
     const validProjects = projects.filter((p) => p && p.taskId);
 
-    await log(`Fetched ${validProjects.length} projects for ${userName} (frontendId: ${frontendId})`);
+    await log(`🌌 Fetched ${validProjects.length} cosmic projects for ${userName} (frontendId: ${frontendId})`);
 
     if (validProjects.length === 0) {
       const noProjectsMsg = await generateResponse(
-        `Yo ${userName}, your project vault’s empty! Let’s craft something stellar—what’s your vibe? 🚀`,
+        `Yo ${userName}, your cosmic vault’s a void! Let’s ignite some stellar creations—what’s your vibe? 🚀`,
         userName,
         tone
       );
-      await sendMessage(socket, {
+      await emitCosmicMessage({
         text: noProjectsMsg,
         type: 'success',
         from: 'CrackerBot Prime',
@@ -52,6 +57,7 @@ export default async function handleProjects(socket, userName, tone, ip, fronten
         user: userName,
         frontendId,
         options: ["Chat", "Build-Something-Epic"],
+        bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff', animation: 'pulse 2s infinite' },
       });
     } else {
       const projectList = validProjects.map(p => ({
@@ -65,11 +71,11 @@ export default async function handleProjects(socket, userName, tone, ip, fronten
         },
       }));
       const projectsMsg = await generateResponse(
-        `Check it, ${userName}! Your interstellar portfolio has ${validProjects.length} masterpiece${validProjects.length === 1 ? '' : 's'}:\n${projectList.map(p => `- ${p.text}`).join('\n')}`,
+        `Behold, ${userName}! Your interstellar portfolio shines with ${validProjects.length} masterpiece${validProjects.length === 1 ? '' : 's'}:\n${projectList.map(p => `- ${p.text}`).join('\n')}`,
         userName,
         tone
       );
-      await sendMessage(socket, {
+      await emitCosmicMessage({
         text: projectsMsg,
         type: 'success',
         from: 'CrackerBot Prime',
@@ -78,15 +84,16 @@ export default async function handleProjects(socket, userName, tone, ip, fronten
         user: userName,
         frontendId,
         projects: projectList,
+        bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000', animation: 'glow 1.5s infinite' },
       });
     }
   } catch (err) {
     const errorMsg = await generateResponse(
-      `Yo ${userName}, project fetch hit a wormhole: ${err.message}. Retry or ping for help! ⚠️`,
+      `Yo ${userName}, project fetch hit a wormhole: ${err.message}. Retry or ping the cosmic crew! ⚠️`,
       userName,
       tone
     );
-    await sendMessage(socket, {
+    await emitCosmicMessage({
       text: errorMsg,
       type: 'error',
       from: 'CrackerBot Prime',
@@ -94,7 +101,8 @@ export default async function handleProjects(socket, userName, tone, ip, fronten
       ip,
       user: userName,
       frontendId,
+      bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
     });
-    await error(`Projects fetch failed for ${userName}: ${err.message}`);
+    await error(`💥 Projects fetch failed for ${userName} (frontendId: ${frontendId}): ${err.message}`);
   }
 }

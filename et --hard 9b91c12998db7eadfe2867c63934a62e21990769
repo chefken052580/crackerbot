@@ -1,0 +1,368 @@
+[33mcommit 3102371ca60a43d9c9a3650e51e45cf8e3cd2416[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;32mbug-fixes1[m[33m)[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Thu Mar 6 00:29:52 2025 -0500
+
+    Applied bug fixes and updates from bug-fixes1 branch- removed commonJS to ES module
+
+[33mcommit 9b91c12998db7eadfe2867c63934a62e21990769[m[33m ([m[1;31morigin/bug-fixes1[m[33m)[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Wed Mar 5 05:59:35 2025 -0500
+
+    Apply bug fixes and updates to bot components
+
+[33mcommit d0e52fedc6a5968b68e5ef6b90beca2576031c64[m[33m ([m[1;31morigin/refactor-serverjs[m[33m, [m[1;32mrefactor-serverjs[m[33m)[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Tue Mar 4 13:19:43 2025 -0500
+
+    Refactor server.js and add lead bot utilities (contentUtils, redisClient, stateManager, taskBuilder)
+
+[33mcommit 6b4468104ef4c1a7fcdaac5b30d2cce5bba8506a[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Mon Mar 3 19:53:30 2025 -0500
+
+    Refactor server.js and update related components added a few chat features
+
+[33mcommit 099c24173007670b0bf3e3bfe235958ad33d6b44[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Mon Mar 3 14:31:08 2025 -0500
+
+    Refactored large file - initial changes, more updates to come
+
+[33mcommit 3fc09d16b02debdb0087468a9f7bd7d05ec48173[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Mon Mar 3 02:54:29 2025 -0500
+
+    Refactored server.js, updated WebSocket handling, improved bot tracking, added new utilities
+
+[33mcommit 35aaee99951d86e79c8fc33b741dcae0a2e229bc[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sun Mar 2 22:21:40 2025 -0500
+
+    Refactored server.js into modular components
+
+[33mcommit 60e4a969ae5e649c932afb25e06805c5144a95d4[m[33m ([m[1;31morigin/awesome_addons[m[33m, [m[1;32mawesome_addons[m[33m)[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sat Mar 1 04:26:09 2025 -0500
+
+    chore: update .gitignore to ignore venv and node_modules
+
+[33mcommit f81da4ccdbfe5e7fbd6ef49a3b911ae0dceb5f0a[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sat Mar 1 03:50:53 2025 -0500
+
+    feat: finalize awesome_addons with full changes
+    - Added transcript download to ChatRoom
+    - Fixed /download, /templates, graph zipping, and dynamic JPEG in server.js
+    - Removed main page scrollbar in App.jsx
+    - Cleaned up bot_frontend/dist build artifacts
+    - Removed duplicate files in ai_coders/ (.dockerignore, READMEs, ngrok files, Dockerfile)
+    - Kept bot_lead/Dockerfile as per docker-compose.yml
+    - Updated .gitignore in root and ai_coders/
+
+[33mcommit c1be81a99007329a98905c94b5422d31a939297d[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sat Mar 1 03:44:11 2025 -0500
+
+    feat: finalize awesome_addons and resolve duplicates
+    - Added transcript download to ChatRoom
+    - Fixed /download, /templates, graph zipping, and dynamic JPEG in server.js
+    - Removed main page scrollbar in App.jsx
+    - Cleaned up bot_frontend/dist build artifacts
+    - Removed duplicate files in ai_coders/ (.dockerignore, READMEs, ngrok files)
+    - Kept bot_lead/Dockerfile as per docker-compose.yml
+    - Updated root .gitignore
+
+[33mcommit 03bc5b80dc8672a8bfab205e5232560f1f2638f5[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sat Mar 1 03:19:09 2025 -0500
+
+    feat: finalize awesome_addons with UI and server enhancements
+    - Added transcript download to ChatRoom
+    - Fixed /download, /templates, graph zipping, and dynamic JPEG in server.js
+    - Removed main page scrollbar in App.jsx
+    - Cleaned up bot_frontend/dist build artifacts
+    - Updated dependencies, Dockerfile, and added .gitignore for dist/
+
+[33mcommit ba0f28b89431cc17a32a2878064ffbdb3f994d53[m
+Merge: fc5ab39 3c178af
+Author: chefken052580 <81352313+chefken052580@users.noreply.github.com>
+Date:   Fri Feb 28 07:22:02 2025 -0500
+
+    Merge pull request #1 from chefken052580/crackerbot-tweaks
+    
+    Major Cracker Bot overhaul in crackerbot-tweaks
+
+[33mcommit 3c178aff47368602ccdab84dfe94894c0c24917c[m[33m ([m[1;31morigin/crackerbot-tweaks[m[33m, [m[1;32mcrackerbot-tweaks[m[33m)[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 07:19:47 2025 -0500
+
+    Major Cracker Bot overhaul in crackerbot-tweaks
+      - bot_lead: Added readme.html to zips, versioning, enhanced error handling
+      - bot_frontend: Updated ChatRoom with task tracking, previews; ChatMessage with progress bars; package.json/Dockerfile tweaks
+      - bot_backend: Added Redis storage, refined command handling in routes/index.js
+      - Updated dependencies in bot_lead package files
+
+[33mcommit fc5ab392331b378daf62713e778e308d61456aaa[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:39:44 2025 -0500
+
+    Updated sshpk to latest at root to resolve Dependabot high alert
+
+[33mcommit 8d1c23c46aa5ebea0085075232448f6c99f60ad9[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:39:32 2025 -0500
+
+    Updated minimatch to latest at root to resolve Dependabot high alert
+
+[33mcommit 19f384d887a11a26e1751fff40404adbea8c669f[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:37:39 2025 -0500
+
+    Updated tough-cookie to latest at root to resolve Dependabot high alert
+
+[33mcommit 5fb6146323e3c1347859ea3a1909c9b004797320[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:37:28 2025 -0500
+
+    Updated qs to latest at root to resolve Dependabot high alert
+
+[33mcommit 5cf1308832349b0537664eb404e9a6f4dcf10d9a[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:37:17 2025 -0500
+
+    Updated json-schema to latest at root to resolve Dependabot critical alert
+
+[33mcommit dfd9529bc59f831e7dc8e74fe1e74a1df4977881[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:34:59 2025 -0500
+
+    Cleaned up root crackerbot dependencies, removed latest, fixed minimist
+
+[33mcommit 539282151c2b324108710076b854c34f067c99f1[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:32:35 2025 -0500
+
+    Fixed 34 vulnerabilities at crackerbot root including minimist update
+
+[33mcommit 8d3e2a5e40c2d9a01c6f50710b07927f4357ba7c[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:32:10 2025 -0500
+
+    Updated minimist to >=0.2.4 in parent crackerbot to resolve Dependabot alerts
+
+[33mcommit 05213908d8c9beb6646bb8a24777864c38791765[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:15:02 2025 -0500
+
+    Updated parent ai_coders dependencies to latest secure versions
+
+[33mcommit c1d06228a6e46fe40d5841946bf51721508ab7e3[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:08:50 2025 -0500
+
+    Updated all dependencies in bot_frontend to latest secure versions with legacy-peer-deps
+
+[33mcommit 0a2e62f96dba7400cc4bafbc751e4e3d93cbe6f6[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:04:04 2025 -0500
+
+    Updated dependencies in bot_lead to resolve GitHub vulnerabilities
+
+[33mcommit 1fdcbec0d9d48cffa1898135aee8e1b899c37559[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 01:03:40 2025 -0500
+
+    Updated dependencies in bot_frontend to resolve GitHub vulnerabilities
+
+[33mcommit 45038d22851d9d5498451939d24470104df56b1a[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:55:54 2025 -0500
+
+    Finalized dependency cleanup in bot_frontend with vite upgrade
+
+[33mcommit cf3a7180ef72e7acebe12498d692ec7f5e7a2975[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:49:31 2025 -0500
+
+    Fixed esbuild vulnerabilities in bot_frontend by upgrading vite
+
+[33mcommit a839898bd9eb56596ed5384209e72d642cea8297[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:48:01 2025 -0500
+
+    Cleaned up dependencies in bot_frontend
+
+[33mcommit 8681bf19da42a1cf8348a9e8563776caeb952159[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:44:30 2025 -0500
+
+    Cleaned up dependencies in websocket_server
+
+[33mcommit 3ac6965e00f38a08177bf833a13be5b31c2a30cc[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:44:07 2025 -0500
+
+    Cleaned up dependencies in bot_lead
+
+[33mcommit 0ad38a710e49dca04abad3ee406446ae4a2bfd9d[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:42:39 2025 -0500
+
+    Cleaned up dependencies in bot_backend
+
+[33mcommit d977fe145c10ed7246008975536c0d228ac574ca[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:25:21 2025 -0500
+
+    Updated dependencies across all submodules to latest versions
+
+[33mcommit f3ed0fb7e4d896d605ccb9f4e3cdf3d7b7d7c762[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:15:25 2025 -0500
+
+    fully working crackerbot, needs some tweating, but overall working!
+
+[33mcommit 9ba0c03e9333a78e11a32bbfea4122eef59383e6[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Feb 28 00:11:53 2025 -0500
+
+    Fixed post-build flow, progress bar highlighting, text color to light blue, and branding to Cracker Bot
+
+[33mcommit 663c3844fc64cbcf1dd68b9d0ca690e34ef7784c[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Thu Feb 27 03:19:58 2025 -0500
+
+    Fixed missing closing div tag in ChatRoom.jsx
+
+[33mcommit b489c9382733d873d4fd2afec8daf8a2f0674244[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Thu Feb 27 03:17:06 2025 -0500
+
+    Updated ChatRoom.jsx for manual chat, task dialogs, and styled responses
+
+[33mcommit a301b9b4014d703670d183528a8aca777e812d45[m[33m ([m[1;32mbot_frontend_updates[m[33m)[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Thu Feb 27 02:48:34 2025 -0500
+
+    Updated nginx.conf with WebSocket proxy and docker-compose.yml for bot_lead server.js
+
+[33mcommit 8f13d86d5503b219f738e2da59f4aa108532d2a0[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Thu Feb 27 02:21:39 2025 -0500
+
+    Removed duplicate root folders and stale ai_coders/docker-compose.yml, keeping ai_coders/ structure from 29821ca
+
+[33mcommit 29821ca51b6e46679c4d5c34e1c998065200bdfc[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Wed Feb 26 16:09:48 2025 -0500
+
+    Updated front-end UI (ChatRoom.jsx) and supporting server files
+
+[33mcommit 36d639f62c7b1affaa7cfbcc305114d920df9840[m[33m ([m[1;31morigin/bot_frontend_updates[m[33m)[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Wed Feb 26 06:19:57 2025 -0500
+
+    Remove redundant server.js and socket.js from bot_backend and bot_lead, including src/socket.js, and finalize updates
+
+[33mcommit a7f9273c0f6ef42a773c464979da8f68286f45aa[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Wed Feb 26 05:30:33 2025 -0500
+
+    Remove server-side WebSocket from bot_frontend and update ChatRoom.jsx for client-side logic
+
+[33mcommit 06fee4cf31e9c685f947d18216fccd8d08313300[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Wed Feb 26 04:34:06 2025 -0500
+
+    Consolidate all WebSocket fixes from bot_frontend_updates
+
+[33mcommit f382d7225a0d718e9fbde84925541fd1ad1d5747[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Tue Feb 25 04:27:05 2025 -0500
+
+    Add dotenv to server.js for OpenAI key loading
+
+[33mcommit 8225a7227b5f2cf42e5d9a04335d50b911af1060[m
+Merge: 80cb3c2 0f1b185
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Tue Feb 25 03:46:11 2025 -0500
+
+    Merge branch 'shmai'
+
+[33mcommit 80cb3c2472da17dde80de55e5944af0cf21d895e[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Tue Feb 25 03:22:55 2025 -0500
+
+    Ignore .env to keep secrets local
+
+[33mcommit 88c8e6fb0187410af1afe8eb3c9e95fe79dbaffc[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Tue Feb 25 02:02:14 2025 -0500
+
+    final update before merge
+
+[33mcommit 0f1b18512404f06a8aa730f46d2892c6493a042a[m[33m ([m[1;31morigin/shmai[m[33m, [m[1;32mshmai[m[33m)[m
+Author: Azam Ishaq <shmai.com@gmail.com>
+Date:   Thu Jan 23 17:16:46 2025 +0500
+
+    Websocket fixed
+
+[33mcommit 8d4d1c3378969797e63496cd8b2703941efbd518[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sat Jan 11 06:29:16 2025 -0500
+
+    Updated ChatRoom and useChatSocket for better WebSocket handling
+
+[33mcommit 883470256c3166a5028fbdd2879ccec8b7b6e18c[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sat Jan 11 03:19:06 2025 -0500
+
+    Initial commit of bot ecosystem
+
+[33mcommit 18b5963bb7b354c1c10b843e97af2db9a26fda3b[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Sat Jan 11 01:39:36 2025 -0500
+
+    Update: Fixed file paths and some configurations for bot_lead
+
+[33mcommit f319adb6dec1f3f4aed24f170102e7786364d3b8[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Jan 10 03:34:11 2025 -0500
+
+    Add .env to .gitignore
+
+[33mcommit aa3893dad580af8c47ceee336c59810c346af837[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Jan 10 03:23:22 2025 -0500
+
+    Add .gitignore to exclude .env files
+
+[33mcommit d430fd9bfcbf8b2a35a89e9647850405dd385d2d[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Jan 10 03:21:38 2025 -0500
+
+    Cleanup: Removed Python main files, added new route directories and jsconfig.json
+
+[33mcommit 1a43aaab19d997529d0d25fc74c6f01985b8ceed[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Jan 10 03:19:16 2025 -0500
+
+    Refactor: Updated Dockerfiles, configurations, and server architecture for better WebSocket integration
+
+[33mcommit e55d48f72c82707d7e25d4cef04467e676eb5981[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Mon Dec 23 03:43:30 2024 -0500
+
+    missed a file
+
+[33mcommit 510bbff69a8a0affeb65232ec47b600f211a0c15[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Mon Dec 23 03:14:37 2024 -0500
+
+    Added server files and openai to bots
+
+[33mcommit 1d0c1090f9a82d844fc78987402f3ce9d58943de[m
+Author: chefken052580 <chefken052580@gmail.com>
+Date:   Fri Dec 20 17:18:13 2024 -0500
+
+    Initial commit of new system
