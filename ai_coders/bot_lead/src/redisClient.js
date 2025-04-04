@@ -1,5 +1,14 @@
-// ai_coders/bot_lead/src/redisClient.js (ESM, v2025-03-28-2)
-/* CrackerBot’s cosmic Redis wrapper—storing data with interstellar precision! 🌌 */
+// ai_coders/bot_lead/src/redisClient.js (ESM, v2025-04-02-02)
+/**
+ * CrackerBot’s Cosmic Redis Wrapper
+ * Stores data with interstellar precision and supernova resilience!
+ * Enhanced by xAI for robust error handling and JSON consistency.
+ *
+ * @version 2025-04-02-02
+ * @author CrackerBot Team, enhanced by xAI
+ * @module redisClient
+ */
+
 import { createClient } from 'redis';
 import { log, error } from './logger.js';
 import config from './config.js';
@@ -17,13 +26,17 @@ export const redisClient = createClient({
   },
 });
 
+/**
+ * Redis client instance for cosmic data storage.
+ * @type {import('redis').RedisClientType}
+ */
 redisClient.on('error', async (err) => {
   await error('Redis client error: ' + err.message);
   if (botSocket && botSocket.connected) {
     botSocket.emit('message', {
       text: `Redis snag: ${err.message}. Cracker Bot’s still kicking, but caching might be off!`,
       type: 'error',
-      from: 'Cracker Bot',
+      from: 'CrackerBot Prime',
       target: 'bot_frontend',
     });
   }
@@ -33,6 +46,13 @@ redisClient.on('connect', async () => await log('Connected to Redis'));
 redisClient.on('ready', async () => await log('Redis connection established'));
 redisClient.on('reconnecting', async () => await log('Reconnecting to Redis...'));
 
+/**
+ * Connects to Redis with retry logic and cosmic resilience.
+ * @async
+ * @function connectWithRetry
+ * @returns {Promise<void>}
+ * @throws {Error} If retries are exhausted
+ */
 async function connectWithRetry() {
   let retries = 5;
   const delay = 1000;
@@ -42,9 +62,9 @@ async function connectWithRetry() {
       await log('Redis connection successful after retries');
       if (botSocket && botSocket.connected) {
         botSocket.emit('message', {
-          text: 'Cracker Bot’s Redis link is live—full speed ahead!',
+          text: 'CrackerBot’s Redis link is live—full speed ahead!',
           type: 'system',
-          from: 'Cracker Bot',
+          from: 'CrackerBot Prime',
           target: 'bot_frontend',
         });
       }
@@ -61,10 +81,14 @@ async function connectWithRetry() {
   }
 }
 
-(async () => {
-  await connectWithRetry();
-})();
-
+/**
+ * Stores a message in Redis with a capped list for cosmic efficiency.
+ * @async
+ * @function storeMessage
+ * @param {string} user - User identifier
+ * @param {string} text - Message content
+ * @returns {Promise<void>}
+ */
 export async function storeMessage(user, text) {
   const key = `messages:${user || 'anonymous'}`;
   try {
@@ -76,6 +100,25 @@ export async function storeMessage(user, text) {
   }
 }
 
+/**
+ * Caches a completed task in Redis with galactic permanence.
+ * @async
+ * @function cacheTask
+ * @param {Object} task - Task data
+ * @param {string} task.taskId - Unique task identifier
+ * @param {string} task.user - User name
+ * @param {string} task.frontendId - Frontend identifier
+ * @param {string} task.ip - Client IP
+ * @param {string} task.name - Project name
+ * @param {string} task.type - Project type
+ * @param {string} task.fileName - File name
+ * @param {string} task.content - Task content
+ * @param {string} [task.features] - Project features
+ * @param {number} [task.version] - Version number
+ * @param {string|null} [task.network] - Network (optional)
+ * @returns {Promise<void>}
+ * @throws {Error} If caching fails
+ */
 export async function cacheTask(task) {
   const { taskId, user, frontendId, ip, name, type, fileName, content, features, version, network } = task;
   const taskKey = `project:${user}:${taskId}`;
@@ -106,6 +149,14 @@ export async function cacheTask(task) {
   }
 }
 
+/**
+ * Retrieves a task from Redis by user and taskId.
+ * @async
+ * @function getTask
+ * @param {string} user - User name
+ * @param {string} taskId - Task identifier
+ * @returns {Promise<Object|null>} Task data or null if not found
+ */
 export async function getTask(user, taskId) {
   const taskKey = `project:${user}:${taskId}`;
   try {
@@ -117,16 +168,30 @@ export async function getTask(user, taskId) {
   }
 }
 
+/**
+ * Fetches all completed project IDs for a user from Redis.
+ * @async
+ * @function getCompletedProjects
+ * @param {string} user - User name
+ * @returns {Promise<string[]>} Array of task IDs
+ */
 export async function getCompletedProjects(user) {
   try {
- recalled = await redisClient.sMembers(`completedProjects:${user}`);
-    return recalled;
+    const members = await redisClient.sMembers(`completedProjects:${user}`);
+    return members;
   } catch (err) {
     await error(`Failed to fetch completed projects for ${user}: ${err.message}`);
     return [];
   }
 }
 
+/**
+ * Retrieves the latest project for a user from Redis.
+ * @async
+ * @function getLatestProject
+ * @param {string} user - User name
+ * @returns {Promise<Object|null>} Latest project data or null
+ */
 export async function getLatestProject(user) {
   try {
     const latestData = await redisClient.get(`project:${user}:latest`);
@@ -137,9 +202,40 @@ export async function getLatestProject(user) {
   }
 }
 
+/**
+ * Retrieves pending tasks for a frontendId from Redis.
+ * @async
+ * @function getPendingTasks
+ * @param {string} frontendId - Frontend identifier
+ * @returns {Promise<Object[]>} Array of pending task data
+ */
+export async function getPendingTasks(frontendId) {
+  try {
+    const allPending = await redisClient.hGetAll('pendingTasks');
+    const pendingTasks = Object.entries(allPending)
+      .map(([taskId, data]) => ({ taskId, ...JSON.parse(data) }))
+      .filter(task => task.frontendId === frontendId && task.status === 'pending');
+    await log(`Fetched ${pendingTasks.length} pending tasks for frontendId ${frontendId}`);
+    return pendingTasks;
+  } catch (err) {
+    await error(`Failed to fetch pending tasks for frontendId ${frontendId}: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Sets a key-value pair in Redis with JSON consistency.
+ * @async
+ * @function set
+ * @param {string} key - Redis key
+ * @param {any} value - Value to store (stringified as JSON)
+ * @returns {Promise<void>}
+ * @throws {Error} If operation fails
+ */
 export async function set(key, value) {
   try {
-    await redisClient.set(key, JSON.stringify(value));
+    const jsonValue = JSON.stringify(value); // Always store as JSON
+    await redisClient.set(key, jsonValue);
     await log(`Set key ${key}`);
   } catch (err) {
     await error(`Failed to set ${key}: ${err.message}`);
@@ -147,16 +243,32 @@ export async function set(key, value) {
   }
 }
 
+/**
+ * Gets a value from Redis, parsing it as JSON.
+ * @async
+ * @function get
+ * @param {string} key - Redis key
+ * @returns {Promise<any|null>} Parsed value or null if not found
+ */
 export async function get(key) {
   try {
     const value = await redisClient.get(key);
-    return value ? JSON.parse(value) : null;
+    return value ? JSON.parse(value) : null; // Always parse as JSON
   } catch (err) {
     await error(`Failed to get ${key}: ${err.message}`);
     return null;
   }
 }
 
+/**
+ * Adds a value to a Redis set.
+ * @async
+ * @function sAdd
+ * @param {string} setKey - Set key
+ * @param {string} value - Value to add
+ * @returns {Promise<void>}
+ * @throws {Error} If operation fails
+ */
 export async function sAdd(setKey, value) {
   try {
     await redisClient.sAdd(setKey, value);
@@ -167,6 +279,13 @@ export async function sAdd(setKey, value) {
   }
 }
 
+/**
+ * Retrieves all members of a Redis set.
+ * @async
+ * @function sMembers
+ * @param {string} setKey - Set key
+ * @returns {Promise<string[]>} Array of set members
+ */
 export async function sMembers(setKey) {
   try {
     const members = await redisClient.sMembers(setKey);
@@ -177,6 +296,16 @@ export async function sMembers(setKey) {
   }
 }
 
+/**
+ * Sets a field in a Redis hash.
+ * @async
+ * @function hSet
+ * @param {string} hashKey - Hash key
+ * @param {string} field - Field name
+ * @param {any} value - Value to store (stringified)
+ * @returns {Promise<void>}
+ * @throws {Error} If operation fails
+ */
 export async function hSet(hashKey, field, value) {
   try {
     await redisClient.hSet(hashKey, field, JSON.stringify(value));
@@ -187,6 +316,14 @@ export async function hSet(hashKey, field, value) {
   }
 }
 
+/**
+ * Gets a field from a Redis hash.
+ * @async
+ * @function hGet
+ * @param {string} hashKey - Hash key
+ * @param {string} field - Field name
+ * @returns {Promise<any|null>} Parsed value or null if not found
+ */
 export async function hGet(hashKey, field) {
   try {
     const value = await redisClient.hGet(hashKey, field);
@@ -197,6 +334,14 @@ export async function hGet(hashKey, field) {
   }
 }
 
+/**
+ * Deletes a key from Redis.
+ * @async
+ * @function del
+ * @param {string} key - Redis key
+ * @returns {Promise<void>}
+ * @throws {Error} If operation fails
+ */
 export async function del(key) {
   try {
     await redisClient.del(key);
@@ -207,6 +352,15 @@ export async function del(key) {
   }
 }
 
+/**
+ * Deletes a field from a Redis hash.
+ * @async
+ * @function hDel
+ * @param {string} hashKey - Hash key
+ * @param {string} field - Field name
+ * @returns {Promise<void>}
+ * @throws {Error} If operation fails
+ */
 export async function hDel(hashKey, field) {
   try {
     await redisClient.hDel(hashKey, field);
@@ -216,3 +370,8 @@ export async function hDel(hashKey, field) {
     throw err;
   }
 }
+
+// Ignition with cosmic flair
+(async () => {
+  await connectWithRetry();
+})();

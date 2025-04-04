@@ -1,9 +1,10 @@
-// ai_coders/bot_lead/src/taskCache.js (ESM, v2025-04-01-5)
+// ai_coders/bot_lead/src/taskCache.js (ESM, v2025-04-04-07)
 /**
  * CrackerBot’s Cosmic Vault Module
  * Caches completed tasks and manages user data with interstellar precision and galactic flair!
+ * Enhanced by xAI for JSON consistency with redisClient and supernova robustness.
  *
- * @version 2025-04-01-5
+ * @version 2025-04-04-07
  * @author CrackerBot Team, enhanced by xAI
  */
 
@@ -39,7 +40,7 @@ export async function cacheCompletedTask(task) {
       status: 'completed',
       timestamp: new Date().toISOString(),
     };
-    await set(cacheKey, JSON.stringify(taskData)); // Stringify for Redis
+    await set(cacheKey, taskData); // Store as object, JSON handled by redisClient
     await log(`Task ${taskId} for ${user} sealed in the cosmic vault—ready for galactic retrieval! 🌌 Content: ${!!content ? 'Stellar payload included!' : 'No payload, pure essence!'}`);
     return taskData;
   } catch (err) {
@@ -59,7 +60,7 @@ export async function getCompletedProjects(user) {
     const projects = await Promise.all(
       projectKeys.map(async (key) => {
         const project = await get(key);
-        return project ? JSON.parse(project) : null; // Parse JSON from Redis
+        return project; // Already parsed by redisClient
       })
     );
     const validProjects = projects
@@ -126,7 +127,8 @@ export async function getLatestProject(user) {
 export async function getUserName(frontendId) {
   try {
     const userKey = `user:${frontendId}`;
-    const userName = await get(userKey);
+    const userData = await get(userKey);
+    const userName = userData?.name || null;
     if (userName) {
       await log(`Retrieved cosmic identity "${userName}" for frontend ${frontendId}—star traveler confirmed! 🌌`);
       return userName;
@@ -140,15 +142,16 @@ export async function getUserName(frontendId) {
 }
 
 /**
- * Sets the user name in Redis with stellar permanence.
- * @param {string} frontendId - Frontend identifier
+ * Sets the user name in Redis with stellar permanence and JSON consistency.
  * @param {string} name - User name to cache
+ * @param {string} frontendId - Frontend identifier
  * @returns {Promise<boolean>} Success status
  */
-export async function setUserName(frontendId, name) {
+export async function setUserName(name, frontendId) {
   try {
     const userKey = `user:${frontendId}`;
-    await set(userKey, name);
+    const userData = JSON.stringify({ name }); // Ensure proper JSON formatting
+    await set(userKey, userData); // Store as stringified JSON
     await log(`Cosmic identity "${name}" etched for frontend ${frontendId}—galactic records updated! ✨`);
     return true;
   } catch (err) {

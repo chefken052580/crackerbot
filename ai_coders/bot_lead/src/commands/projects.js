@@ -1,16 +1,16 @@
-// ai_coders/bot_lead/src/commands/projects.js (ESM, v2025-04-01-3)
+// ai_coders/bot_lead/src/commands/projects.js (ESM, v2025-04-02-02)
 /**
  * Projects Command Handler
  * Fetches and lists completed projects from Redis with cosmic flair and supernova precision.
- * Enhanced by xAI for compatibility with updated message emission.
+ * Enhanced by xAI for compatibility with updated message emission and static styling.
  *
- * @version 2025-04-01-3
+ * @version 2025-04-02-02
  * @author CrackerBot Team, enhanced by xAI
  * @module commands/projects
  */
 
 import { generateResponse } from '../aiHelper.js';
-import { emitCosmicMessage } from '../stateManager.js'; // Replaced sendMessage with emitCosmicMessage
+import { emitCosmicMessage } from '../stateManager.js';
 import { log, error } from '../logger.js';
 
 /**
@@ -30,7 +30,6 @@ import { log, error } from '../logger.js';
  */
 export default async function handleProjects(socket, userName, tone, ip, frontendId, taskId, userKey, stateKey, redisClient) {
   try {
-    // Fetch projects directly from Redis
     const projectKeys = await redisClient.keys(`project:${userName}:*`);
     const projects = await Promise.all(
       projectKeys.map(async (key) => {
@@ -57,7 +56,7 @@ export default async function handleProjects(socket, userName, tone, ip, fronten
         user: userName,
         frontendId,
         options: ["Chat", "Build-Something-Epic"],
-        bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff', animation: 'pulse 2s infinite' },
+        bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
       });
     } else {
       const projectList = validProjects.map(p => ({
@@ -84,7 +83,7 @@ export default async function handleProjects(socket, userName, tone, ip, fronten
         user: userName,
         frontendId,
         projects: projectList,
-        bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000', animation: 'glow 1.5s infinite' },
+        bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
       });
     }
   } catch (err) {

@@ -1,11 +1,11 @@
-// ai_coders/bot_lead/src/commands/index.js (ESM, v2025-04-01-7)
+// ai_coders/bot_lead/src/commands/index.js (ESM, v2025-04-02-08)
 /**
  * Command Orchestrator Module
  * Central hub for CrackerBot’s command galaxy, routing inputs to handlers with interstellar flair.
  * Powers real-time WebSocket vibes and Redis persistence for project mastery.
  * Enhanced by xAI for cosmic message emission and stellar integration.
  *
- * @version 2025-04-01-7
+ * @version 2025-04-02-08
  * @author CrackerBot Team, enhanced by xAI
  * @module commands/index
  */
@@ -15,7 +15,7 @@ import download from './download.js';
 import resetName from './reset_name.js';
 import guide from './guide.js';
 import deleteCommand from './delete.js';
-import { emitCosmicMessage } from '../stateManager.js'; // Added for consistent messaging
+import { emitCosmicMessage } from '../stateManager.js';
 import { log, error, warn } from '../logger.js';
 
 const commands = {
@@ -46,8 +46,17 @@ const commands = {
  * Routes with style, logs every move, and handles errors like a galactic pro.
  * @async
  * @param {Object} socket - Socket.IO instance for real-time comms
- * @param {Object} data - Command data { command, frontendId, user, tone, ip, taskId, userKey, stateKey }
- * @param {Object} redisClient - Redis client for caching and state
+ * @param {Object} data - Command data
+ * @param {string} data.command - Command name
+ * @param {string} data.frontendId - Frontend identifier
+ * @param {string} data.user - User name
+ * @param {string} [data.tone] - Response tone
+ * @param {string} [data.ip] - Client IP
+ * @param {string} [data.taskId] - Task ID
+ * @param {string} [data.userKey] - Redis key for user info
+ * @param {string} [data.stateKey] - Redis key for task state
+ * @param {string} [data.args] - Command arguments
+ * @param {Object} redisClient - Redis client instance
  * @returns {Promise<void>}
  */
 export async function executeCommand(socket, data, redisClient) {
@@ -55,7 +64,7 @@ export async function executeCommand(socket, data, redisClient) {
     command,
     frontendId,
     user: userName,
-    tone = 'DEFAULT_TONE', // Assuming DEFAULT_TONE is defined elsewhere; adjust if needed
+    tone = 'DEFAULT_TONE',
     ip = 'unknown',
     taskId,
     userKey = `user:${frontendId}`,
@@ -76,7 +85,7 @@ export async function executeCommand(socket, data, redisClient) {
       frontendId,
       bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
     };
-    await emitCosmicMessage(errorMsg, socket); // Replaced socket.emit with emitCosmicMessage
+    await emitCosmicMessage(errorMsg, socket);
     await warn(`🌠 Unknown command "${command}" from ${userName} (frontendId: ${frontendId})`);
     return;
   }
@@ -96,7 +105,7 @@ export async function executeCommand(socket, data, redisClient) {
       frontendId,
       bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
     };
-    await emitCosmicMessage(errorMsg, socket); // Replaced socket.emit with emitCosmicMessage
+    await emitCosmicMessage(errorMsg, socket);
     await error(`💥 Command "${cmd}" failed for ${userName} (frontendId: ${frontendId}): ${err.message}`);
   }
 }

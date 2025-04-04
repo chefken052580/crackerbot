@@ -2,9 +2,9 @@
  * Task Manager Module
  * Orchestrates CrackerBot’s cosmic task flow with swagger and precision.
  * Manages frontend connections, task results, and messages with interstellar flair.
- * Enhanced by xAI for single-response workflow alignment with taskHandlers v2025-04-01-16.
+ * Enhanced by xAI for single-response workflow alignment with taskHandlers v2025-04-02-08.
  *
- * @version 2025-04-01-8
+ * @version 2025-04-02-09
  * @author CrackerBot Team, enhanced by xAI
  */
 
@@ -16,7 +16,7 @@ import { generateResponse } from './aiHelper.js';
 import { executeCommand } from './commands/index.js';
 import { DEFAULT_TONE } from './constants.js';
 import { botSocket } from './socket.js';
-import taskHandlers from './taskHandlers.js';
+import { initializeTaskListeners, sendMessage, handleTaskResponse, handleFrontendConnected } from './taskHandlers.js';
 import { processGeneralMessage } from './messageUtils.js';
 
 // Track sent prompts to prevent loops
@@ -33,17 +33,18 @@ export async function initTaskManager(botSocketArg) {
 
   socket.on('connect_error', async (err) => {
     await error(`⚠️ WebSocket glitch: ${err.message} - CrackerBot’s too dope to drop!`);
-    await taskHandlers.sendMessage(socket, {
+    await sendMessage(socket, {
       text: `Connection snag: ${err.message}. Retrying with cosmic swagger... ⚡`,
       type: 'error',
       from: 'CrackerBot Prime',
       target: 'bot_frontend',
+      frontendId: socket.id || 'unknown', // Add fallback frontendId
     });
   });
 
   socket.on('reconnect', async (attempt) => {
     await log(`🌩️ Reconnected after ${attempt} rounds - CrackerBot’s unstoppable!`);
-    await taskHandlers.sendMessage(socket, {
+    await sendMessage(socket, {
       text: `Back in action after ${attempt} tries—let’s roll with interstellar thunder! ⚡`,
       type: 'system',
       from: 'CrackerBot Prime',
@@ -57,7 +58,7 @@ export async function initTaskManager(botSocketArg) {
 
   socket.on('disconnect', async () => {
     await log('💤 Task Manager’s chilling - WebSocket’s on a cosmic break!');
-    await taskHandlers.sendMessage(socket, {
+    await sendMessage(socket, {
       text: 'CrackerBot Prime’s taking a quick breather—back with supernova heat soon! 🔥',
       type: 'system',
       from: 'CrackerBot Prime',
@@ -67,7 +68,7 @@ export async function initTaskManager(botSocketArg) {
 
   socket.on('frontend_connected', async (data) => {
     await log(`🌌 Frontend ${data.frontendId} connected - ${data.userName || 'Guest'} ready!`);
-    await taskHandlers.handleFrontendConnected(data, redisClient); // Delegate to taskHandlers
+    await handleFrontendConnected(data); // Delegate to taskHandlers
   });
 
   socket.on('taskResult', async ({ taskId, content, fileName, type, name, frontendId, ip, taskFeatures, version, error: taskError, progress, requestId, leadId }) => {
@@ -89,7 +90,7 @@ export async function initTaskManager(botSocketArg) {
           userName,
           tone
         );
-        await taskHandlers.sendMessage(socket, {
+        await sendMessage(socket, {
           text: progressMsg,
           type: 'progressUpdate',
           taskId,
@@ -114,7 +115,7 @@ export async function initTaskManager(botSocketArg) {
           userName,
           tone
         );
-        await taskHandlers.sendMessage(socket, {
+        await sendMessage(socket, {
           text: errorMsg,
           type: 'error',
           taskId,
@@ -152,7 +153,7 @@ export async function initTaskManager(botSocketArg) {
         userName,
         tone
       );
-      await taskHandlers.sendMessage(socket, {
+      await sendMessage(socket, {
         text: downloadMsg,
         type: 'taskResult',
         taskId,
@@ -201,7 +202,7 @@ export async function initTaskManager(botSocketArg) {
       'Guest',
       DEFAULT_TONE
     );
-    await taskHandlers.sendMessage(socket, {
+    await sendMessage(socket, {
       text: resetPrompt,
       type: 'question',
       taskId: `initial:${frontendId}`,
@@ -225,7 +226,7 @@ export async function initTaskManager(botSocketArg) {
   });
 
   if (socket.connected) {
-    await taskHandlers.sendMessage(socket, {
+    await sendMessage(socket, {
       text: '🎵 CrackerBot Prime’s live and dropping cosmic beats—ready to code with interstellar flair! Who’s up? 🎤',
       type: 'system',
       from: 'CrackerBot Prime',
@@ -271,7 +272,7 @@ export async function processMessage(botSocket, message, redisClient) {
     }
 
     if (message.type === 'task_response') {
-      await taskHandlers.handleTaskResponse(message, redisClient);
+      await handleTaskResponse(message, redisClient);
       sentPrompts.delete(`${frontendId}:chatPrompt`);
       return;
     }
@@ -293,7 +294,7 @@ export async function processMessage(botSocket, message, redisClient) {
       userName,
       tone
     );
-    await taskHandlers.sendMessage(botSocket, {
+    await sendMessage(botSocket, {
       text: errorMsg,
       type: 'error',
       from: 'CrackerBot Prime',

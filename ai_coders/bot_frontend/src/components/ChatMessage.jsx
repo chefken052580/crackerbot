@@ -1,60 +1,82 @@
 /* CrackerBot’s cosmic messenger—delivering supernova chats with flair and precision! 🌌
  * Enhanced by xAI for static AI responses, robust user name handling, and cosmic interactivity.
+ * Version: v2025-04-03-11
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import PreviewPopup from './PreviewPopup';
 
-/**
- * Renders a single chat message with progress, task results, options, and projects.
- * @param {Object|string} message - Message data or text string
- * @param {Object} message.id - Unique message identifier
- * @param {string} message.from - Sender name
- * @param {string} [message.user] - User name (defaults to "Guest" if undefined)
- * @param {string} message.text - Message content
- * @param {string} message.type - Message type (e.g., 'user', 'bot', 'taskResult')
- * @param {string} [message.taskId] - Task identifier
- * @param {string[]} [message.options] - User response options
- * @param {string} [message.finalContent] - Final task content
- * @param {string} [message.downloadLink] - Download URL
- * @param {string} [message.taskName] - Project name
- * @param {string} [message.taskType] - Project type
- * @param {string} [message.taskFeatures] - Project features
- * @param {Object[]} [message.projects] - List of completed projects
- * @param {number} [message.progress] - Progress percentage
- * @param {Object} [message.bubbleStyle] - Custom bubble styling (static only)
- * @param {Object} [taskResult] - Optional task result data with content and links
- * @param {Function} onOptionClick - Callback for handling option clicks
- * @param {Object} colorScheme - Color scheme object for styling
- * @param {number} [progress] - Progress percentage from parent component
- * @param {Function} setMessages - Function to update the message list
- * @param {Object} socket - WebSocket instance for communication
- * @returns {JSX.Element} The rendered chat message component
- */
-const ChatMessage = ({ message, taskResult, onOptionClick, colorScheme, progress, setMessages, socket }) => {
-  const [showPreview, setShowPreview] = useState(false);
-  const [taskProgress, setTaskProgress] = useState(null);
-  const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
-  const displayText = msg.type === 'task_response' ? `${msg.user}: ${msg.text}` : msg.text;
+class ChatMessage extends Component {
+  state = {
+    showPreview: false,
+    taskProgress: null,
+    hasError: false,
+    errorMessage: '',
+  };
 
-  console.log(`[${new Date().toISOString()}] 🌠 Rendering cosmic message: ${JSON.stringify(msg)}`);
+  static getDerivedStateFromError(error) {
+    console.error(`[${new Date().toISOString()}] ⚠️ ChatMessage caught error: ${error.message}`);
+    return { hasError: true, errorMessage: error.message };
+  }
 
-  useEffect(() => {
+  componentDidCatch(error, info) {
+    console.error(`[${new Date().toISOString()}] ⚠️ ChatMessage error boundary triggered: ${error.message}, Info: ${JSON.stringify(info)}`);
+  }
+
+  componentDidMount() {
+    const { message, progress } = this.props;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    console.log(`[${new Date().toISOString()}] 🌠 ChatMessage mounted: ${JSON.stringify(msg)}`);
     if (msg.type === 'progressUpdate' && msg.taskId && msg.progress !== undefined) {
-      setTaskProgress(msg.progress);
-      console.log(`[${new Date().toISOString()}] 🌟 Progress updated for task ${msg.taskId}: ${msg.progress}%`);
+      this.setState({ taskProgress: msg.progress });
+      console.log(`[${new Date().toISOString()}] 🌟 Initial progress set for task ${msg.taskId}: ${msg.progress}%`);
     } else if (progress !== undefined && msg.taskId) {
-      setTaskProgress(progress);
+      this.setState({ taskProgress: progress });
     }
-  }, [msg, progress]);
+  }
 
-  /**
-   * Renders a cosmic progress bar with supernova flair, persisting post-build.
-   * @returns {JSX.Element|null} Progress bar component or null if not applicable
-   * @private
-   */
-  const renderProgressBar = () => {
+  componentDidUpdate(prevProps) {
+    const { message, progress } = this.props;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    if (prevProps.progress !== progress || prevProps.message.progress !== msg.progress) {
+      if (msg.type === 'progressUpdate' && msg.taskId && msg.progress !== undefined) {
+        this.setState({ taskProgress: msg.progress });
+        console.log(`[${new Date().toISOString()}] 🌟 Progress updated for task ${msg.taskId}: ${msg.progress}%`);
+      } else if (progress !== undefined && msg.taskId) {
+        this.setState({ taskProgress: progress });
+      }
+    }
+  }
+
+  handlePreviewClick = () => {
+    const { message, taskResult, setMessages } = this.props;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const content = msg.finalContent || (taskResult && taskResult.finalContent);
+    if (content) {
+      this.setState({ showPreview: true });
+      console.log(`[${new Date().toISOString()}] 🌌 Hyperspace preview activated for "${msg.taskName || 'unknown'}": ${content.substring(0, 50)}...`);
+    } else {
+      console.warn(`[${new Date().toISOString()}] No cosmic payload for preview: ${JSON.stringify(msg)}`);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-error`,
+          from: 'CrackerBot Prime',
+          user: msg.user,
+          text: `No cosmic content to preview for "${msg.taskName || 'this task'}"—retry or refine it, space traveler! ⚠️`,
+          type: 'error',
+          timestamp: new Date().toLocaleTimeString(),
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
+        },
+      ]);
+    }
+  };
+
+  renderProgressBar = () => {
+    const { message, progress } = this.props;
+    const { taskProgress } = this.state;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
     const hasProgress = taskProgress !== null;
     const progressValue = taskProgress !== null ? taskProgress : msg.progress || progress;
 
@@ -91,38 +113,9 @@ const ChatMessage = ({ message, taskResult, onOptionClick, colorScheme, progress
     );
   };
 
-  /**
-   * Handles preview button click, opening the PreviewPopup if content exists.
-   * @private
-   */
-  const handlePreviewClick = () => {
-    const content = msg.finalContent || (taskResult && taskResult.finalContent);
-    if (content) {
-      setShowPreview(true);
-      console.log(`[${new Date().toISOString()}] 🌌 Hyperspace preview activated for "${msg.taskName || 'unknown'}": ${content.substring(0, 50)}...`);
-    } else {
-      console.warn(`[${new Date().toISOString()}] No cosmic payload for preview: ${JSON.stringify(msg)}`);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}-error`,
-          from: 'CrackerBot Prime',
-          user: msg.user,
-          text: `No cosmic content to preview for "${msg.taskName || 'this task'}"—retry or refine it, space traveler! ⚠️`,
-          type: 'error',
-          timestamp: new Date().toLocaleTimeString(),
-          bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-        },
-      ]);
-    }
-  };
-
-  /**
-   * Renders task result buttons (Download/Preview) with cosmic styling.
-   * @returns {JSX.Element|null} Task result UI or null if not a taskResult
-   * @private
-   */
-  const renderTaskResult = () => {
+  renderTaskResult = () => {
+    const { message, taskResult, colorScheme } = this.props;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
     const hasContent = msg.finalContent || (taskResult && taskResult.finalContent);
     const downloadLink = msg.downloadLink || (taskResult && taskResult.downloadLink);
     const fileName = msg.fileName || (taskResult && taskResult.fileName) || `${msg.taskName || 'cosmic_download'}.zip`;
@@ -142,15 +135,15 @@ const ChatMessage = ({ message, taskResult, onOptionClick, colorScheme, progress
           <a
             href={downloadLink}
             download={fileName}
-            className={`${colorScheme.accent} px-5 py-2 rounded-full hover:underline hover:text-[#00ff9f] transition-all duration-300 font-semibold tracking-wider border-2 border-[#ff00ff] shadow-[0_0_15px_#ff00ff]`}
+            className={`${colorScheme.accent || 'text-[#00ff9f]'} px-5 py-2 rounded-full hover:underline hover:text-[#00ff9f] transition-all duration-300 font-semibold tracking-wider border-2 border-[#ff00ff] shadow-[0_0_15px_#ff00ff]`}
           >
             Download 🌠
           </a>
         )}
         {hasContent && (
           <button
-            onClick={handlePreviewClick}
-            className={`${colorScheme.button} ${colorScheme.buttonText} px-5 py-2 rounded-full hover:scale-110 hover:shadow-[0_0_20px_#00ff9f] transition-all duration-300 border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]`}
+            onClick={this.handlePreviewClick}
+            className={`${colorScheme.button || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} ${colorScheme.buttonText || 'text-white'} px-5 py-2 rounded-full hover:scale-110 hover:shadow-[0_0_20px_#00ff9f] transition-all duration-300 border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]`}
           >
             Preview 🚀
           </button>
@@ -159,46 +152,47 @@ const ChatMessage = ({ message, taskResult, onOptionClick, colorScheme, progress
     );
   };
 
-  /**
-   * Renders clickable options with cosmic flair.
-   * @returns {JSX.Element|null} Options UI or null if none
-   * @private
-   */
-  const renderOptions = () => {
-    if (!msg.options || msg.options.length === 0 || msg.type === 'taskResult') {
+  renderOptions = () => {
+    const { message, onOptionClick, colorScheme } = this.props;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    if (!msg.options || !Array.isArray(msg.options) || msg.options.length === 0 || msg.type === 'taskResult') {
       console.log(`[${new Date().toISOString()}] No cosmic options for message: ${msg.text}`);
       return null;
     }
     console.log(`[${new Date().toISOString()}] 🌌 Rendering cosmic options: ${JSON.stringify(msg.options)}`);
-    return (
-      <div className="options-container flex flex-wrap gap-3 mt-4">
-        {msg.options.map((option, idx) => {
-          const isObject = typeof option === 'object' && option.text && option.style;
-          const text = isObject ? option.text : option;
-          const style = isObject ? option.style : 'normal';
-          const isLarge = style === 'large';
-          return (
-            <button
-              key={idx}
-              onClick={() => onOptionClick(text)}
-              className={`${colorScheme.bubble} ${
-                isLarge ? 'px-6 py-3 text-lg font-bold' : 'px-4 py-2 text-base'
-              } rounded-full shadow-lg hover:scale-105 hover:shadow-[0_0_15px_#00ff9f] transition-all duration-300 border-2 border-[#00ff9f]`}
-            >
-              {text}
-            </button>
-          );
-        })}
-      </div>
-    );
+    try {
+      return (
+        <div className="options-container flex flex-wrap gap-3 mt-4">
+          {msg.options.map((option, idx) => {
+            const text = typeof option === 'string' ? option : option.text || 'Unknown';
+            const key = `${msg.messageId || 'msg'}-${idx}-${text}`; // Unique key
+            return (
+              <button
+                key={key}
+                onClick={() => {
+                  if (typeof onOptionClick === 'function') {
+                    onOptionClick(text);
+                  } else {
+                    console.warn(`[${new Date().toISOString()}] onOptionClick is not defined for option: ${text}`);
+                  }
+                }}
+                className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-lg hover:scale-105 hover:shadow-[0_0_15px_#00ff9f] transition-all duration-300 border-2 border-[#00ff9f]`}
+              >
+                {text}
+              </button>
+            );
+          })}
+        </div>
+      );
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] ⚠️ Error rendering options: ${err.message}`);
+      return <p className="text-red-500">Error rendering options: {err.message}</p>;
+    }
   };
 
-  /**
-   * Renders a list of completed projects with options.
-   * @returns {JSX.Element|null} Projects UI or null if none
-   * @private
-   */
-  const renderProjects = () => {
+  renderProjects = () => {
+    const { message, onOptionClick, colorScheme } = this.props;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
     if (!msg.projects || msg.projects.length === 0) return null;
     console.log(`[${new Date().toISOString()}] 🌟 Rendering cosmic project list: ${JSON.stringify(msg.projects)}`);
     return (
@@ -216,7 +210,7 @@ const ChatMessage = ({ message, taskResult, onOptionClick, colorScheme, progress
                 <button
                   key={optIdx}
                   onClick={() => onOptionClick(opt, { projectData: project })}
-                  className={`${colorScheme.bubble} px-4 py-2 text-base rounded-full shadow-md hover:scale-105 hover:shadow-[0_0_15px_#ff00ff] transition-all duration-300 border-2 border-[#ff00ff]`}
+                  className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-md hover:scale-105 hover:shadow-[0_0_15px_#ff00ff] transition-all duration-300 border-2 border-[#ff00ff]`}
                 >
                   {opt}
                 </button>
@@ -228,68 +222,84 @@ const ChatMessage = ({ message, taskResult, onOptionClick, colorScheme, progress
     );
   };
 
-  // Apply bubbleStyle from message or default based on type (static for text)
-  const bubbleStyle = msg.bubbleStyle && Object.keys(msg.bubbleStyle).length > 0
-    ? { background: msg.bubbleStyle.background, color: msg.bubbleStyle.color }
-    : {
-        background: msg.type === 'task_response'
-          ? 'linear-gradient(135deg, #00ffcc, #00ccff)'
-          : msg.type === 'system'
-          ? 'linear-gradient(135deg, #ffcc00, #ff6600)'
-          : msg.type === 'progressUpdate'
-          ? 'linear-gradient(135deg, #ff0066, #ffcc00)'
-          : msg.type === 'taskResult' || msg.type === 'question'
-          ? 'linear-gradient(135deg, #00ff99, #0066ff)'
-          : 'linear-gradient(135deg, #ff00cc, #3333ff)',
-        color: msg.type === 'task_response' ? '#000' : '#fff',
-      };
+  render() {
+    const { message, taskResult, colorScheme, setMessages, socket } = this.props;
+    const { showPreview, hasError, errorMessage } = this.state;
+    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const displayText = msg.type === 'task_response' ? `${msg.user}: ${msg.text}` : msg.text;
 
-  const messageClass = `${
-    msg.type === 'task_response'
-      ? `${colorScheme.user} no-animation`
-      : msg.type === 'system'
-      ? colorScheme.system
-      : msg.type === 'progressUpdate'
-      ? `${colorScheme.bot} progress-message`
-      : msg.type === 'taskResult' || msg.type === 'question'
-      ? `${colorScheme.bot} cosmic-result`
-      : colorScheme.bot
-  }`;
+    if (hasError) {
+      return (
+        <div className="chat-message text-white bg-red-900 p-4 rounded-lg shadow-lg">
+          <p>⚠️ Cosmic Transmission Error: {errorMessage}</p>
+        </div>
+      );
+    }
 
-  return (
-    <div
-      className={`chat-message ${messageClass} p-4 rounded-lg shadow-lg`}
-      style={{
-        background: bubbleStyle.background,
-        color: bubbleStyle.color,
-        border: '2px solid #00ff9f',
-        boxShadow: '0 0 15px rgba(0, 255, 159, 0.5)',
-      }}
-      data-user={msg.user}
-    >
-      <p className="break-words whitespace-pre-line text-base font-mono no-animation">{displayText}</p>
-      {taskProgress !== null && renderProgressBar()}
-      {renderTaskResult()}
-      {msg.options && !msg.projects && renderOptions()}
-      {msg.projects && renderProjects()}
-      {showPreview && (
-        <PreviewPopup
-          fileContent={msg.finalContent || taskResult?.finalContent}
-          fileName={msg.fileName || taskResult?.fileName || `${msg.taskName || 'cosmic_download'}.zip`}
-          onClose={() => setShowPreview(false)}
-          socket={socket}
-          postTaskOptions={{
-            taskId: msg.taskId,
-            taskName: msg.taskName,
-            taskType: msg.taskType,
-            taskFeatures: msg.taskFeatures,
-          }}
-          setMessages={setMessages}
-        />
-      )}
-    </div>
-  );
-};
+    const bubbleStyle = msg.bubbleStyle && Object.keys(msg.bubbleStyle).length > 0
+      ? { background: msg.bubbleStyle.background, color: msg.bubbleStyle.color }
+      : {
+          background: msg.type === 'task_response'
+            ? 'linear-gradient(135deg, #00ffcc, #00ccff)'
+            : msg.type === 'system'
+            ? 'linear-gradient(135deg, #ffcc00, #ff6600)'
+            : msg.type === 'progressUpdate'
+            ? 'linear-gradient(135deg, #ff0066, #ffcc00)'
+            : msg.type === 'taskResult' || msg.type === 'question'
+            ? 'linear-gradient(135deg, #00ff99, #0066ff)'
+            : 'linear-gradient(135deg, #ff00cc, #3333ff)',
+          color: msg.type === 'task_response' ? '#000' : '#fff',
+        };
+
+    const messageClass = `${
+      msg.type === 'task_response'
+        ? `${colorScheme.user || 'text-[#00ffcc]'} no-animation`
+        : msg.type === 'system'
+        ? colorScheme.system || 'text-[#ffcc00]'
+        : msg.type === 'progressUpdate'
+        ? `${colorScheme.bot || 'text-[#ff00cc]'} progress-message`
+        : msg.type === 'taskResult' || msg.type === 'question'
+        ? `${colorScheme.bot || 'text-[#00ff99]'} cosmic-result`
+        : colorScheme.bot || 'text-[#ff00cc]'
+    }`;
+
+    console.log(`[${new Date().toISOString()}] 🌌 Rendering ChatMessage UI for "${msg.text}"`);
+
+    return (
+      <div
+        className={`chat-message ${messageClass} p-4 rounded-lg shadow-lg`}
+        style={{
+          background: bubbleStyle.background,
+          color: bubbleStyle.color,
+          border: '2px solid #00ff9f',
+          boxShadow: '0 0 15px rgba(0, 255, 159, 0.5)',
+        }}
+        data-user={msg.user}
+      >
+        <p className="break-words whitespace-pre-line text-base font-mono no-animation">{displayText}</p>
+        {this.renderProgressBar()}
+        {this.renderTaskResult()}
+        {msg.options && !msg.projects && this.renderOptions()}
+        {msg.projects && this.renderProjects()}
+        {showPreview && (
+          <PreviewPopup
+            fileContent={msg.finalContent || taskResult?.finalContent}
+            fileName={msg.fileName || taskResult?.fileName || `${msg.taskName || 'cosmic_download'}.zip`}
+            onClose={() => this.setState({ showPreview: false })}
+            socket={socket}
+            postTaskOptions={{
+              taskId: msg.taskId,
+              taskName: msg.taskName,
+              taskType: msg.taskType,
+              taskFeatures: msg.taskFeatures,
+            }}
+            setMessages={setMessages}
+          />
+        )}
+      </div>
+    );
+  }
+}
 
 ChatMessage.propTypes = {
   message: PropTypes.oneOfType([PropTypes.string, PropTypes.object]).isRequired,
@@ -299,10 +309,24 @@ ChatMessage.propTypes = {
     fileName: PropTypes.string,
   }),
   onOptionClick: PropTypes.func.isRequired,
-  colorScheme: PropTypes.object.isRequired,
+  colorScheme: PropTypes.object,
   progress: PropTypes.number,
-  setMessages: PropTypes.func.isRequired,
-  socket: PropTypes.object.isRequired,
+  setMessages: PropTypes.func,
+  socket: PropTypes.object,
+};
+
+ChatMessage.defaultProps = {
+  colorScheme: {
+    accent: 'text-[#00ff9f]',
+    bubble: 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]',
+    button: 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]',
+    buttonText: 'text-white',
+    user: 'text-[#00ffcc]',
+    bot: 'text-[#ff00cc]',
+    system: 'text-[#ffcc00]',
+  },
+  setMessages: () => {},
+  socket: null,
 };
 
 export default ChatMessage;

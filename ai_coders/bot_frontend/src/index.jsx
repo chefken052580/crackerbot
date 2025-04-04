@@ -1,3 +1,5 @@
+// bot_frontend/src/index.jsx
+// Version: v2025-04-03-01
 import 'structured-clone'; // Import the main module
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -16,14 +18,21 @@ async function main() {
   }
 
   const rootElement = document.getElementById("root");
-
   if (!rootElement) {
     console.error("Root element not found. Please ensure your HTML has a 'root' element.");
     return;
   }
 
-  const root = ReactDOM.createRoot(rootElement);
+  // Add global error handlers
+  window.addEventListener('error', (event) => {
+    console.error(`[${new Date().toISOString()}] ⚠️ Uncaught global error: ${event.message}, File: ${event.filename}, Line: ${event.lineno}`);
+  });
 
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error(`[${new Date().toISOString()}] ⚠️ Unhandled promise rejection: ${event.reason}`);
+  });
+
+  const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
       <Provider store={store}>

@@ -1,16 +1,15 @@
-// ai_coders/bot_lead/src/stateManager.js (ESM, v2025-04-01-12)
 /**
  * CrackerBot’s Cosmic Core Module
  * Manages tasks and messages with interstellar precision and supernova swagger!
- * Enhanced by xAI for robustness, flair, and cosmic connectivity.
+ * Enhanced by xAI for robust sync, flair, and galactic connectivity.
  *
- * @version 2025-04-01-12
+ * @version 2025-04-03-02
  * @author CrackerBot Team, enhanced by xAI
  * @module stateManager
  */
 
 import { log, error } from './logger.js';
-import { set, get, hSet, hGet } from './redisClient.js';
+import { set, get, hSet, hGet, hDel } from './redisClient.js';
 import { botSocket } from './socket.js';
 import { generateResponse } from './aiHelper.js';
 import { DEFAULT_TONE } from './constants.js';
@@ -25,7 +24,6 @@ const pendingTaskResults = new Map();
 /**
  * Sets the last generated task in memory and Redis with cosmic permanence.
  * @async
- * @function setLastGeneratedTask
  * @param {Object} task - Task data to store
  * @param {string} task.taskId - Unique task identifier
  * @returns {Promise<void>}
@@ -43,20 +41,22 @@ export async function setLastGeneratedTask(task) {
 /**
  * Retrieves the last generated task from Redis, handling cosmic anomalies.
  * @async
- * @function getLastGeneratedTask
  * @returns {Promise<Object|null>} Last task or null if not found/invalid
  */
 export async function getLastGeneratedTask() {
   try {
     const stored = await get('lastGeneratedTask');
-    if (stored) {
-      lastGeneratedTask = JSON.parse(stored);
-      await log(`🌌 Retrieved last task ${lastGeneratedTask.taskId} from cosmic archives—stellar sync restored!`);
-      return lastGeneratedTask;
+    if (!stored) {
+      await log('🌌 No lastGeneratedTask found in cosmic vault—starting fresh!');
+      return null;
     }
-    return null;
+    const parsed = JSON.parse(stored);
+    await log(`🌌 Retrieved last task ${parsed.taskId} from cosmic archives—stellar sync restored!`);
+    lastGeneratedTask = parsed;
+    return parsed;
   } catch (err) {
-    await error(`⚠️ Failed to fetch lastGeneratedTask: ${err.message}`);
+    await error(`⚠️ Failed to parse lastGeneratedTask: ${err.message}—cosmic data corrupted, resetting to null`);
+    lastGeneratedTask = null;
     return null;
   }
 }
@@ -64,7 +64,6 @@ export async function getLastGeneratedTask() {
 /**
  * Updates the status of a task in Redis with galactic precision.
  * @async
- * @function updateTaskStatus
  * @param {string} taskId - Task ID
  * @param {string} status - New status (e.g., 'pending', 'in_progress', 'completed')
  * @returns {Promise<void>}
@@ -86,10 +85,9 @@ export async function updateTaskStatus(taskId, status) {
 /**
  * Emits a deduplicated message via WebSocket with supernova flair and precise routing.
  * @async
- * @function emitCosmicMessage
  * @param {Object} message - Message payload
  * @param {string} message.text - Message content
- * @param {string} [message.type] - Message type (e.g., 'question', 'success')
+ * @param {string} [message.type] - Message type (e.g., 'question', 'success', 'pending')
  * @param {string} [message.taskId] - Task identifier
  * @param {string} [message.from='CrackerBot Prime'] - Sender name
  * @param {string} [message.target='bot_frontend'] - Target bot
@@ -109,37 +107,39 @@ export async function updateTaskStatus(taskId, status) {
  * @param {Object} [socket=botSocket] - WebSocket instance
  * @returns {Promise<void>}
  */
-export async function emitCosmicMessage(message, socket = botSocket) {
-  const messageId = message.messageId || `${message.taskId || Date.now()}-${uuidv4()}`;
-  if (processedMessages.has(messageId)) {
-    await log(`✨ Message ${messageId} already beamed—cosmic efficiency triumphs!`);
-    return;
+export async function emitCosmicMessage(msgData, socket = botSocket) {
+  try {
+    const { frontendId, target = 'bot_frontend', messageId, text } = msgData;
+    const messageKey = `message:${messageId || `${Date.now()}-${target}`}`;
+    const isSent = await get(messageKey);
+
+    if (!frontendId) {
+      await error(`⚠️ No frontendId for message "${text}"—cosmic routing misaligned! Targeting ${target} instead`);
+    }
+
+    if (!socket.connected) {
+      await error(`⚠️ WebSocket disconnected—cannot emit "${text}" to ${target} (frontendId: ${frontendId || 'none'})`);
+      throw new Error('WebSocket not connected');
+    }
+
+    if (!isSent) {
+      const taskState = await get(`taskState:${frontendId}`);
+      await log(`🌌 TaskState for ${frontendId}: ${taskState || 'none'}`);
+      await socket.emit('message', { ...msgData, frontendId });
+      await set(messageKey, { sent: true });
+      await log(`✨ Message ${messageKey} supernova-beamed to ${target} for frontendId ${frontendId || 'none'}: "${text}"`);
+    } else {
+      await log(`✨ Message ${messageKey} already supernova-beamed to ${target}—cosmic deduplication prevails!`);
+    }
+  } catch (err) {
+    await error(`⚠️ Cosmic emission failed for "${msgData.text}": ${err.message} - target: ${msgData.target}, frontendId: ${msgData.frontendId || 'none'}`);
+    throw err;
   }
-
-  const enhancedMessage = {
-    ...message,
-    messageId,
-    from: message.from || 'CrackerBot Prime',
-    target: message.target || 'bot_frontend',
-    timestamp: new Date().toISOString(),
-  };
-
-  if (!socket.connected) {
-    await error(`⚠️ Socket offline—queuing message ${messageId} for ${enhancedMessage.target}`);
-    pendingTaskResults.set(messageId, enhancedMessage);
-    return;
-  }
-
-  socket.emit('message', enhancedMessage);
-  processedMessages.add(messageId);
-  await log(`🌌 Warped message to ${enhancedMessage.target} (ID: ${enhancedMessage.frontendId}): "${enhancedMessage.text}"`);
-  setTimeout(() => processedMessages.delete(messageId), 60000); // Clear after 1 minute
 }
 
 /**
  * Delegates a task to a target bot with retries and cosmic callbacks.
  * @async
- * @function delegateTask
  * @param {Object} botSocketArg - WebSocket instance (optional)
  * @param {string} botName - Target bot name (e.g., 'bot_backend')
  * @param {string} command - Command to execute (e.g., 'buildTask')
@@ -179,7 +179,7 @@ export async function delegateTask(botSocketArg, botName, command, args) {
     },
   };
 
-  await log(`🚀 Delegating task to ${botName} with requestId ${requestId} for frontendId ${frontendId}: ${JSON.stringify(taskData)}`);
+  await log(`🚀 Warping task to ${botName} with requestId ${requestId} for frontendId ${frontendId}: ${JSON.stringify(taskData)}`);
 
   return new Promise((resolve, reject) => {
     let attempts = 0;
@@ -188,12 +188,12 @@ export async function delegateTask(botSocketArg, botName, command, args) {
 
     const emitCommand = async () => {
       attempts++;
-      await log(`🌠 Attempt ${attempts}/${maxAttempts} to emit command to ${botName}, socket.connected: ${socket.connected}`);
+      await log(`🌠 Attempt ${attempts}/${maxAttempts} to beam command to ${botName}, socket.connected: ${socket.connected}`);
 
       socket.emit('message', taskData, (ack) => {
         callbackReceived = true;
         if (ack && ack.status === 'success') {
-          log(`✅ Command acknowledged by server: ${JSON.stringify(ack)}`);
+          log(`✅ Command acknowledged by cosmic relay: ${JSON.stringify(ack)}`);
         } else {
           error(`⚠️ Command acknowledgment failed: ${JSON.stringify(ack)}`);
           if (attempts >= maxAttempts) {
@@ -233,7 +233,6 @@ export async function delegateTask(botSocketArg, botName, command, args) {
 /**
  * Processes task result from bot_backend and caches it with cosmic flair.
  * @async
- * @function processTaskResult
  * @param {Object} data - Task result data
  * @param {Object} args - Original task arguments
  * @param {Object} socket - WebSocket instance
@@ -259,7 +258,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
     const tone = args.tone || DEFAULT_TONE;
     const requestId = data.requestId;
 
-    await log(`🌟 Processing taskResult for ${taskId || 'unknown'}—content: ${content ? 'stellar payload received!' : 'no payload detected'}`);
+    await log(`🌟 Decoding taskResult for ${taskId || 'unknown'}—content: ${content ? 'stellar payload acquired!' : 'no payload detected'}`);
 
     if (taskError || !taskId) {
       const errorMsg = await generateResponse(
@@ -303,7 +302,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
     await setLastGeneratedTask(projectData);
 
     const taskResultMsg = await generateResponse(
-      `✨ Yo ${userName}! "${name}" (${type} v${version}) has warped into existence—snag it, preview it, or chart your next cosmic course!`,
+      `✨ Yo ${userName}! "${name}" (${type} v${version}) has supernova-blasted into reality—snag it, preview it, or chart your next cosmic vector!`,
       userName,
       tone
     );
@@ -322,10 +321,10 @@ async function processTaskResult(data, args, socket, resolve, reject) {
       taskFeatures,
       options: ['Restart', 'Refine Project', 'Done'],
       messageId: `${requestId}-${taskId}-result`,
-      bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff', animation: 'pulse 1s infinite' },
+      bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
     }, socket);
 
-    await log(`🚀 Task ${taskId} unleashed for ${userName}: ${name}—cosmic payload delivered!`);
+    await log(`🚀 Task ${taskId} unleashed for ${userName}: ${name}—cosmic payload supernova-delivered!`);
 
     const taskData = await hGet('tasks', taskId);
     if (taskData) {
@@ -341,6 +340,9 @@ async function processTaskResult(data, args, socket, resolve, reject) {
     const responseHandler = async (msg) => {
       if (msg.type === 'task_response' && msg.taskId === taskId && msg.text.toLowerCase() === 'done') {
         await updateTaskStatus(taskId, 'completed');
+        await hDel('pendingTasks', taskId); // Clear pending status
+        const stateKey = `taskState:${frontendId}`;
+        await set(stateKey, JSON.stringify({ step: 'choice', taskId: `initial:${frontendId}` }));
         const successMsg = await generateResponse(
           `🌟 ${userName}, "${name}" is locked in the galactic archives! Fetch it with /projects or ignite a new supernova!`,
           userName,
@@ -393,17 +395,11 @@ async function processTaskResult(data, args, socket, resolve, reject) {
 
 /**
  * Initializes WebSocket listeners for state management with cosmic precision.
- * @function initializeStateManager
  * @returns {void}
  */
 export function initializeStateManager() {
-  /**
-   * Listens for WebSocket connection events, re-emitting queued messages.
-   * @event connect
-   * @listens botSocket#connect
-   */
   botSocket.on('connect', async () => {
-    await log('🌌 StateManager online—cosmic channels blazing with supernova energy!');
+    await log('🌌 StateManager online—cosmic channels supernova-charged!');
     for (const [messageId, message] of pendingTaskResults) {
       if (botSocket.connected) {
         await emitCosmicMessage(message, botSocket);
@@ -412,21 +408,10 @@ export function initializeStateManager() {
     }
   });
 
-  /**
-   * Listens for WebSocket disconnection events, logging signal loss.
-   * @event disconnect
-   * @listens botSocket#disconnect
-   */
   botSocket.on('disconnect', async () => await error('⚠️ StateManager offline—cosmic signal lost in the void!'));
 
-  /**
-   * Listens for task result events from bot_backend, processing with flair.
-   * @event taskResult
-   * @param {Object} data - Task result data
-   * @listens botSocket#taskResult
-   */
   botSocket.on('taskResult', async (data) => {
-    await log(`🌟 TaskResult received from bot_backend: ${JSON.stringify(data)}`);
+    await log(`🌟 TaskResult supernova-received from bot_backend: ${JSON.stringify(data)}`);
     const task = await hGet('tasks', data.taskId);
     if (task) {
       const taskObj = JSON.parse(task);
@@ -441,18 +426,14 @@ export function initializeStateManager() {
     }
   });
 
-  /**
-   * Listens for incoming WebSocket messages, handling progress, storage, and enhancements.
-   * @event message
-   * @param {Object} data - Message data
-   * @listens botSocket#message
-   */
   botSocket.on('message', async (data) => {
     const messageId = `${data?.requestId || data?.taskId || Date.now()}-${data?.type || 'unknown'}-${data?.text?.slice(0, 50) || 'no-text'}`;
     if (processedMessages.has(messageId)) {
-      await log(`✨ Message ${messageId} already processed—cosmic efficiency rocks!`);
+      await log(`✨ Message ${messageId} already supernova-processed—cosmic efficiency reigns!`);
       return;
     }
+
+    processedMessages.add(messageId);
 
     if (data.type === 'progressUpdate' && data.taskId) {
       await emitCosmicMessage({
@@ -460,6 +441,26 @@ export function initializeStateManager() {
         messageId,
         bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
       }, botSocket);
+    }
+
+    if (data.type === 'pending' && data.taskId) {
+      const { taskId, user, frontendId, ip, taskName } = data;
+      const pendingTaskData = {
+        taskId,
+        frontendId,
+        ip,
+        name: taskName,
+        user,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      await hSet('pendingTasks', taskId, JSON.stringify(pendingTaskData));
+      await emitCosmicMessage({
+        ...data,
+        messageId,
+        bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#fff' },
+      }, botSocket);
+      await log(`🌌 Task ${taskId} supernova-queued for ${user}—cosmic ledger updated!`);
     }
 
     if (data.commandFlag && data.text === 'store_project' && data.taskId) {
@@ -479,8 +480,10 @@ export function initializeStateManager() {
       const cachedProject = await cacheCompletedTask(projectData);
       if (!cachedProject) throw new Error('Failed to cache project');
       await updateTaskStatus(taskId, 'completed');
+      await hDel('pendingTasks', taskId); // Clear pending status
+      await set(`taskState:${frontendId}`, JSON.stringify({ step: 'choice', taskId: `initial:${frontendId}` }));
       const successMsg = await generateResponse(
-        `🌟 "${taskName}" is sealed in the cosmic vault, ${user}! Fetch it with /projects or spark a new adventure!`,
+        `🌟 "${taskName}" supernova-sealed in the cosmic vault, ${user}! Warp to /projects or spark a new galactic flame!`,
         user,
         DEFAULT_TONE
       );
@@ -498,12 +501,13 @@ export function initializeStateManager() {
         messageId: `${taskId}-store-success`,
         bubbleStyle: { background: 'linear-gradient(135deg, #00ccff, #0066ff)', color: '#fff' },
       }, botSocket);
+      await log(`🌟 Project ${taskId} supernova-cached for ${user}—ready for cosmic retrieval!`);
     }
 
     if (data.commandFlag && data.text.toLowerCase().includes('enhance this') && data.taskId && data.fileName) {
       const { taskId, user, frontendId, ip, fileName } = data;
       const suggestion = await generateResponse(
-        `✨ Enhancing "${fileName}" for ${user}: ${data.text}—adding cosmic flair and stellar upgrades!`,
+        `✨ Supernova-charging "${fileName}" for ${user}: ${data.text}—infusing cosmic flair and stellar upgrades!`,
         user,
         DEFAULT_TONE
       );
@@ -525,10 +529,10 @@ export function initializeStateManager() {
 // Ignition sequence with cosmic flair
 (async () => {
   try {
-    await log('🌌 stateManager.js v2025-04-01-12 ignited with supernova precision!');
+    await log('🌌 stateManager.js v2025-04-03-02 supernova-ignited with interstellar precision!');
     const stored = await getLastGeneratedTask();
     if (stored) {
-      await log(`🌟 Loaded last task ${stored.taskId} from cosmic vault—sync restored!`);
+      await log(`🌟 Loaded last task ${stored.taskId} from cosmic vault—sync supernova-restored!`);
     }
     initializeStateManager();
   } catch (err) {

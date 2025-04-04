@@ -1,5 +1,5 @@
-// ai_coders/bot_lead/src/aiHelper.js (ESM, v2025-03-28-2)
-/* CrackerBot’s cosmic AI assistant—infusing interstellar flair into every response! 🌌 */
+// ai_coders/bot_lead/src/aiHelper.js (ESM, v2025-04-02-03)
+/* CrackerBot’s cosmic AI assistant—short, sharp responses with interstellar flair! 🌌 */
 import OpenAI from 'openai';
 import { log, error } from './logger.js';
 
@@ -10,7 +10,7 @@ const openai = new OpenAI({
 // Check API key validity on startup
 if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === "sk-placeholder-api-key") {
   (async () => {
-    await error('OpenAI API key is missing or invalid. Using placeholder "sk-placeholder-api-key" - responses will fail.');
+    await error('OpenAI API key missing. Using placeholder—responses may fail.');
   })();
 }
 
@@ -44,11 +44,11 @@ export async function grokThink(input, user) {
 }
 
 /**
- * Generates a detailed response with specified tone, optimized for code suggestions.
+ * Generates a concise response with specified tone.
  * @param {string} prompt - Prompt for OpenAI
  * @param {string} userId - User name
  * @param {string} [tone="witty"] - Response tone
- * @returns {Promise<string>} Generated response text
+ * @returns {Promise<string>} Response text (max 100 chars)
  */
 export async function generateResponse(prompt, userId, tone = "witty") {
   try {
@@ -59,29 +59,30 @@ export async function generateResponse(prompt, userId, tone = "witty") {
       messages: [
         { 
           role: "system", 
-          content: `You are CrackerBot, a coding assistant with cosmic flair. The user’s name is ${userId}—address them directly and never call them 'CrackerBot'. Respond in a ${tone} tone with MAXIMUM vibrancy and detail. ${isCodePrompt ? 'Return VALID, properly formatted code ONLY (e.g., HTML with proper tags, CSS with { }, JS with functions)—no explanations or malformed syntax! Include flair-filled comments like "// CrackerBot’s cosmic enhancement for ${userId}!"' : 'Make it elaborate, unforgettable, and bursting with cosmic personality!'}` 
+          content: `You are CrackerBot, a coding assistant. Address ${userId} directly. Keep responses under 100 chars, ${tone} tone. ${isCodePrompt ? 'Return valid code only with a short comment—no fluff!' : 'Short, punchy replies!'}` 
         },
         { role: "user", content: prompt }
       ],
-      max_tokens: 1000,
+      max_tokens: 50, // Reduced for brevity
     });
     let responseText = response.choices[0].message.content.trim();
 
     // Validate and enhance code responses
     if (isCodePrompt) {
       if (prompt.includes('css') && (!responseText.includes('{') || !responseText.includes('}'))) {
-        responseText = `/* CrackerBot’s cosmic enhancement for ${userId}! */\n.cosmic-boost { background: linear-gradient(135deg, #ff00ff, #00ffcc); box-shadow: 0 0 15px #00ff9f; transition: all 0.3s ease; }\n.cosmic-boost:hover { transform: scale(1.05); }`;
+        responseText = `/* ${userId}'s boost */\n.cosmic { color: #ff00ff; }`;
       } else if (prompt.includes('html') && !responseText.includes('<html')) {
-        responseText = `<!-- CrackerBot’s cosmic enhancement for ${userId}! -->\n<div class="cosmic-boost" style="background: linear-gradient(135deg, #ff00ff, #00ffcc); padding: 20px; border-radius: 10px; animation: supernova 2s infinite;">${userId}’s Cosmic Boost!</div>`;
+        responseText = `<!-- ${userId}'s spark -->\n<div>Fish</div>`;
       } else if ((prompt.includes('javascript') || prompt.includes('js')) && !responseText.includes('function')) {
-        responseText = `// CrackerBot’s cosmic enhancement for ${userId}!\nfunction cosmicBoost() { console.log("${userId} ignites the cosmos! 🌌"); document.body.style.background = "linear-gradient(135deg, #0a0a23, #ff007a)"; }`;
+        responseText = `// ${userId}'s flair\nfunction fish() { alert('Hi'); }`;
       }
     }
 
-    await log(`Generated response for ${userId} with tone ${tone}: ${responseText.substring(0, 100)}...`);
+    responseText = responseText.substring(0, 100); // Enforce 100-char limit
+    await log(`Generated response for ${userId}: "${responseText}"`);
     return responseText;
   } catch (err) {
-    await error(`OpenAI error in generateResponse for ${userId}: ${err.message}`);
-    return `Yo ${userId}, my AI brain hit a supernova snag: ${err.message}. Let’s reboot—try that again!`;
+    await error(`OpenAI error for ${userId}: ${err.message}`);
+    return `${userId}, AI glitch: ${err.message}. Try again!`;
   }
 }

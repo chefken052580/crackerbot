@@ -1,8 +1,18 @@
 import { Server } from 'socket.io';
 
-console.log(`[${new Date().toISOString()}] Loaded socket.js with commandFlag handling`);
+console.log(`[${new Date().toISOString()}] Loaded socket.js with enhanced routing and logging`);
 
+/**
+ * WebSocketHandler class to manage Socket.IO connections and route cosmic messages.
+ * @class
+ * @version 2025-04-02-15
+ * @author CrackerBot Team, enhanced by xAI
+ */
 class WebSocketHandler {
+  /**
+   * Initializes the WebSocket server with Socket.IO.
+   * @param {http.Server} httpServer - The HTTP server instance
+   */
   constructor(httpServer) {
     this.io = new Server(httpServer, {
       pingInterval: 25000,
@@ -25,6 +35,9 @@ class WebSocketHandler {
     this.initializeHandlers();
   }
 
+  /**
+   * Sets up event handlers for WebSocket connections and messages.
+   */
   initializeHandlers() {
     this.io.on("connection", (socket) => {
       console.log(`🔗 [${new Date().toISOString()}] New client connected: ID ${socket.id}, IP: ${socket.handshake.address}`);
@@ -97,9 +110,10 @@ class WebSocketHandler {
           console.log(`📩 [${new Date().toISOString()}] Raw message data:`, data);
           console.log(`📩 [${new Date().toISOString()}] commandFlag value: ${data.commandFlag}, type: ${typeof data.commandFlag}`);
           if (!data || typeof data !== 'object') throw new Error("Invalid message format");
-          console.log(`📩 [${new Date().toISOString()}] Message received: ${JSON.stringify(data)}`);
+          console.log(`📩 [${new Date().toISOString()}] Message received from ${socket.clientName || socket.id}: ${JSON.stringify(data)}`);
 
           const eventData = { ...data, ip: socket.handshake.address };
+          const senderRole = this.bots.get(socket.clientName)?.role;
 
           // Handle commands disguised as messages
           if (data.commandFlag) {
@@ -115,9 +129,17 @@ class WebSocketHandler {
               if (callback) callback({ status: "queued", message: "Command queued, target not found" });
             }
           } else {
-            // Regular message handling
-            const senderRole = this.bots.get(socket.clientName)?.role;
-            if (data.type === 'task_response' && senderRole === 'frontend') {
+            // Prioritize frontendId for frontend-bound messages
+            if (data.frontendId && (data.target === 'bot_frontend' || senderRole === 'lead')) {
+              const frontendSocket = this.io.sockets.sockets.get(data.frontendId);
+              if (frontendSocket) {
+                frontendSocket.emit('message', eventData);
+                console.log(`📤 [${new Date().toISOString()}] Sent message directly to frontendId ${data.frontendId} (socket ${frontendSocket.id})`);
+              } else {
+                this.io.to(data.frontendId).emit('message', eventData);
+                console.log(`📤 [${new Date().toISOString()}] Sent message to room ${data.frontendId} (broadcast)`);
+              }
+            } else if (data.type === 'task_response' && senderRole === 'frontend') {
               // Route frontend task responses to bot_lead
               const leadBot = this.bots.get('bot_lead');
               if (leadBot) {
@@ -126,16 +148,14 @@ class WebSocketHandler {
               } else {
                 console.warn(`⚠️ [${new Date().toISOString()}] No bot_lead found for task_response from ${socket.clientName || socket.id}`);
               }
-            } else if (data.frontendId) {
-              this.io.to(data.frontendId).emit('message', eventData);
-              console.log(`📤 [${new Date().toISOString()}] Sent message to frontendId ${data.frontendId}`);
             } else {
+              // Fallback to target-based routing
               const targetBot = this.bots.get(data.target || 'bot_lead');
               if (targetBot) {
                 targetBot.socket.emit('message', eventData);
-                console.log(`📤 [${new Date().toISOString()}] Sent message to ${targetBot.name} (${targetBot.socketId})`);
+                console.log(`📤 [${new Date().toISOString()}] Sent message to ${targetBot.name} (${targetBot.socketId}) via target`);
               } else {
-                console.warn(`⚠️ [${new Date().toISOString()}] Unhandled message from ${socket.clientName || socket.id}: ${JSON.stringify(data)}`);
+                console.warn(`⚠️ [${new Date().toISOString()}] Unhandled message from ${socket.clientName || socket.id}: ${JSON.stringify(data)} - no valid frontendId or target`);
                 socket.emit('message', { text: "Error: Message target unclear", type: "error", from: "Server" });
               }
             }
@@ -196,10 +216,9 @@ class WebSocketHandler {
       socket.on('taskResult', (data) => {
         try {
           console.log(`📩 [${new Date().toISOString()}] TaskResult received from ${socket.id}: ${JSON.stringify(data)}`);
-          const { leadId, frontendId } = data; // Extract leadId and frontendId from the payload
+          const { leadId, frontendId } = data;
           const eventData = { ...data, ip: socket.handshake.address };
 
-          // Route to bot_lead if leadId is provided
           if (leadId) {
             const leadSocket = this.io.sockets.sockets.get(leadId);
             if (leadSocket) {
@@ -212,7 +231,6 @@ class WebSocketHandler {
             console.warn(`⚠️ [${new Date().toISOString()}] No leadId specified in taskResult from ${socket.id}`);
           }
 
-          // Optionally route to frontend if frontendId is provided
           if (frontendId) {
             const frontendSocket = this.io.sockets.sockets.get(frontendId);
             if (frontendSocket) {

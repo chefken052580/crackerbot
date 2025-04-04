@@ -1,10 +1,8 @@
-// Version: v2025-04-01-10
-/**
- * CrackerBot’s Cosmic Chatroom Component
+/* CrackerBot’s Cosmic Chatroom Component
  * Where interstellar ideas ignite and soar across the galaxy with supernova flair!
- * Enhanced by xAI for distinct user/task names, Redis reset on reconnect, and single-response workflow.
+ * Enhanced by xAI for distinct user/project names, Redis caching, and seamless task flow.
  *
- * @version 2025-04-01-10
+ * @version 2025-04-04-11
  * @author CrackerBot Team, enhanced by xAI
  * @module ChatRoom
  */
@@ -15,12 +13,41 @@ import ChatMessage from './ChatMessage.jsx';
 import PreviewPopup from './PreviewPopup.jsx';
 import { commands, colorSchemes } from '../config/chatConfig.js';
 
-const WEBSOCKET_SERVER_URL =
-  process.env.REACT_APP_WEBSOCKET_SERVER_URL || 'wss://websocket-visually-sterling-spider.ngrok-free.app';
+/**
+ * ErrorBoundary component to catch rendering errors in ChatMessage.
+ * @param {Object} props - Component props
+ * @param {React.ReactNode} props.children - Child components to render
+ */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorMessage: '' };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, errorMessage: error.message };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Error in ChatMessage:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="text-red-500 p-2 border border-red-500 rounded mb-2">
+          <p>⚠️ Something went wrong with this message.</p>
+          <p>{this.state.errorMessage}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /**
- * ChatRoom component managing the cosmic user interface and WebSocket connection.
- * @returns {JSX.Element} The chatroom UI with stellar interactivity
+ * Main ChatRoom component for CrackerBot’s cosmic interface.
+ * @returns {JSX.Element} The rendered chatroom UI
  */
 const ChatRoom = () => {
   const [messages, setMessages] = useState([]);
@@ -38,7 +65,8 @@ const ChatRoom = () => {
   const [isSending, setIsSending] = useState(false);
   const [taskProgress, setTaskProgress] = useState({});
   const [previewData, setPreviewData] = useState(null);
-  const [userName, setUserName] = useState('Guest'); // Persistent user name
+  const [userName, setUserName] = useState(localStorage.getItem('crackerBotUserName') || 'Guest');
+
   const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
   const inputRef = useRef(null);
@@ -47,47 +75,53 @@ const ChatRoom = () => {
   const canvasRef = useRef(null);
   const frontendIdRef = useRef(null);
 
-  /**
-   * Logs a message with timestamp for cosmic debugging.
-   * @param {string} msg - Message to log
-   * @private
-   */
+  const WEBSOCKET_SERVER_URL = 'wss://websocket-visually-sterling-spider.ngrok-free.app';
+
   const logMessage = useCallback((msg) => {
     console.log(`[${new Date().toISOString()}] ${msg}`);
   }, []);
 
-  /**
-   * Initializes the WebSocket connection with cosmic event handlers.
-   * @private
-   */
   const initializeSocket = useCallback(() => {
-    if (socketRef.current) socketRef.current.disconnect();
+    if (socketRef.current) {
+      try {
+        socketRef.current.off('connect');
+        socketRef.current.off('message');
+        socketRef.current.off('connect_error');
+        socketRef.current.off('disconnect');
+        socketRef.current.disconnect();
+        logMessage('🌌 Cleaning up previous WebSocket instance');
+      } catch (err) {
+        logMessage(`⚠️ Error cleaning up socket: ${err.message}`);
+      }
+    }
     socketRef.current = new WebSocketManager(WEBSOCKET_SERVER_URL, {
       onConnect: (id) => {
         frontendIdRef.current = id;
-        logMessage(`🌌 WebSocket connected—cosmic ID: ${id}`);
+        logMessage(`🌌 WebSocket connected—cosmic ID: ${id}, userName: ${userName}`);
         setIsConnected(true);
         socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
         socketRef.current.emit('frontend_connected', { ip: window.location.hostname, frontendId: id, userName });
-        setMessages((prev) => [
-          ...prev.filter((msg) => msg.type !== 'system' || !msg.text.includes('Reset and reconnected')),
-          {
-            id: `${Date.now()}-connect`,
-            from: 'System',
-            user: userName,
-            text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
-            type: 'system',
-            timestamp: new Date().toLocaleTimeString(),
-            bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
-          },
-        ]);
+        setMessages((prev) => {
+          if (!prev.some(msg => msg.text === 'CrackerBot’s galactic channels live—warp speed engaged! 🚀')) {
+            return [
+              ...prev,
+              {
+                id: `${Date.now()}-connect`,
+                from: 'System',
+                user: userName,
+                text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
+                type: 'system',
+                timestamp: new Date().toLocaleTimeString(),
+                bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
+              },
+            ];
+          }
+          return prev;
+        });
       },
       onMessage: (data) => {
         logMessage(`🌠 Cosmic signal received: ${JSON.stringify(data)}`);
-        if (data.frontendId && data.frontendId !== frontendIdRef.current) {
-          logMessage(`Ignoring signal for frontendId ${data.frontendId}; current ID: ${frontendIdRef.current}`);
-          return;
-        }
+        if (data.frontendId && data.frontendId !== frontendIdRef.current) return;
 
         const messageId = data.messageId || `${data.taskId || Date.now()}-${data.type || 'unknown'}-${data.text?.slice(0, 50) || 'no-text'}`;
         const safeData = {
@@ -109,39 +143,36 @@ const ChatRoom = () => {
           user: data.user || userName,
         };
 
-        // Update userName only from initial name step success
-        if (safeData.type === 'success' && safeData.taskId?.startsWith('initial') && safeData.user !== 'Guest' && safeData.user !== userName) {
-          setUserName(safeData.user);
-          logMessage(`🌟 User name updated to: ${safeData.user}`);
-        }
+        try {
+          if (safeData.type === 'success' && safeData.taskId?.startsWith('initial') && safeData.user !== 'Guest' && safeData.user !== userName) {
+            setUserName(safeData.user);
+            localStorage.setItem('crackerBotUserName', safeData.user);
+            logMessage(`🌟 User name updated to: ${safeData.user}`);
+          }
 
-        const newMessage = {
-          id: messageId,
-          from: safeData.from,
-          user: safeData.user,
-          text: safeData.text,
-          type: safeData.type,
-          finalContent: safeData.finalContent,
-          downloadLink: safeData.downloadLink,
-          taskId: safeData.taskId,
-          options: safeData.options,
-          timestamp: new Date().toLocaleTimeString(),
-          frontendId: safeData.frontendId,
-          taskName: safeData.taskName,
-          taskType: safeData.taskType,
-          taskFeatures: safeData.taskFeatures,
-          projects: safeData.projects,
-          progress: safeData.type === 'progressUpdate' ? safeData.progress : undefined,
-          isBuilding: safeData.type === 'progressUpdate' || (safeData.taskId && taskProgress[safeData.taskId] < 100),
-          bubbleStyle: safeData.bubbleStyle,
-        };
+          const newMessage = {
+            id: messageId,
+            from: safeData.from,
+            user: safeData.user,
+            text: safeData.text,
+            type: safeData.type,
+            finalContent: safeData.finalContent,
+            downloadLink: safeData.downloadLink,
+            taskId: safeData.taskId,
+            options: safeData.options,
+            timestamp: new Date().toLocaleTimeString(),
+            frontendId: safeData.frontendId,
+            taskName: safeData.taskName,
+            taskType: safeData.taskType,
+            taskFeatures: safeData.taskFeatures,
+            projects: safeData.projects,
+            progress: safeData.type === 'progressUpdate' ? safeData.progress : undefined,
+            isBuilding: safeData.type === 'progressUpdate' || (safeData.taskId && taskProgress[safeData.taskId] < 100),
+            bubbleStyle: safeData.bubbleStyle,
+          };
 
-        React.startTransition(() => {
           setMessages((prev) => {
-            if (prev.some((msg) => msg.id === messageId)) {
-              logMessage(`✨ Duplicate message ignored: ${messageId}`);
-              return prev;
-            }
+            if (prev.some((msg) => msg.id === messageId)) return prev;
             if (safeData.type === 'progressUpdate' && safeData.taskId) {
               setTaskProgress((prevProgress) => ({
                 ...prevProgress,
@@ -151,39 +182,50 @@ const ChatRoom = () => {
               if (existingIdx >= 0) {
                 const updatedMessages = [...prev];
                 updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], ...newMessage };
-                logMessage(`📈 Updated progress for task ${safeData.taskId}: ${safeData.progress}%`);
                 return updatedMessages;
               }
             }
-            logMessage(`🌟 Adding new message from ${safeData.from}: "${safeData.text}" (ID: ${messageId})`);
             return [...prev, newMessage];
           });
 
-          if (safeData.type === 'question') {
-            setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
+          if (safeData.type === 'pending' && safeData.taskId) {
             setCurrentTask((prev) => ({
               taskId: safeData.taskId,
-              name: safeData.taskName || prev?.name || 'Pending',
-              type: safeData.taskType || prev?.type || 'Pending',
-              features: safeData.taskFeatures || prev?.features || 'Pending',
-              step: safeData.text.toLowerCase().includes('name below') ? 'name' :
-                    safeData.text.toLowerCase().includes('chat') || safeData.text.toLowerCase().includes('build') ? 'choice' :
-                    safeData.text.toLowerCase().includes('tech') ? 'type' :
-                    safeData.text.toLowerCase().includes('features') ? 'pending_features' : 'review',
+              name: safeData.taskName || prev?.name || 'Unnamed Epic',
+              type: safeData.taskType || prev?.type || 'TBD',
+              features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+              step: 'type',
               taskStatus: 'pending',
             }));
-            logMessage(`❓ Task pending set: ${safeData.taskId} - "${safeData.text}"`);
+          } else if (safeData.type === 'question') {
+            setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
+            setCurrentTask((prev) => {
+              const step = safeData.text.toLowerCase().includes('name below') ? 'name' :
+                safeData.text.toLowerCase().includes('chat') || safeData.text.toLowerCase().includes('build') ? 'choice' :
+                safeData.text.toLowerCase().includes('tech') ? 'type' :
+                safeData.text.toLowerCase().includes('features') ? 'pending_features' : 'review';
+              return {
+                taskId: safeData.taskId,
+                name: safeData.taskName || prev?.name || 'Unnamed Epic',
+                type: safeData.taskType || prev?.type || 'TBD',
+                features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+                step,
+                taskStatus: 'pending',
+              };
+            });
           } else if (safeData.type === 'taskResult') {
             setTaskPending(null);
-            setCurrentTask((prev) => prev ? { ...prev, taskStatus: 'completed', name: safeData.taskName, type: safeData.taskType, features: safeData.taskFeatures } : null);
+            setCurrentTask((prev) => prev ? { ...prev, taskStatus: 'completed', name: safeData.taskName || prev.name, type: safeData.taskType, features: safeData.taskFeatures } : null);
             setEditMode(null);
             setTaskProgress((prev) => ({ ...prev, [safeData.taskId]: 100 }));
-            logMessage(`✅ Task completed: ${safeData.taskId} - "${safeData.taskName}"`);
           } else if (safeData.type === 'success' && !safeData.projects) {
             setTaskPending(null);
-            setCurrentTask(null);
+            if (safeData.taskId?.startsWith('initial')) {
+              setCurrentTask((prev) => prev ? { ...prev, step: 'choice' } : { step: 'choice', taskId: safeData.taskId });
+            } else {
+              setCurrentTask(null);
+            }
             setEditMode(null);
-            logMessage(`🌟 Success message received, task cleared`);
           } else if (safeData.type === 'error' && safeData.taskId) {
             setTaskPending(null);
             setCurrentTask(null);
@@ -193,11 +235,12 @@ const ChatRoom = () => {
               delete newProgress[safeData.taskId];
               return newProgress;
             });
-            logMessage(`⚠️ Error for task ${safeData.taskId}: "${safeData.text}"`);
           }
 
           setIsTyping((prev) => ({ ...prev, [safeData.from]: false }));
-        });
+        } catch (err) {
+          logMessage(`⚠️ Error processing message ${messageId}: ${err.message}`);
+        }
       },
       onConnectError: (error) => {
         logMessage(`⚠️ Cosmic connect glitch: ${error.message}`);
@@ -235,7 +278,7 @@ const ChatRoom = () => {
   }, [taskProgress, userName, logMessage]);
 
   useEffect(() => {
-    logMessage('🌌 Igniting cosmic chatroom—prepare for warp speed!');
+    logMessage(`🌌 Igniting cosmic chatroom—prepare for warp speed! User: ${userName}`);
     initializeSocket();
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
@@ -244,16 +287,20 @@ const ChatRoom = () => {
   }, [initializeSocket]);
 
   useEffect(() => {
-    document.body.className = `${colorSchemes[colorScheme].bg} relative`;
-    if (colorScheme === 'matrix') {
-      document.body.style.backgroundImage = 'none';
-      initMatrixRain();
-    } else {
-      document.body.style.backgroundImage = 'none';
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    try {
+      document.body.className = `${colorSchemes[colorScheme].bg} relative`;
+      if (colorScheme === 'matrix') {
+        document.body.style.backgroundImage = 'none';
+        initMatrixRain();
+      } else {
+        document.body.style.backgroundImage = 'none';
+        if (canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d');
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
       }
+    } catch (err) {
+      logMessage(`⚠️ Error updating color scheme: ${err.message}`);
     }
     return () => {
       if (canvasRef.current) {
@@ -269,10 +316,6 @@ const ChatRoom = () => {
     }
   }, [messages, isTyping]);
 
-  /**
-   * Initializes the Matrix rain background effect with cosmic flair.
-   * @private
-   */
   const initMatrixRain = useCallback(() => {
     if (colorScheme !== 'matrix' || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -320,12 +363,14 @@ const ChatRoom = () => {
   }, [colorScheme]);
 
   /**
-   * Sends a message via WebSocket to the cosmic network.
-   * @param {string} messageText - Text to transmit
-   * @private
+   * Sends a message via WebSocket with enhanced task flow handling.
+   * @param {string} messageText - The message to send
    */
   const sendMessage = useCallback((messageText) => {
-    if (!socketRef.current || !messageText.trim() || !isConnected || isSending) return;
+    if (!socketRef.current || !messageText.trim() || !isConnected || isSending) {
+      logMessage(`⚠️ Cannot send message: "${messageText}" - socket: ${!!socketRef.current}, connected: ${isConnected}, sending: ${isSending}`);
+      return;
+    }
 
     setIsSending(true);
     const messageData = {
@@ -346,62 +391,114 @@ const ChatRoom = () => {
       timestamp: new Date().toLocaleTimeString(),
       bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #00ccff)', color: '#000' },
     };
-    setMessages((prev) => [...prev, userMessage]);
-    logMessage(`📤 Sent message: "${messageText}" (type: ${messageData.type}, user: ${userName})`);
 
-    if (messageText.startsWith('/')) {
-      messageData.commandFlag = true;
-      const commandParts = messageText.split(' ');
-      const command = commandParts[0].toLowerCase();
+    try {
+      setMessages((prev) => [...prev, userMessage]);
+      logMessage(`📤 Sending message: "${messageText}" (type: ${messageData.type}, user: ${userName}, frontendId: ${frontendIdRef.current}, taskId: ${currentTask?.taskId || 'none'})`);
 
-      if (command === '/commands') {
-        const commandList = commands.map((cmd) => `${cmd.command}: ${cmd.description}`).join('\n');
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-commands`,
-            from: 'System',
-            user: userName,
-            text: `🌟 Cosmic Command Codex:\n${commandList}`,
-            type: 'system',
-            timestamp: new Date().toLocaleTimeString(),
-            bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
-          },
-        ]);
-      } else if (command === '/reset_name') {
-        socketRef.current.emit('message', messageData);
-        setCurrentTask({ taskId: `initial:${frontendIdRef.current}`, step: 'name', taskStatus: 'pending' });
-        setUserName('Guest');
+      if (messageText.startsWith('/')) {
+        messageData.commandFlag = true;
+        const commandParts = messageText.split(' ');
+        const command = commandParts[0].toLowerCase();
+
+        if (command === '/commands') {
+          const commandList = commands.map((cmd) => `${cmd.command}: ${cmd.description}`).join('\n');
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `${Date.now()}-commands`,
+              from: 'System',
+              user: userName,
+              text: `🌟 Cosmic Command Codex:\n${commandList}`,
+              type: 'system',
+              timestamp: new Date().toLocaleTimeString(),
+              bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
+            },
+          ]);
+        } else if (command === '/reset_name') {
+          socketRef.current.emit('message', messageData);
+          setCurrentTask({ taskId: `initial:${frontendIdRef.current}`, step: 'name', taskStatus: 'pending' });
+          setUserName('Guest');
+          localStorage.setItem('crackerBotUserName', 'Guest');
+        } else if (command === '/projects') {
+          socketRef.current.emit('message', messageData);
+        } else {
+          socketRef.current.emit('message', messageData);
+        }
       } else {
-        socketRef.current.emit('message', messageData);
-      }
-    } else {
-      if (currentTask) {
-        messageData.taskId = currentTask.taskId;
-        if (currentTask.step === 'name' && !currentTask.taskName) {
-          setUserName(messageText.trim());
-          messageData.user = messageText.trim();
-          setCurrentTask((prev) => ({ ...prev, step: 'choice' }));
-        } else if (currentTask.step === 'project_name') {
-          setCurrentTask((prev) => ({ ...prev, name: messageText.trim() }));
+        if (currentTask) {
+          messageData.taskId = currentTask.taskId;
+          if (currentTask.step === 'name' && currentTask.taskId.startsWith('initial')) {
+            const newUserName = messageText.trim();
+            setUserName(newUserName);
+            localStorage.setItem('crackerBotUserName', newUserName);
+            messageData.user = newUserName;
+            setCurrentTask((prev) => ({
+              ...prev,
+              step: 'choice',
+              taskStatus: 'pending',
+            }));
+            socketRef.current.emit('message', messageData);
+          } else if (currentTask.step === 'choice' && messageText.toLowerCase() === 'build-something-epic') {
+            setCurrentTask((prev) => ({
+              ...prev,
+              step: 'project_name',
+              taskId: `task:${Date.now()}`,
+              taskStatus: 'pending',
+            }));
+            socketRef.current.emit('message', messageData);
+          } else if (currentTask.step === 'project_name') {
+            const projectName = messageText.trim();
+            setCurrentTask((prev) => ({
+              ...prev,
+              name: projectName,
+              step: 'type',
+              taskStatus: 'pending',
+            }));
+            messageData.taskName = projectName;
+            socketRef.current.emit('message', messageData);
+          } else if (currentTask.step === 'type') {
+            setCurrentTask((prev) => ({
+              ...prev,
+              type: messageText.trim(),
+              step: 'pending_features',
+              taskStatus: 'pending',
+            }));
+            messageData.taskType = messageText.trim();
+            socketRef.current.emit('message', messageData);
+          } else if (currentTask.step === 'pending_features') {
+            setCurrentTask((prev) => ({
+              ...prev,
+              features: messageText.trim(),
+              step: 'building',
+              taskStatus: 'building',
+            }));
+            messageData.taskFeatures = messageText.trim();
+            socketRef.current.emit('message', messageData);
+          } else {
+            socketRef.current.emit('message', messageData);
+          }
+        } else {
+          socketRef.current.emit('message', messageData);
         }
       }
-      socketRef.current.emit('message', messageData);
-    }
 
-    setInput('');
-    setShowCommands(false);
-    setCommandIndex(-1);
-    setTimeout(() => {
-      setIsSending(false);
-      inputRef.current?.focus();
-    }, 100);
+      setInput('');
+      setShowCommands(false);
+      setCommandIndex(-1);
+    } catch (err) {
+      logMessage(`⚠️ Error sending message "${messageText}": ${err.message}`);
+    } finally {
+      setTimeout(() => {
+        setIsSending(false);
+        inputRef.current?.focus();
+      }, 100);
+    }
   }, [isConnected, isSending, currentTask, userName, logMessage]);
 
   /**
-   * Handles input changes and command filtering with stellar precision.
-   * @param {React.ChangeEvent<HTMLInputElement>} e - Input event
-   * @private
+   * Handles input changes and command Filtering.
+   * @param {React.ChangeEvent<HTMLInputElement>} e - Input change event
    */
   const handleInputChange = useCallback((e) => {
     const value = e.target.value;
@@ -419,9 +516,8 @@ const ChatRoom = () => {
   }, []);
 
   /**
-   * Handles keydown events for input and command selection.
-   * @param {React.KeyboardEvent<HTMLInputElement>} e - Keydown event
-   * @private
+   * Handles keyboard navigation for commands and message sending.
+   * @param {React.KeyboardEvent<HTMLInputElement>} e - Keyboard event
    */
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && input.trim()) {
@@ -455,11 +551,6 @@ const ChatRoom = () => {
     }
   }, [input, showCommands, commandIndex, filteredCommands, sendMessage]);
 
-  /**
-   * Selects a command from the autocomplete list with cosmic flair.
-   * @param {string} command - Selected command
-   * @private
-   */
   const handleCommandSelect = useCallback((command) => {
     setInput(command + ' ');
     setShowCommands(false);
@@ -467,10 +558,6 @@ const ChatRoom = () => {
     inputRef.current?.focus();
   }, []);
 
-  /**
-   * Toggles speech recognition for voice input across the stars.
-   * @private
-   */
   const toggleRecording = useCallback(() => {
     if (!isRecording) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -523,29 +610,35 @@ const ChatRoom = () => {
     }
   }, [isRecording, sendMessage, userName]);
 
-  /**
-   * Manually reconnects the WebSocket to the cosmic grid, resetting Redis user name.
-   * @private
-   */
   const manualReconnect = useCallback(() => {
     if (!socketRef.current) return;
+    const confirmReset = window.confirm(
+      '⚠️ Warning: This will clear all your projects and reset your session to a fresh start. Continue?'
+    );
+    if (!confirmReset) {
+      logMessage('🌌 Reconnect aborted by user');
+      return;
+    }
     socketRef.current.disconnect();
-    socketRef.current.emit('reset_user', { userId: frontendIdRef.current, ip: window.location.hostname });
+    socketRef.current.emit('message', {
+      text: '/clear_cache',
+      type: 'command',
+      frontendId: frontendIdRef.current,
+      ip: window.location.hostname,
+      target: 'bot_lead',
+      user: userName,
+    });
     setMessages([]);
     setTaskPending(null);
     setCurrentTask(null);
     setEditMode(null);
     setTaskProgress({});
     setUserName('Guest');
+    localStorage.setItem('crackerBotUserName', 'Guest');
     initializeSocket();
-    logMessage('🌠 Manual warp initiated—realigning to cosmic grid with fresh identity!');
-  }, [initializeSocket, logMessage]);
+    logMessage('🌠 Manual warp initiated—clearing cosmic cache and restarting!');
+  }, [initializeSocket, userName, logMessage]);
 
-  /**
-   * Changes the color scheme with stellar aesthetics.
-   * @param {string} scheme - New color scheme
-   * @private
-   */
   const handleColorChange = useCallback((scheme) => {
     setColorScheme(scheme);
     localStorage.setItem('colorScheme', scheme);
@@ -553,10 +646,9 @@ const ChatRoom = () => {
   }, [logMessage]);
 
   /**
-   * Handles option clicks from ChatMessage with cosmic precision.
-   * @param {string} option - Selected option
-   * @param {Object} [projectData] - Optional project data
-   * @private
+   * Handles option clicks like Refine, Download, or Done.
+   * @param {string} option - The selected option
+   * @param {Object} [projectData] - Project data if from /projects
    */
   const handleOptionClick = useCallback((option, projectData) => {
     if (projectData) {
@@ -659,198 +751,208 @@ const ChatRoom = () => {
     }
   }, [currentTask, messages, sendMessage, userName, logMessage]);
 
-  /**
-   * Triggers preview popup for cosmic creations (unused in favor of ChatMessage handling).
-   * @param {Object} msg - Message data
-   * @private
-   */
   const handlePreviewClick = useCallback((msg) => {
     setPreviewData({ fileContent: msg.finalContent, fileName: msg.fileName || `${msg.taskName || 'cosmic_download'}.zip`, taskId: msg.taskId });
     logMessage(`🌟 Preview warping in for task ${msg.taskId}: ${msg.fileName || msg.taskName}`);
   }, [logMessage]);
 
-  /**
-   * Closes the preview popup, returning to the cosmic chat.
-   * @private
-   */
   const closePreview = useCallback(() => {
     setPreviewData(null);
     logMessage('🌌 Preview faded—back to the cosmic hub!');
   }, [logMessage]);
 
-  const currentScheme = colorSchemes[colorScheme];
+  const currentScheme = colorSchemes[colorScheme] || colorSchemes['neon'];
 
-  return (
-    <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text} overflow-hidden relative`}>
-      {colorScheme === 'matrix' && (
-        <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none z-0" />
-      )}
-      {previewData && (
-        <PreviewPopup
-          fileContent={previewData.fileContent}
-          fileName={previewData.fileName}
-          onClose={closePreview}
-          socket={socketRef.current}
-          postTaskOptions={{
-            taskId: previewData.taskId,
-            taskName: currentTask?.name,
-            taskType: currentTask?.type,
-            taskFeatures: currentTask?.features,
-          }}
-          setMessages={setMessages}
-        />
-      )}
-      <div className="flex-shrink-0 p-4 flex justify-between items-center relative z-10">
-        <h2 className={`text-2xl font-bold ${currentScheme.accent}`}>
-          🌌 CrackerBot Cosmic Hub {editMode ? '(Refining Stardust)' : ''} - {userName}
-        </h2>
-        <div className="flex space-x-2">
-          <select
-            value={colorScheme}
-            onChange={(e) => handleColorChange(e.target.value)}
-            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:shadow-neon transition-shadow`}
-          >
-            <option value="neon">Neon</option>
-            <option value="cyberpunk">Cyberpunk</option>
-            <option value="retro">Retro</option>
-            <option value="pastel">Pastel</option>
-            <option value="matrix">Matrix</option>
-          </select>
-          <button
-            onClick={toggleRecording}
-            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
-          >
-            {isRecording ? '🎙️' : '🎤'}
-          </button>
-          <button
-            onClick={manualReconnect}
-            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
-          >
-            Warp Reconnect
-          </button>
-          <button
-            onClick={() => {
-              const transcript = messages.map((msg) => `${msg.timestamp} ${msg.from}: ${msg.text}`).join('\n');
-              const blob = new Blob([transcript], { type: 'text/plain' });
-              const url = window.URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `cosmic_log_${new Date().toISOString().replace(/:/g, '-')}.txt`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              window.URL.revokeObjectURL(url);
+  try {
+    logMessage(`🌌 Rendering ChatRoom UI - User: ${userName}, CurrentTask: ${JSON.stringify(currentTask)}`);
+    return (
+      <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text} overflow-hidden relative`}>
+        {colorScheme === 'matrix' && (
+          <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none z-0" />
+        )}
+        {previewData && (
+          <PreviewPopup
+            fileContent={previewData.fileContent}
+            fileName={previewData.fileName}
+            onClose={closePreview}
+            socket={socketRef.current}
+            postTaskOptions={{
+              taskId: previewData.taskId,
+              taskName: currentTask?.name,
+              taskType: currentTask?.type,
+              taskFeatures: currentTask?.features,
             }}
-            className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
-          >
-            Export Cosmic Log
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 flex items-center justify-center relative z-10">
-        <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? 'border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]' : ''}`}>
-          <div
-            ref={chatContainerRef}
-            className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}
-          >
-            {messages.map((msg) => (
-              <div key={msg.id} className="message-wrapper mb-2">
-                <ChatMessage
-                  message={msg}
-                  taskResult={msg.type === 'taskResult' ? msg : null}
-                  onOptionClick={handleOptionClick}
-                  colorScheme={currentScheme}
-                  progress={taskProgress[msg.taskId]}
-                  setMessages={setMessages}
-                  socket={socketRef.current}
-                />
-              </div>
-            ))}
-            {Object.entries(isTyping).map(([user, typing]) => typing && (
-              <div key={user} className="text-gray-500 italic mb-2">
-                {`${user} is forging cosmic wonders...`}
-              </div>
-            ))}
-          </div>
-
-          {currentTask && (
-            <div className="text-[#00ff9f] my-2 font-mono">
-              🌟 Task: {currentTask.name || 'Unnamed Epic'} | Type: {currentTask.type || 'TBD'} | Features: {currentTask.features || 'Forging...'}
-            </div>
-          )}
-
-          {showCommands && (
-            <div
-              ref={commandsRef}
-              tabIndex={0}
-              onKeyDown={handleKeyDown}
-              className={`absolute bottom-12 left-0 w-full max-w-3xl ${currentScheme.chatBg} border border-[#ff00ff] rounded-md shadow-[0_0_10px_#ff00ff] p-2 z-20 max-h-64 overflow-y-auto`}
+            setMessages={setMessages}
+          />
+        )}
+        <div className="flex-shrink-0 p-4 flex justify-between items-center relative z-10">
+          <h2 className={`text-2xl font-bold ${currentScheme.accent}`}>
+            🌌 CrackerBot Cosmic Hub {editMode ? '(Refining Stardust)' : ''} - {userName}
+          </h2>
+          <div className="flex space-x-2">
+            <select
+              value={colorScheme}
+              onChange={(e) => handleColorChange(e.target.value)}
+              className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:shadow-neon transition-shadow`}
             >
-              {filteredCommands.length > 0 ? (
-                filteredCommands.map((cmd, idx) => (
-                  <div
-                    key={cmd.command}
-                    onClick={() => handleCommandSelect(cmd.command)}
-                    className={`cursor-pointer p-2 rounded-md ${idx === commandIndex ? 'bg-gray-600' : 'hover:bg-gray-700'} transition-colors`}
-                  >
-                    <span className={`${currentScheme.accent} font-bold`}>{cmd.command}</span> - {cmd.description}
-                  </div>
-                ))
-              ) : (
-                <div className="p-2 text-gray-500">No cosmic commands match your query</div>
-              )}
-            </div>
-          )}
-
-          <div className="flex mt-2 relative">
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                taskPending
-                  ? currentTask.step === 'name' && !currentTask.taskName
-                    ? '🌠 Claim your cosmic identity...'
-                    : currentTask.step === 'choice'
-                    ? '🌟 Choose your galactic path: Chat or Build-Something-Epic'
-                    : currentTask.step === 'project_name'
-                    ? '⚒️ Name your cosmic creation...'
-                    : currentTask.step === 'type'
-                    ? '✨ Select your tech constellation...'
-                    : currentTask.step === 'pending_features'
-                    ? '⚒️ Describe your stellar features...'
-                    : `🌌 Answer: ${taskPending.question}`
-                  : editMode
-                  ? '🌠 Refine your interstellar masterpiece...'
-                  : '🌌 Transmit your cosmic will or /command...'
-              }
-              className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-[#ff00ff] ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-[#00ff9f] focus:shadow-[0_0_10px_#00ff9f] transition-shadow`}
-            />
+              <option value="neon">Neon</option>
+              <option value="cyberpunk">Cyberpunk</option>
+              <option value="retro">Retro</option>
+              <option value="pastel">Pastel</option>
+              <option value="matrix">Matrix</option>
+            </select>
             <button
               onClick={toggleRecording}
-              className={`p-2 bg-gradient-to-r from-[#ff00ff] to-[#00ffff] hover:from-[#ff66ff] hover:to-[#66ffff] text-white rounded-md shadow-lg transform transition-all duration-200 ${isRecording ? 'scale-110' : ''}`}
+              className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
             >
-              🎙️
+              {isRecording ? '🎙️' : '🎤'}
             </button>
             <button
-              onClick={() => sendMessage(input)}
-              disabled={!isConnected || !input.trim() || isSending}
-              className={`px-4 py-2 rounded-r-md transition ${
-                isConnected && input.trim() && !isSending
-                  ? `${currentScheme.button} ${currentScheme.buttonText} hover:shadow-neon`
-                  : 'bg-gray-500 text-gray-300 cursor-not-allowed'
-              }`}
+              onClick={manualReconnect}
+              className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
             >
-              Warp Send
+              Warp Reconnect
+            </button>
+            <button
+              onClick={() => {
+                const transcript = messages.map((msg) => `${msg.timestamp} ${msg.from}: ${msg.text}`).join('\n');
+                const blob = new Blob([transcript], { type: 'text/plain' });
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `cosmic_log_${new Date().toISOString().replace(/:/g, '-')}.txt`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+              }}
+              className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
+            >
+              Export Cosmic Log
             </button>
           </div>
         </div>
+
+        <div className="flex-1 flex items-center justify-center relative z-10">
+          <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? 'border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]' : ''}`}>
+            <div
+              ref={chatContainerRef}
+              className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}
+            >
+              {messages.map((msg) => (
+                <div key={msg.id} className="message-wrapper mb-2">
+                  <ErrorBoundary>
+                    <ChatMessage
+                      message={msg}
+                      taskResult={msg.type === 'taskResult' ? msg : null}
+                      onOptionClick={handleOptionClick}
+                      colorScheme={currentScheme}
+                      progress={taskProgress[msg.taskId]}
+                      setMessages={setMessages}
+                      socket={socketRef.current}
+                      onPreviewClick={msg.finalContent ? () => handlePreviewClick(msg) : null}
+                    />
+                  </ErrorBoundary>
+                </div>
+              ))}
+              {Object.entries(isTyping).map(([user, typing]) => typing && (
+                <div key={user} className="text-gray-500 italic mb-2">
+                  {`${user} is forging cosmic wonders...`}
+                </div>
+              ))}
+            </div>
+
+            {currentTask && (
+              <div className="text-[#00ff9f] my-2 font-mono border-t border-[#ff00ff] pt-2">
+                🌟 Pending Cosmic Creation: <br />
+                  Name: {currentTask.name || 'Unnamed Epic'} <br />
+                  Type: {currentTask.type || 'TBD'} <br />
+                  Features: {currentTask.features || 'Forging cosmic brilliance...'} <br />
+                  Status: {currentTask.taskStatus}
+              </div>
+            )}
+
+            {showCommands && (
+              <div
+                ref={commandsRef}
+                tabIndex={0}
+                onKeyDown={handleKeyDown}
+                className={`absolute bottom-12 left-0 w-full max-w-3xl ${currentScheme.chatBg} border border-[#ff00ff] rounded-md shadow-[0_0_10px_#ff00ff] p-2 z-20 max-h-64 overflow-y-auto`}
+              >
+                {filteredCommands.length > 0 ? (
+                  filteredCommands.map((cmd, idx) => (
+                    <div
+                      key={cmd.command}
+                      onClick={() => handleCommandSelect(cmd.command)}
+                      className={`cursor-pointer p-2 rounded-md ${idx === commandIndex ? 'bg-gray-600' : 'hover:bg-gray-700'} transition-colors`}
+                    >
+                      <span className={`${currentScheme.accent} font-bold`}>{cmd.command}</span> - {cmd.description}
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-2 text-gray-500">No cosmic commands match your query</div>
+                )}
+              </div>
+            )}
+
+            <div className="flex mt-2 relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  taskPending
+                    ? currentTask?.step === 'name' && currentTask.taskId.startsWith('initial')
+                      ? '🌠 Claim your cosmic identity...'
+                      : currentTask?.step === 'choice'
+                      ? '🌟 Choose your galactic path: Chat or Build-Something-Epic'
+                      : currentTask?.step === 'project_name'
+                      ? '⚒️ Name your cosmic creation...'
+                      : currentTask?.step === 'type'
+                      ? '✨ Select your tech constellation...'
+                      : currentTask?.step === 'pending_features'
+                      ? '⚒️ Describe your stellar features...'
+                      : `🌌 Answer: ${taskPending?.question || ''}`
+                    : editMode
+                    ? '🌠 Refine your interstellar masterpiece...'
+                    : '🌌 Transmit your cosmic will or /command...'
+                }
+                className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-[#ff00ff] ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-[#00ff9f] focus:shadow-[0_0_10px_#00ff9f] transition-shadow`}
+              />
+              <button
+                onClick={toggleRecording}
+                className={`p-2 bg-gradient-to-r from-[#ff00ff] to-[#00ffff] hover:from-[#ff66ff] hover:to-[#66ffff] text-white rounded-md shadow-lg transform transition-all duration-200 ${isRecording ? 'scale-110' : ''}`}
+              >
+                🎙️
+              </button>
+              <button
+                onClick={() => sendMessage(input)}
+                disabled={!isConnected || !input.trim() || isSending}
+                className={`px-4 py-2 rounded-r-md transition ${
+                  isConnected && input.trim() && !isSending
+                    ? `${currentScheme.button} ${currentScheme.buttonText} hover:shadow-neon`
+                    : 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                }`}
+              >
+                Warp Send
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  } catch (err) {
+    logMessage(`⚠️ Render error in ChatRoom: ${err.message}`);
+    return (
+      <div className="flex flex-col h-full bg-black text-white p-4">
+        <h2>⚠️ Cosmic Render Failure</h2>
+        <p>Error: ${err.message}</p>
+        <button onClick={manualReconnect}>Reconnect</button>
+      </div>
+    );
+  }
 };
 
 export default ChatRoom;
