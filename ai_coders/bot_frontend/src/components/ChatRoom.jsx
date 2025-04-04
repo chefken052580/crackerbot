@@ -2,7 +2,7 @@
  * Where interstellar ideas ignite and soar across the galaxy with supernova flair!
  * Enhanced by xAI for distinct user/project names, Redis caching, and seamless task flow.
  *
- * @version 2025-04-04-11
+ * @version 2025-04-04-13
  * @author CrackerBot Team, enhanced by xAI
  * @module ChatRoom
  */
@@ -66,6 +66,7 @@ const ChatRoom = () => {
   const [taskProgress, setTaskProgress] = useState({});
   const [previewData, setPreviewData] = useState(null);
   const [userName, setUserName] = useState(localStorage.getItem('crackerBotUserName') || 'Guest');
+  const [messageIds, setMessageIds] = useState(new Set());  // Added for duplicate prevention
 
   const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
@@ -84,10 +85,7 @@ const ChatRoom = () => {
   const initializeSocket = useCallback(() => {
     if (socketRef.current) {
       try {
-        socketRef.current.off('connect');
-        socketRef.current.off('message');
-        socketRef.current.off('connect_error');
-        socketRef.current.off('disconnect');
+        // Removed .off calls to avoid "o.current.off is not a function" error
         socketRef.current.disconnect();
         logMessage('🌌 Cleaning up previous WebSocket instance');
       } catch (err) {
@@ -102,19 +100,18 @@ const ChatRoom = () => {
         socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
         socketRef.current.emit('frontend_connected', { ip: window.location.hostname, frontendId: id, userName });
         setMessages((prev) => {
-          if (!prev.some(msg => msg.text === 'CrackerBot’s galactic channels live—warp speed engaged! 🚀')) {
-            return [
-              ...prev,
-              {
-                id: `${Date.now()}-connect`,
-                from: 'System',
-                user: userName,
-                text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
-                type: 'system',
-                timestamp: new Date().toLocaleTimeString(),
-                bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
-              },
-            ];
+          if (!messageIds.has('connect-msg')) {
+            const connectMsg = {
+              id: 'connect-msg',
+              from: 'System',
+              user: userName,
+              text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
+              type: 'system',
+              timestamp: new Date().toLocaleTimeString(),
+              bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
+            };
+            setMessageIds((prevIds) => new Set(prevIds).add('connect-msg'));
+            return [...prev, connectMsg];
           }
           return prev;
         });
@@ -124,6 +121,9 @@ const ChatRoom = () => {
         if (data.frontendId && data.frontendId !== frontendIdRef.current) return;
 
         const messageId = data.messageId || `${data.taskId || Date.now()}-${data.type || 'unknown'}-${data.text?.slice(0, 50) || 'no-text'}`;
+        if (messageIds.has(messageId)) return;  // Deduplicate messages
+        setMessageIds((prevIds) => new Set(prevIds).add(messageId));
+
         const safeData = {
           text: typeof data.text === 'string' ? data.text : 'No cosmic transmission received',
           type: data.type || 'bot',
@@ -172,7 +172,6 @@ const ChatRoom = () => {
           };
 
           setMessages((prev) => {
-            if (prev.some((msg) => msg.id === messageId)) return prev;
             if (safeData.type === 'progressUpdate' && safeData.taskId) {
               setTaskProgress((prevProgress) => ({
                 ...prevProgress,

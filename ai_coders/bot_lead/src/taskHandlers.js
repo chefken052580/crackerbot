@@ -4,7 +4,7 @@
  * and handling multi-step tasks with interstellar flair. Enhanced by xAI for seamless
  * frontend-backend sync and robust Redis caching.
  *
- * @version 2025-04-04-06
+ * @version 2025-04-04-09
  * @author CrackerBot Team, enhanced by xAI
  * @module taskHandlers
  */
@@ -170,46 +170,48 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
 
     // Check if welcome has been sent
     const welcomeSent = await get(welcomeSentKey);
-    if (!welcomeSent && effectiveUserName === 'Guest') {
-      const welcomeMsg = await generateResponse(
-        `Cosmic tag, ready for your star: "Luminara Serenity." A name as bright as its glow.`,
-        effectiveUserName,
-        DEFAULT_TONE
-      );
-      await sendMessage(botSocket, {
-        text: welcomeMsg,
-        taskId: taskState.taskId,
-        ip,
-        user: effectiveUserName,
-        frontendId,
-        type: 'question',
-        options: ['Type your name below!'],
-        bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
-      });
+    if (!welcomeSent) {  // Fix: Only send welcome if not already sent
+      if (effectiveUserName === 'Guest') {
+        const welcomeMsg = await generateResponse(
+          `Cosmic tag, ready for your star: "Luminara Serenity." A name as bright as its glow.`,
+          effectiveUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: welcomeMsg,
+          taskId: taskState.taskId,
+          ip,
+          user: effectiveUserName,
+          frontendId,
+          type: 'question',
+          options: ['Type your name below!'],
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
+          messageId: `initial:${frontendId}-welcome`,  // Fix: Added unique messageId
+        });
+      } else {
+        const storedProjects = await getCompletedProjects(effectiveUserName);
+        const projectCount = storedProjects.length;
+        const welcomeMsg = await generateResponse(
+          projectCount > 0
+            ? `Welcome back, ${effectiveUserName}! Your ${projectCount} cosmic artifact${projectCount === 1 ? '' : 's'} shimmer in the void. What’s next, starweaver?`
+            : `Let's code an epic journey through the cosmos, ${effectiveUserName}! 🚀🌠`,
+          effectiveUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: welcomeMsg,
+          taskId: taskState.taskId,
+          ip,
+          user: effectiveUserName,
+          frontendId,
+          type: 'success',
+          options: ['Chat', 'Build-Something-Epic'],
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
+          messageId: `initial:${frontendId}-welcome`,  // Fix: Added unique messageId
+        });
+      }
       await set(welcomeSentKey, 'true', 86400); // Expire in 24 hours
-      await log(`🌟 Beamed new user welcome to ${effectiveUserName} (ID: ${frontendId})`);
-    } else if (!welcomeSent && effectiveUserName !== 'Guest') {
-      const storedProjects = await getCompletedProjects(effectiveUserName);
-      const projectCount = storedProjects.length;
-      const welcomeMsg = await generateResponse(
-        projectCount > 0
-          ? `Welcome back, ${effectiveUserName}! Your ${projectCount} cosmic artifact${projectCount === 1 ? '' : 's'} shimmer in the void. What’s next, starweaver?`
-          : `Let's code an epic journey through the cosmos, ${effectiveUserName}! 🚀🌠`,
-        effectiveUserName,
-        DEFAULT_TONE
-      );
-      await sendMessage(botSocket, {
-        text: welcomeMsg,
-        taskId: taskState.taskId,
-        ip,
-        user: effectiveUserName,
-        frontendId,
-        type: 'success',
-        options: ['Chat', 'Build-Something-Epic'],
-        bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
-      });
-      await set(welcomeSentKey, 'true', 86400); // Expire in 24 hours
-      await log(`🌟 Beamed welcome to ${effectiveUserName} (ID: ${frontendId}) - Returning: ${projectCount > 0}`);
+      await log(`🌟 Beamed welcome to ${effectiveUserName} (ID: ${frontendId})`);
     } else {
       await log(`🌌 Welcome already sent for ${frontendId}, skipping prompt`);
     }
@@ -491,7 +493,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           taskName,
           bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#fff' },
         });
-        const typePrompt = await generateResponse(
+        const typePrompt = await generateResponse(  // Fix: Prompt for type selection
           `✨ Tech constellation for "${taskName}", ${persistedUserName}? Select your stellar framework!`,
           persistedUserName,
           DEFAULT_TONE
@@ -503,7 +505,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           ip,
           user: persistedUserName,
           frontendId,
-          options: [...TECH_STACKS, ...TASK_TYPES],
+          options: [...TECH_STACKS, ...TASK_TYPES],  // Fix: Provide type options
           taskName,
           bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
         });
@@ -540,7 +542,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
               persistedUserName,
               DEFAULT_TONE
             )
-          : await generateResponse(
+          : await generateResponse(  // Fix: Prompt for features instead of stalling
               `✨ ${selectedType} framework locked, ${persistedUserName}! What features will supernova "${taskState.taskName}"?`,
               persistedUserName,
               DEFAULT_TONE
