@@ -1,8 +1,8 @@
 /* CrackerBot’s Cosmic Chatroom Component
  * Where interstellar ideas ignite and soar across the galaxy with supernova flair!
- * Enhanced by xAI for distinct user/project names, Redis caching, and seamless task flow.
+ * Enhanced by xAI for distinct user/project names, Redis caching, seamless task flow, and robust deduplication.
  *
- * @version 2025-04-04-13
+ * @version 2025-04-06-16
  * @author CrackerBot Team, enhanced by xAI
  * @module ChatRoom
  */
@@ -66,7 +66,7 @@ const ChatRoom = () => {
   const [taskProgress, setTaskProgress] = useState({});
   const [previewData, setPreviewData] = useState(null);
   const [userName, setUserName] = useState(localStorage.getItem('crackerBotUserName') || 'Guest');
-  const [messageIds, setMessageIds] = useState(new Set());  // Added for duplicate prevention
+  const [messageIds, setMessageIds] = useState(new Set()); // Persistent across reconnects
 
   const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
@@ -85,7 +85,6 @@ const ChatRoom = () => {
   const initializeSocket = useCallback(() => {
     if (socketRef.current) {
       try {
-        // Removed .off calls to avoid "o.current.off is not a function" error
         socketRef.current.disconnect();
         logMessage('🌌 Cleaning up previous WebSocket instance');
       } catch (err) {
@@ -100,16 +99,16 @@ const ChatRoom = () => {
         socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
         socketRef.current.emit('frontend_connected', { ip: window.location.hostname, frontendId: id, userName });
         setMessages((prev) => {
+          const connectMsg = {
+            id: 'connect-msg',
+            from: 'System',
+            user: userName,
+            text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
+            type: 'system',
+            timestamp: new Date().toLocaleTimeString(),
+            bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
+          };
           if (!messageIds.has('connect-msg')) {
-            const connectMsg = {
-              id: 'connect-msg',
-              from: 'System',
-              user: userName,
-              text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
-              type: 'system',
-              timestamp: new Date().toLocaleTimeString(),
-              bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
-            };
             setMessageIds((prevIds) => new Set(prevIds).add('connect-msg'));
             return [...prev, connectMsg];
           }
@@ -118,11 +117,19 @@ const ChatRoom = () => {
       },
       onMessage: (data) => {
         logMessage(`🌠 Cosmic signal received: ${JSON.stringify(data)}`);
-        if (data.frontendId && data.frontendId !== frontendIdRef.current) return;
+        if (data.frontendId && data.frontendId !== frontendIdRef.current) {
+          logMessage(`Ignoring message for different frontendId: ${data.frontendId}`);
+          return;
+        }
 
         const messageId = data.messageId || `${data.taskId || Date.now()}-${data.type || 'unknown'}-${data.text?.slice(0, 50) || 'no-text'}`;
-        if (messageIds.has(messageId)) return;  // Deduplicate messages
-        setMessageIds((prevIds) => new Set(prevIds).add(messageId));
+        const isWelcome = data.taskId?.startsWith('initial') && (data.type === 'success' || data.type === 'question') && data.options?.includes('Chat');
+        const dedupeKey = isWelcome ? `${data.taskId}-welcome` : messageId;
+        if (messageIds.has(dedupeKey)) {
+          logMessage(`Duplicate message skipped: ${dedupeKey}`);
+          return;
+        }
+        setMessageIds((prevIds) => new Set(prevIds).add(dedupeKey));
 
         const safeData = {
           text: typeof data.text === 'string' ? data.text : 'No cosmic transmission received',
@@ -144,6 +151,7 @@ const ChatRoom = () => {
         };
 
         try {
+          logMessage(`Adding message: ${dedupeKey}, type: ${safeData.type}, text: ${safeData.text}`);
           if (safeData.type === 'success' && safeData.taskId?.startsWith('initial') && safeData.user !== 'Guest' && safeData.user !== userName) {
             setUserName(safeData.user);
             localStorage.setItem('crackerBotUserName', safeData.user);
@@ -151,7 +159,7 @@ const ChatRoom = () => {
           }
 
           const newMessage = {
-            id: messageId,
+            id: dedupeKey,
             from: safeData.from,
             user: safeData.user,
             text: safeData.text,
@@ -238,7 +246,19 @@ const ChatRoom = () => {
 
           setIsTyping((prev) => ({ ...prev, [safeData.from]: false }));
         } catch (err) {
-          logMessage(`⚠️ Error processing message ${messageId}: ${err.message}`);
+          logMessage(`⚠️ Error processing message ${dedupeKey}: ${err.message}`);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `${Date.now()}-error`,
+              from: 'System',
+              user: userName,
+              text: `Cosmic glitch processing message: ${err.message}`,
+              type: 'error',
+              timestamp: new Date().toLocaleTimeString(),
+              bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
+            },
+          ]);
         }
       },
       onConnectError: (error) => {
@@ -496,7 +516,7 @@ const ChatRoom = () => {
   }, [isConnected, isSending, currentTask, userName, logMessage]);
 
   /**
-   * Handles input changes and command Filtering.
+   * Handles input changes and command filtering.
    * @param {React.ChangeEvent<HTMLInputElement>} e - Input change event
    */
   const handleInputChange = useCallback((e) => {
@@ -634,6 +654,7 @@ const ChatRoom = () => {
     setTaskProgress({});
     setUserName('Guest');
     localStorage.setItem('crackerBotUserName', 'Guest');
+    setMessageIds(new Set()); // Clear deduplication on manual reset
     initializeSocket();
     logMessage('🌠 Manual warp initiated—clearing cosmic cache and restarting!');
   }, [initializeSocket, userName, logMessage]);

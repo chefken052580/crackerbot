@@ -1,6 +1,7 @@
 // ai_coders/bot_backend/src/taskExecution.js
-// Version: v2025-03-28-7
+// Version: v2025-04-06-01
 /* CrackerBot’s cosmic task engine—forging interstellar masterpieces with supernova swagger! 🌌 */
+
 import { openai } from './aiHelper.js';
 import { botSocket } from './socket.js';
 import { zipFilesWithReadme } from './contentUtils.js';
@@ -61,7 +62,8 @@ export const extensionMap = {
 };
 
 /**
- * Initializes WebSocket listeners for task execution.
+ * Initializes WebSocket listeners for task execution with cosmic precision.
+ * @returns {void}
  */
 export function initializeTaskExecution() {
   if (!botSocket) {
@@ -71,7 +73,7 @@ export function initializeTaskExecution() {
 
   botSocket.on('connect', async () => {
     console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-    await log('taskExecution.js v2025-03-28-7: AI-driven builds with SUPERNOVA cosmic flair!');
+    await log('taskExecution.js v2025-04-06-01: AI-driven builds with SUPERNOVA cosmic flair!');
     botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
     await log('bot_backend registered—ready to ignite the cosmos!');
   });
@@ -150,7 +152,7 @@ export function initializeTaskExecution() {
         ip: task.ip,
         taskFeatures: task.features,
         version: task.version || 1,
-        jsonContent: result.jsonContent, // Integrate JSON from taskBuilder
+        jsonContent: result.jsonContent,
         downloadLink: `/download/${task.taskId}`,
         error: result.error,
         requestId,
@@ -161,10 +163,10 @@ export function initializeTaskExecution() {
       await log(`🌠 Task ${task.taskId} beamed to ${task.frontendId}, content length: ${finalContentBase64.length}`);
     } catch (err) {
       await error(`Build failed for ${task.taskId}: ${err.message}`);
-      const fallbackContent = `CrackerBot hit a cosmic snag, ${task.userName}! Error: ${err.message}. Retry or tweak it! 🌠`;
+      const fallbackContent = `CrackerBot hit a cosmic snag, ${userName}! Error: ${err.message}. Retry or tweak it! 🌠`;
       const files = { 'error.txt': Buffer.from(fallbackContent) };
       const zipBuffer = await zipFilesWithReadme(files, task);
-      await emitTaskResult({
+      const taskResult = {
         taskId: task.taskId,
         content: zipBuffer.toString('base64'),
         fileName: `${task.name}_error.zip`,
@@ -177,7 +179,8 @@ export function initializeTaskExecution() {
         error: `Task processing failed: ${err.message}`,
         requestId,
         leadId,
-      });
+      };
+      await emitTaskResult(taskResult);
       await log(`Error fallback ZIP sent for ${task.taskId}`);
     }
   });
@@ -194,16 +197,20 @@ export function initializeTaskExecution() {
     await error('bot_backend WebSocket disconnected');
   });
 
-  console.log(`[${new Date().toISOString()}] Task execution v2025-03-28-7 initialized with galactic precision`);
+  console.log(`[${new Date().toISOString()}] Task execution v2025-04-06-01 initialized with galactic precision`);
 }
 
 /**
- * Emits task result to WebSocket with timeout.
+ * Emits task result to WebSocket with timeout and error handling.
  * @param {Object} taskResult - Result data
  * @returns {Promise<void>}
  */
 async function emitTaskResult(taskResult) {
   return new Promise((resolve, reject) => {
+    if (!botSocket.connected) {
+      reject(new Error('WebSocket not connected'));
+      return;
+    }
     botSocket.emit('taskResult', taskResult, (ack) => {
       if (ack?.status === 'success') resolve();
       else reject(new Error(`Task result ack failed: ${JSON.stringify(ack)}`));
@@ -211,11 +218,12 @@ async function emitTaskResult(taskResult) {
     setTimeout(() => reject(new Error('Task result emission timed out')), 5000);
   }).catch(async (err) => {
     await error(`Failed to emit taskResult for ${taskResult.taskId}: ${err.message}`);
+    throw err; // Propagate to caller
   });
 }
 
 /**
- * Sends progress update to frontend.
+ * Sends progress update to frontend with error handling.
  * @param {string} taskId - Task ID
  * @param {number} percentage - Progress (0-100)
  * @param {string} message - Progress message
@@ -246,6 +254,7 @@ async function sendProgress(taskId, percentage, message, frontendId, ip, name, t
     messageId: `${taskId}-progress-${percentage}`,
   };
   try {
+    if (!botSocket.connected) throw new Error('WebSocket not connected');
     botSocket.emit('message', progressMessage);
     await log(`🌌 Progress ${percentage}% for ${taskId}: ${message}`);
   } catch (err) {
@@ -255,7 +264,7 @@ async function sendProgress(taskId, percentage, message, frontendId, ip, name, t
 }
 
 /**
- * Cleans up temporary files.
+ * Cleans up temporary files with cosmic precision.
  * @param {string} taskId - Task ID
  * @param {string} userName - User name
  * @returns {Promise<void>}
@@ -275,7 +284,7 @@ async function cleanupTempFiles(taskId, userName) {
 }
 
 /**
- * Starts a build task with progress and flair.
+ * Starts a build task with progress and flair, ensuring robust execution.
  * @param {Object} task - Task data
  * @param {string} userName - User name
  * @param {string} tone - Tone for generation
@@ -417,7 +426,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
             ],
             max_tokens: 3000,
           }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 30000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)), // Reduced timeout
         ]);
         htmlContent = response.choices[0].message.content.trim();
         await sendProgress(taskId, 50, 'AI delivered—infusing HTML with swagger...', frontendId, ip, name, type, features, requestId, leadId);
@@ -425,7 +434,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
       } catch (err) {
         await error(`OpenAI failed for ${taskId}: ${err.message}`);
         htmlContent = `<!DOCTYPE html><html><head><title>${name}</title><style>body { font-family: 'Courier New', monospace; background: linear-gradient(135deg, #0a0a23, #2a2a4a); color: #00ffcc; text-align: center; cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="5" fill="#ff007a"/></svg>'), auto; } nav { background: #ff007a; padding: 15px; box-shadow: 0 0 15px #ff007a; position: sticky; top: 0; z-index: 100; } h1 { text-shadow: 0 0 10px #00ffcc; } button { background: #ff00ff; border: none; padding: 15px; margin: 10px; cursor: pointer; transition: all 0.3s; box-shadow: 0 0 10px #ff00ff; } button:hover { transform: scale(1.2); box-shadow: 0 0 20px #00ffcc; animation: supernova 1s infinite; } @keyframes supernova { 0% { box-shadow: 0 0 10px #ff00ff; } 50% { box-shadow: 0 0 30px #00ffcc; } 100% { box-shadow: 0 0 10px #ff00ff; } } .starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; }</style></head><body><div class="starfield"></div><nav><h1>${name} Nebula</h1></nav><p>CrackerBot’s cosmic creation for ${userName}! Features: ${features}</p><button onclick="alert('Blast off, ${userName}!')">Launch</button><button onclick="alert('Explore ${name}, ${userName}!')">Explore</button><script>// CrackerBot’s cosmic flair for ${userName}!\nconsole.log('${name} loaded with cosmic swagger!');\nconst starfield = document.querySelector('.starfield');\nfor (let i = 0; i < 100; i++) { const star = document.createElement('div'); star.style.position = 'absolute'; star.style.width = '2px'; star.style.height = '2px'; star.style.background = '#00ffcc'; star.style.left = Math.random() * 100 + '%'; star.style.top = Math.random() * 100 + '%'; star.style.animation = 'twinkle ' + (Math.random() * 5 + 1) + 's infinite'; starfield.appendChild(star); }\ndocument.addEventListener('mousemove', (e) => { const star = document.createElement('div'); star.style.position = 'absolute'; star.style.width = '5px'; star.style.height = '5px'; star.style.background = '#ff007a'; star.style.left = e.pageX + 'px'; star.style.top = e.pageY + 'px'; document.body.appendChild(star); setTimeout(() => star.remove(), 1000); });\ndocument.styleSheets[0].insertRule('@keyframes twinkle { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }', 0);</script></body></html>`;
-        await sendProgress(taskId, 50, 'Fallback HTML generated due to AI failure...', frontendId, ip, name, type, features, requestId, leadId);
+        await sendProgress(taskId, 50, `Fallback HTML generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
         await log(`Fallback HTML generated for ${taskId} due to ${err.message}`);
       }
       if (!htmlContent || !htmlContent.includes('<html')) {
@@ -457,7 +466,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
             ],
             max_tokens: 4000,
           }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 30000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)), // Reduced timeout
         ]);
         content = response.choices[0].message.content.trim();
         await sendProgress(taskId, 50, 'AI delivered—structuring PDF...', frontendId, ip, name, type, features, requestId, leadId);
@@ -465,7 +474,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
       } catch (err) {
         await error(`OpenAI failed for ${taskId}: ${err.message}`);
         content = `CrackerBot’s Cosmic PDF for ${userName}\n\nGreetings, ${userName}! Welcome to ${name}, a cosmic journey crafted with ${features}. Imagine a universe where neon stars pulse to your command—over 500 words of interstellar lore await! Picture yourself navigating a galaxy of code, with CrackerBot as your guide. This is a tale of adventure, where each line of text sparkles with the energy of a supernova. From the glowing nebulae of creativity to the pulsing beats of innovation, this document is your ticket to explore the infinite. Birds of code take flight here, their wings woven from the threads of your imagination, soaring through a digital sky painted with neon hues. As you read on, feel the rhythm of the cosmos, a symphony of ideas crafted just for you. Let’s embark on this journey together, where every paragraph is a star, every sentence a comet streaking across the void. CrackerBot’s here to amplify your vision, turning your dreams into a galactic reality. So buckle up, ${userName}, and let’s dive into this epic saga—over 500 words strong, and just the beginning!\n---PAGE BREAK---\nCosmic Chapter Two\n\nAnother 500+ words: The adventure deepens as ${userName} tweaks ${features} into a supernova spectacle. CrackerBot fuels this tale with neon-drenched prose, painting a universe where birds aren’t just creatures—they’re avatars of code, fluttering through a website alive with animation. Picture a parallax sky where each scroll reveals a new layer of wonder: glowing feathers, orbiting cursors, and buttons that pulse with cosmic energy. This isn’t just a website—it’s a portal to a dimension where your creativity reigns supreme. The air hums with the sound of innovation, a melody of HTML and CSS weaving together in perfect harmony. Each bird on this page carries a story—of flight, of freedom, of the boundless possibilities you’ve unlocked with CrackerBot’s help. As you read, imagine the code behind it: sleek, efficient, yet bursting with flair. Neon gradients wash over the screen, casting shadows that dance like starlight. This chapter is your playground, ${userName}, a space to experiment and soar. Over 500 words pour forth, a testament to your vision and CrackerBot’s cosmic touch. Let’s keep flying—this is only the second act!\n---PAGE BREAK---\nFinal Frontier\n\nFinal 500+ words: ${name} stands as ${userName}’s masterpiece, forged in CrackerBot’s cosmic fires. This isn’t just a website—it’s a legacy, a digital constellation that shines across the void. Every bird here sings your praises, their wings beating to the rhythm of your ingenuity. Smooth animations ripple across the screen, a testament to the parallax magic and sleek design we’ve woven together. The navigation bar glows like a pulsar, guiding visitors through a sky of content—each click a supernova of delight. This final chapter is your victory lap, ${userName}, a celebration of what we’ve built. Over 500 words spill out, rich with detail: the way the cursor trails stardust, the buttons that explode into color on hover, the starfield backdrop that twinkles endlessly. CrackerBot’s flair is everywhere—comments in the code whisper your name, Easter eggs hide in the shadows, and the whole experience feels like a flight through the galaxy. You’ve conquered the code cosmos, ${userName}, and this PDF is your trophy, a record of a journey from spark to supernova. Let’s land this bird and bask in the glow of your triumph!`;
-        await sendProgress(taskId, 50, 'Fallback PDF content generated due to AI failure...', frontendId, ip, name, type, features, requestId, leadId);
+        await sendProgress(taskId, 50, `Fallback PDF content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
         await log(`Fallback PDF content generated for ${taskId}`);
       }
       if (!content.includes('---PAGE BREAK---')) {
@@ -518,7 +527,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
             ],
             max_tokens: 2000,
           }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 30000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)), // Reduced timeout
         ]);
         jsContent = response.choices[0].message.content.trim();
         await sendProgress(taskId, 50, 'AI delivered—compiling to .exe...', frontendId, ip, name, type, features, requestId, leadId);
@@ -526,7 +535,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
       } catch (err) {
         await error(`OpenAI failed for ${taskId}: ${err.message}`);
         jsContent = `// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!\nconst colors = require('colors');\nconsole.log('Hey ${userName}, your ${name} .exe is blasting off! 🌌'.rainbow);\nsetInterval(() => console.log('Still pulsing with ${features}...'.cyan), 5000);\nconsole.log('Features: ${features}'.magenta);\nsetTimeout(() => console.log('CrackerBot signing off—remix me anytime!'.green), 10000);`;
-        await sendProgress(taskId, 50, 'Fallback .exe content generated due to AI failure...', frontendId, ip, name, type, features, requestId, leadId);
+        await sendProgress(taskId, 50, `Fallback .exe content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
         await log(`Fallback .exe content generated for ${taskId} with enhanced flair`);
       }
       if (!jsContent.includes('console.log')) {
@@ -571,7 +580,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
             ],
             max_tokens: 2000,
           }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 30000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)), // Reduced timeout
         ]);
         content = response.choices[0].message.content.trim();
         await sendProgress(taskId, 50, 'AI delivered—infusing batch script...', frontendId, ip, name, type, features, requestId, leadId);
@@ -579,7 +588,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
       } catch (err) {
         await error(`OpenAI failed for ${taskId}: ${err.message}`);
         content = `REM CrackerBot’s cosmic flair for ${userName}!\nECHO off\nCOLOR 0A\nECHO Hey ${userName}, welcome to ${name}—a galactic script is born!\nECHO Features: ${features}\nSET "count=0"\n:loop\nSET /A count+=1\nECHO Cosmic pulse #%count%...\nTIMEOUT /T 2 >nul\nIF %count% LSS 5 GOTO loop\nECHO Blasting off—remix me, ${userName}!\nPAUSE`;
-        await sendProgress(taskId, 50, 'Fallback .bat content generated due to AI failure...', frontendId, ip, name, type, features, requestId, leadId);
+        await sendProgress(taskId, 50, `Fallback .bat content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
         await log(`Fallback .bat content generated for ${taskId} with enhanced flair`);
       }
       if (!content.includes('ECHO')) {
@@ -625,7 +634,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
           ],
           max_tokens: 2000,
         }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 30000)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)), // Reduced timeout
       ]);
       content = response.choices[0].message.content.trim();
       await sendProgress(taskId, 50, 'AI delivered—infusing content...', frontendId, ip, name, type, features, requestId, leadId);
@@ -633,7 +642,7 @@ export async function startBuildTask(task, userName, tone, frontendId, requestId
     } catch (err) {
       await error(`OpenAI failed for ${taskId}: ${err.message}`);
       content = `// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!\nconsole.log('Fallback ${effectiveType} for ${name}! A cosmic glitch hit, ${userName}, but we’re still shining!'.rainbow);\nconsole.log('Features: ${features}'.magenta);\nsetTimeout(() => console.log('Remix me for more stardust!'.green), 3000);`;
-      await sendProgress(taskId, 50, 'Fallback content generated due to AI failure...', frontendId, ip, name, type, features, requestId, leadId);
+      await sendProgress(taskId, 50, `Fallback content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
       await log(`Fallback content generated for ${taskId} due to ${err.message}`);
     }
     if (!content) {

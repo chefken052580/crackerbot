@@ -1,9 +1,9 @@
 /**
  * CrackerBot’s Cosmic Core Module
  * Manages tasks and messages with interstellar precision and supernova swagger!
- * Enhanced by xAI for robust sync, flair, and galactic connectivity.
+ * Enhanced by xAI for robust sync, flair, galactic connectivity, and error resilience.
  *
- * @version 2025-04-06-03
+ * @version 2025-04-06-04
  * @author CrackerBot Team, enhanced by xAI
  * @module stateManager
  */
@@ -127,7 +127,7 @@ export async function emitCosmicMessage(msgData, socket = botSocket) {
       const taskState = await get(`taskState:${frontendId}`);
       await log(`🌌 TaskState for ${frontendId}: ${taskState || 'none'}`);
       await socket.emit('message', { ...msgData, frontendId, messageId: effectiveMessageId });
-      await set(messageKey, { sent: true });
+      await set(messageKey, JSON.stringify({ sent: true, timestamp: Date.now() })); // Enhanced deduplication data
       await log(`✨ Message ${effectiveMessageId} supernova-beamed to ${target} for frontendId ${frontendId || 'none'}: "${text}" with options: ${JSON.stringify(options || [])}`);
     } else {
       await log(`✨ Message ${effectiveMessageId} already supernova-beamed to ${target}—cosmic deduplication prevails!`);
@@ -205,14 +205,15 @@ export async function delegateTask(botSocketArg, botName, command, args) {
       attempts++;
       await log(`🌠 Attempt ${attempts}/${maxAttempts} to beam command to ${botName}, socket.connected: ${socket.connected}`);
 
-      socket.emit('message', taskData, (ack) => {
+      socket.emit('message', taskData, async (ack) => {
         callbackReceived = true;
         if (ack && ack.status === 'success') {
-          log(`✅ Command acknowledged by cosmic relay: ${JSON.stringify(ack)}`);
+          await log(`✅ Command acknowledged by cosmic relay: ${JSON.stringify(ack)}`);
         } else {
-          error(`⚠️ Command acknowledgment failed: ${JSON.stringify(ack)}`);
+          const errMsg = ack?.message || 'No response';
+          await error(`⚠️ Command acknowledgment failed: ${JSON.stringify(ack)}`);
           if (attempts >= maxAttempts) {
-            reject(new Error(`Command failed after ${maxAttempts} attempts: ${ack?.message || 'No response'}`));
+            reject(new Error(`Command failed after ${maxAttempts} attempts: ${errMsg}`));
           }
         }
       });
@@ -229,17 +230,20 @@ export async function delegateTask(botSocketArg, botName, command, args) {
       if (data?.requestId === requestId && !processedMessages.has(messageId)) {
         socket.off('taskResult', taskResultHandler);
         await processTaskResult(data, args, socket, resolve, reject);
+      } else {
+        await log(`🌌 Ignoring taskResult with requestId ${data?.requestId} (expected ${requestId}) or already processed ${messageId}`);
       }
     };
 
     socket.off('taskResult');
     socket.on('taskResult', taskResultHandler);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       if (!callbackReceived) {
         socket.off('taskResult', taskResultHandler);
-        error(`⚠️ Task ${command} to ${botName} timed out for frontendId ${frontendId} after ${maxAttempts} attempts with requestId ${requestId}`);
-        reject(new Error('Task delegation timeout after 30s'));
+        const timeoutErr = new Error(`Task delegation timeout after 30s for ${command} to ${botName} with requestId ${requestId}`);
+        await error(`⚠️ ${timeoutErr.message}`);
+        reject(timeoutErr);
       }
     }, 30000);
   });
@@ -545,7 +549,7 @@ export function initializeStateManager() {
 // Ignition sequence with cosmic flair
 (async () => {
   try {
-    await log('🌌 stateManager.js v2025-04-06-03 supernova-ignited with interstellar precision!');
+    await log('🌌 stateManager.js v2025-04-06-04 supernova-ignited with interstellar precision!');
     const stored = await getLastGeneratedTask();
     if (stored) {
       await log(`🌟 Loaded last task ${stored.taskId} from cosmic vault—sync supernova-restored!`);
