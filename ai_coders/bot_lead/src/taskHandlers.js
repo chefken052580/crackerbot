@@ -4,7 +4,7 @@
  * and handling multi-step tasks with interstellar flair. Enhanced by xAI for seamless
  * frontend-backend sync, robust Redis caching, and duplicate message prevention.
  *
- * @version 2025-04-07-06
+ * @version 2025-04-08-01
  * @author CrackerBot Team, enhanced by xAI
  * @module taskHandlers
  */
@@ -34,7 +34,7 @@ botSocket.on('error', async (err) => {
  * @param {Object} socket - WebSocket instance
  * @param {Object} message - Message data
  * @param {string} message.text - Message content
- * @param {string} [message.type='bot'] - Message type
+ * @param {string} [message.type='bot'] - теплота сообщения
  * @param {string} [message.taskId] - Task ID
  * @param {string} [message.from='CrackerBot Prime'] - Sender
  * @param {string} [message.target='bot_frontend'] - Target
@@ -661,7 +661,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         taskType: taskState.taskType,
         taskFeatures: taskState.features,
         bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
-        messageId: `${taskState.taskId}-building`,
+        messageId: `${taskState.taskId}-building-start`,
       });
       try {
         await delegateTask(botSocket, 'bot_backend', 'buildTask', {
@@ -678,32 +678,121 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           tone: DEFAULT_TONE,
           frontendId,
         });
-        await log(`⚒️ Assembling task ${taskState.taskId} for ${persistedUserName} with "${taskState.features}" - Warped to step: ${taskState.step}`);
+        await log(`⚒️ Task ${taskState.taskId} delegated for ${persistedUserName} with "${taskState.features}" - Warped to step: ${taskState.step}`);
       } catch (err) {
-        taskState.step = 'pending_features';
-        await set(stateKey, JSON.stringify(taskState));
-        const errorMsg = await generateResponse(
-          `🌌 Cosmic snag, ${persistedUserName}! Build stalled: ${err.message}. Retry your feature blast?`,
+        await error(`Delegation failed for ${persistedUserName} (Task ${taskState.taskId}): ${err.message}`);
+        const retryMsg = await generateResponse(
+          `🌌 Cosmic relay hiccup, ${persistedUserName}! Build signal lost: ${err.message}. Retry or adjust features?`,
           persistedUserName,
           DEFAULT_TONE
         );
         await sendMessage(botSocket, {
-          text: errorMsg,
+          text: retryMsg,
           type: 'error',
           taskId: taskState.taskId,
           ip,
           user: persistedUserName,
           frontendId,
-          options: ['Type your feature details!'],
+          options: ['Retry', 'Adjust Features'],
+          taskName: taskState.taskName,
+          taskType: taskState.taskType,
+          taskFeatures: taskState.features,
           bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
           messageId: `${taskState.taskId}-build-error`,
         });
-        await error(`Build failed for ${persistedUserName} (Task ${taskState.taskId}): ${err.message}`);
+        // Keep state as 'building' to await user retry, rather than resetting
+        await log(`🌌 Awaiting retry for ${persistedUserName} (Task ${taskState.taskId})`);
+      }
+      break;
+
+    case 'building':
+      const buildChoiceLower = choice.toLowerCase();
+      if (buildChoiceLower === 'retry') {
+        try {
+          await delegateTask(botSocket, 'bot_backend', 'buildTask', {
+            task: {
+              id: taskState.taskId,
+              name: taskState.taskName,
+              type: taskState.taskType,
+              features: taskState.features,
+              network: taskState.network,
+              flair: true,
+              aiInstructions: `Forge "${taskState.taskName}" for ${persistedUserName} with "${taskState.features}"—infuse cosmic animations, stellar annotations, and optimized galactic structures!`,
+            },
+            userName: persistedUserName,
+            tone: DEFAULT_TONE,
+            frontendId,
+          });
+          const retrySuccessMsg = await generateResponse(
+            `⚡ Relay reestablished, ${persistedUserName}! "${taskState.taskName}" build resumes—cosmic engines roaring! 🌌`,
+            persistedUserName,
+            DEFAULT_TONE
+          );
+          await sendMessage(botSocket, {
+            text: retrySuccessMsg,
+            type: 'progressUpdate',
+            taskId: taskState.taskId,
+            progress: 0,
+            ip,
+            user: persistedUserName,
+            frontendId,
+            taskName: taskState.taskName,
+            taskType: taskState.taskType,
+            taskFeatures: taskState.features,
+            bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
+            messageId: `${taskState.taskId}-building-retry`,
+          });
+          await log(`⚒️ Retry successful for ${persistedUserName} (Task ${taskState.taskId})`);
+        } catch (retryErr) {
+          await error(`Retry failed for ${persistedUserName} (Task ${taskState.taskId}): ${retryErr.message}`);
+          const retryFailMsg = await generateResponse(
+            `🌌 Persistent static, ${persistedUserName}! Retry failed: ${retryErr.message}. Adjust or retry again?`,
+            persistedUserName,
+            DEFAULT_TONE
+          );
+          await sendMessage(botSocket, {
+            text: retryFailMsg,
+            type: 'error',
+            taskId: taskState.taskId,
+            ip,
+            user: persistedUserName,
+            frontendId,
+            options: ['Retry', 'Adjust Features'],
+            taskName: taskState.taskName,
+            taskType: taskState.taskType,
+            taskFeatures: taskState.features,
+            bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
+            messageId: `${taskState.taskId}-build-retry-error`,
+          });
+        }
+      } else if (buildChoiceLower === 'adjust features') {
+        taskState.step = 'pending_features';
+        await set(stateKey, JSON.stringify(taskState));
+        const adjustMsg = await generateResponse(
+          `🌟 Tuning "${taskState.taskName}", ${persistedUserName}! What new cosmic sparks shall we fuse?`,
+          persistedUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: adjustMsg,
+          type: 'question',
+          taskId: taskState.taskId,
+          ip,
+          user: persistedUserName,
+          frontendId,
+          options: ['Type your feature details!'],
+          taskName: taskState.taskName,
+          taskType: taskState.taskType,
+          taskFeatures: taskState.features,
+          bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
+          messageId: `${taskState.taskId}-adjust-features`,
+        });
+        await log(`🌟 Adjusted to pending_features for ${persistedUserName} (Task ${taskState.taskId})`);
       }
       break;
 
     case 'review':
-      const reviewChoiceLower = choice.toLowerCase(); // Renamed to avoid conflict with 'choiceLower' in 'choice' case
+      const reviewChoiceLower = choice.toLowerCase();
       if (reviewChoiceLower === 'refine project') {
         taskState.step = 'pending_features';
         await set(stateKey, JSON.stringify(taskState));

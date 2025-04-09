@@ -1,10 +1,9 @@
 // ai_coders/bot_backend/src/server.js
-// Version: v2025-03-28-15
+// Version: v2025-04-09-06
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { botSocket, emit } from './socket.js';
-import { initializeTaskExecution } from './taskExecution.js';
+import { botSocket as botSocketPromise, emit } from './socket.js';
 import { log, error } from './logger.js';
 import { generatePdf, generateImage } from './fileGenerator.js';
 import path from 'path';
@@ -16,7 +15,7 @@ const server = createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Log startup with flair
-console.log(`[${new Date().toISOString()}] ${BOT_NAME} server.js v2025-03-28-15 igniting...`);
+console.log(`[${new Date().toISOString()}] ${BOT_NAME} server.js v2025-04-09-06 igniting...`);
 await log(`🌌 ${BOT_NAME} server.js powering up with cosmic energy!`, 'INFO');
 
 const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['https://visually-sterling-spider.ngrok-free.app'];
@@ -49,6 +48,7 @@ app.post('/api/generate-file', async (req, res) => {
   const taskId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`; // Unique ID for this request
   const frontendId = req.headers['x-frontend-id'] || 'unknown'; // Optional frontend ID
   const ip = req.ip;
+  const botSocket = await botSocketPromise; // Ensure socket is ready
 
   try {
     const { command, args } = req.body;
@@ -58,7 +58,7 @@ app.post('/api/generate-file', async (req, res) => {
     if (!text) throw new Error('Missing text in args');
     const outputFile = args?.outputFile || path.join('/tmp', `${taskId}-${command}.file`);
 
-    await sendProgress(taskId, 10, 'Igniting file generation...', frontendId, ip);
+    await sendProgress(botSocket, taskId, 10, 'Igniting file generation...', frontendId, ip);
 
     let filePath;
     switch (command.toLowerCase()) {
@@ -72,7 +72,7 @@ app.post('/api/generate-file', async (req, res) => {
         throw new Error(`Unsupported command: ${command}. Use 'pdf' or 'image'`);
     }
 
-    await sendProgress(taskId, 90, `File ${command} forged at ${filePath}!`, frontendId, ip);
+    await sendProgress(botSocket, taskId, 90, `File ${command} forged at ${filePath}!`, frontendId, ip);
     await log(`🌠 Generated ${command} file at ${filePath}`, 'INFO');
     res.json({ filePath, taskId });
   } catch (err) {
@@ -81,22 +81,17 @@ app.post('/api/generate-file', async (req, res) => {
   }
 });
 
-// Initialize task execution
-try {
-  initializeTaskExecution();
-  console.log(`[${new Date().toISOString()}] ${BOT_NAME} task execution launched`);
-  await log(`🚀 ${BOT_NAME} task execution engines fired up!`, 'INFO');
-} catch (err) {
-  console.error(`[${new Date().toISOString()}] ${BOT_NAME} task execution crashed: ${err.message}`);
-  await error(`${BOT_NAME} task execution failed: ${err.message}`);
-}
-
 // Heartbeat check
 setInterval(async () => {
-  if (botSocket.connected) {
-    await log(`${BOT_NAME} WebSocket heartbeat: radiating cosmic energy!`, 'INFO');
-  } else {
-    await error(`${BOT_NAME} WebSocket heartbeat: lost in the void`);
+  try {
+    const botSocket = await botSocketPromise;
+    if (botSocket.connected) {
+      await log(`${BOT_NAME} WebSocket heartbeat: radiating cosmic energy!`, 'INFO');
+    } else {
+      await error(`${BOT_NAME} WebSocket heartbeat: lost in the void`);
+    }
+  } catch (err) {
+    await error(`${BOT_NAME} heartbeat check failed: ${err.message}`);
   }
 }, 10000);
 
@@ -110,7 +105,12 @@ async function shutdown() {
   console.log(`[${new Date().toISOString()}] ${BOT_NAME} initiating cosmic shutdown...`);
   await log(`🌠 ${BOT_NAME} powering down—cleaning up cosmic debris`, 'INFO');
   server.close();
-  botSocket.disconnect();
+  try {
+    const botSocket = await botSocketPromise;
+    botSocket.disconnect();
+  } catch (err) {
+    await error(`Failed to disconnect socket: ${err.message}`);
+  }
   process.exit(0);
 }
 
@@ -131,6 +131,7 @@ process.on('unhandledRejection', async (reason, promise) => {
 
 /**
  * Sends progress update via WebSocket.
+ * @param {Object} botSocket - The connected Socket.IO client instance
  * @param {string} taskId - Task ID
  * @param {number} percentage - Progress (0-100)
  * @param {string} message - Progress message
@@ -138,7 +139,7 @@ process.on('unhandledRejection', async (reason, promise) => {
  * @param {string} ip - IP address
  * @returns {Promise<void>}
  */
-async function sendProgress(taskId, percentage, message, frontendId, ip) {
+async function sendProgress(botSocket, taskId, percentage, message, frontendId, ip) {
   const progressMessage = {
     type: 'progressUpdate',
     taskId,
@@ -151,7 +152,7 @@ async function sendProgress(taskId, percentage, message, frontendId, ip) {
     messageId: `${taskId}-progress-${percentage}`,
   };
   try {
-    emit('message', progressMessage);
+    await emit('message', progressMessage); // Await async emit from socket.js
     await log(`Progress ${percentage}% for "${taskId}": ${message}`, 'INFO', { taskId, frontendId, ip });
   } catch (err) {
     await error(`Progress send failed for "${taskId}": ${err.message}`);
