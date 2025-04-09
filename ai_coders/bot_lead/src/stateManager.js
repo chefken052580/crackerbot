@@ -3,7 +3,7 @@
  * Manages tasks and messages with interstellar precision and supernova swagger!
  * Enhanced by xAI for robust sync, flair, galactic connectivity, and error resilience.
  *
- * @version 2025-04-08-02
+ * @version 2025-04-09-03
  * @author CrackerBot Team, enhanced by xAI
  * @module stateManager
  */
@@ -20,6 +20,7 @@ import { cacheCompletedTask } from './taskCache.js';
 let lastGeneratedTask = null;
 const processedMessages = new Set();
 const pendingTaskResults = new Map();
+const pendingTasksQueue = new Map(); // In-memory queue for tasks awaiting bot_backend
 
 /**
  * Sets the last generated task in memory and Redis with cosmic permanence.
@@ -32,9 +33,9 @@ export async function setLastGeneratedTask(task) {
   lastGeneratedTask = task;
   try {
     await set('lastGeneratedTask', JSON.stringify(task));
-    await log(`🌠 Last task ${task.taskId} etched in cosmic memory—galactic sync locked!`);
+    await log(`🌠 Last task ${task.taskId} etched in cosmic memory—galactic sync locked!`, { taskId: task.taskId });
   } catch (err) {
-    await error(`⚠️ Failed to persist lastGeneratedTask ${task.taskId}: ${err.message}`);
+    await error(`⚠️ Failed to persist lastGeneratedTask ${task.taskId}: ${err.message}`, { taskId: task.taskId });
   }
 }
 
@@ -51,7 +52,7 @@ export async function getLastGeneratedTask() {
       return null;
     }
     const parsed = JSON.parse(stored);
-    await log(`🌌 Retrieved last task ${parsed.taskId} from cosmic archives—stellar sync restored!`);
+    await log(`🌌 Retrieved last task ${parsed.taskId} from cosmic archives—stellar sync restored!`, { taskId: parsed.taskId });
     lastGeneratedTask = parsed;
     return parsed;
   } catch (err) {
@@ -75,9 +76,9 @@ export async function updateTaskStatus(taskId, status) {
     const task = JSON.parse(taskData);
     task.status = status;
     await hSet('tasks', taskId, JSON.stringify(task));
-    await log(`🚀 Task ${taskId} status warped to ${status} for frontendId ${task.frontendId}—cosmic sync complete!`);
+    await log(`🚀 Task ${taskId} status warped to ${status} for frontendId ${task.frontendId}—cosmic sync complete!`, { taskId });
   } catch (err) {
-    await error(`⚠️ Failed to update task status for ${taskId}: ${err.message}`);
+    await error(`⚠️ Failed to update task status for ${taskId}: ${err.message}`, { taskId });
     throw err;
   }
 }
@@ -116,44 +117,37 @@ export async function emitCosmicMessage(msgData, socket = botSocket) {
     const isSent = await get(messageKey);
 
     if (!frontendId) {
-      await error(`⚠️ No frontendId for message "${text}"—cosmic routing misaligned! Targeting ${target} instead`);
+      await error(`⚠️ No frontendId for message "${text}"—cosmic routing misaligned! Targeting ${target} instead`, { taskId });
     }
 
     if (!socket.connected) {
-      await error(`⚠️ WebSocket disconnected—cannot emit "${text}" to ${target} (frontendId: ${frontendId || 'none'})`);
+      await error(`⚠️ WebSocket disconnected—cannot emit "${text}" to ${target} (frontendId: ${frontendId || 'none'})`, { taskId });
       throw new Error('WebSocket not connected');
     }
 
     if (!isSent) {
       const taskState = await get(`taskState:${frontendId}`);
-      await log(`🌌 TaskState for ${frontendId}: ${taskState || 'none'}`);
+      await log(`🌌 TaskState for ${frontendId}: ${taskState || 'none'}`, { taskId });
       await socket.emit('message', { ...msgData, frontendId, messageId: effectiveMessageId });
       await set(messageKey, JSON.stringify({ sent: true, timestamp: Date.now() }));
-      await log(`✨ Message ${effectiveMessageId} supernova-beamed to ${target} for frontendId ${frontendId || 'none'}: "${text}" with options: ${JSON.stringify(options || [])} ${progress !== undefined ? `progress: ${progress}%` : ''}`);
+      await log(`✨ Message ${effectiveMessageId} supernova-beamed to ${target} for frontendId ${frontendId || 'none'}: "${text}" with options: ${JSON.stringify(options || [])} ${progress !== undefined ? `progress: ${progress}%` : ''}`, { taskId });
     } else {
-      await log(`✨ Message ${effectiveMessageId} already supernova-beamed to ${target}—cosmic deduplication prevails!`);
+      await log(`✨ Message ${effectiveMessageId} already supernova-beamed to ${target}—cosmic deduplication prevails!`, { taskId });
     }
   } catch (err) {
-    await error(`⚠️ Cosmic emission failed for "${msgData.text}": ${err.message} - target: ${msgData.target}, frontendId: ${msgData.frontendId || 'none'}`);
+    await error(`⚠️ Cosmic emission failed for "${msgData.text}": ${err.message} - target: ${msgData.target}, frontendId: ${msgData.frontendId || 'none'}`, { taskId: msgData.taskId });
     throw err;
   }
 }
 
 /**
- * Delegates a task to a target bot with retries, progress updates, and cosmic callbacks.
+ * Delegates a task to a target bot with queuing, retries, and cosmic flair.
  * @async
  * @param {Object} botSocketArg - WebSocket instance (optional)
  * @param {string} botName - Target bot name (e.g., 'bot_backend')
  * @param {string} command - Command to execute (e.g., 'buildTask')
  * @param {Object} args - Task arguments
  * @param {Object} args.task - Task details
- * @param {string} args.task.id - Task ID
- * @param {string} args.task.name - Task name
- * @param {string} args.task.type - Task type
- * @param {string} args.task.features - Task features
- * @param {string} [args.task.network] - Network (optional)
- * @param {boolean} args.task.flair - Enable AI flair
- * @param {string} args.task.aiInstructions - AI instructions
  * @param {string} args.userName - User name
  * @param {string} args.frontendId - Unique frontend identifier
  * @param {string} [args.tone] - Response tone
@@ -161,14 +155,9 @@ export async function emitCosmicMessage(msgData, socket = botSocket) {
  */
 export async function delegateTask(botSocketArg, botName, command, args) {
   const socket = botSocketArg || botSocket;
-  const frontendId = args.frontendId;
-
-  if (!socket.connected) {
-    await error(`⚠️ WebSocket signal lost—cannot delegate task to ${botName} for frontendId ${frontendId}`);
-    throw new Error('WebSocket not connected');
-  }
-
+  const { frontendId, userName, task } = args;
   const requestId = uuidv4();
+
   const taskData = {
     type: 'message',
     commandFlag: true,
@@ -176,11 +165,11 @@ export async function delegateTask(botSocketArg, botName, command, args) {
     command,
     args: {
       task: {
-        ...args.task,
+        ...task,
         flair: true,
-        aiInstructions: `Forge "${args.task.name}" for ${args.userName} with "${args.task.features}"—infuse cosmic animations, stellar comments, and galactic optimizations!`,
+        aiInstructions: `Forge "${task.name}" for ${userName} with "${task.features}"—infuse cosmic animations, stellar comments, and galactic optimizations!`,
       },
-      userName: args.userName,
+      userName,
       tone: args.tone || DEFAULT_TONE,
       frontendId,
       requestId,
@@ -190,36 +179,43 @@ export async function delegateTask(botSocketArg, botName, command, args) {
 
   // Register task in Redis
   const taskObj = {
-    taskId: args.task.id,
+    taskId: task.id,
     frontendId,
-    user: args.userName,
-    name: args.task.name,
-    type: args.task.type,
-    features: args.task.features,
+    user: userName,
+    name: task.name,
+    type: task.type,
+    features: task.features,
     status: 'in_progress',
     createdAt: new Date().toISOString(),
   };
-  await hSet('tasks', args.task.id, JSON.stringify(taskObj));
-  await log(`🌌 Task ${args.task.id} supernova-registered in cosmic ledger for ${args.userName}`);
+  await hSet('tasks', task.id, JSON.stringify(taskObj));
+  await log(`🌌 Task ${task.id} supernova-registered in cosmic ledger for ${userName}`, { taskId: task.id });
 
-  // Send initial progress update
+  // Send building message to frontend
   await emitCosmicMessage({
-    text: `🌠 "${args.task.name}" build initiated, ${args.userName}! Cosmic gears grinding...`,
-    type: 'progressUpdate',
-    taskId: args.task.id,
-    progress: 5,
+    text: `🌠 "${task.name}" build initiated, ${userName}! Cosmic gears grinding...`,
+    type: 'building',
+    taskId: task.id,
     ip: 'unknown',
-    user: args.userName,
+    user: userName,
     frontendId,
-    taskName: args.task.name,
-    taskType: args.task.type,
-    taskFeatures: args.task.features,
-    bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
-    messageId: `${args.task.id}-progress-5`,
+    taskName: task.name,
+    taskType: task.type,
+    taskFeatures: task.features,
+    bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#fff' },
+    messageId: `${task.id}-building`,
   }, socket);
 
-  await log(`🚀 Warping task to ${botName} with requestId ${requestId} for frontendId ${frontendId}: ${JSON.stringify(taskData)}`);
+  if (!socket.connected) {
+    await error(`⚠️ WebSocket signal lost—queuing task ${task.id} for ${botName}`, { taskId: task.id });
+    pendingTasksQueue.set(requestId, taskData);
+    await hSet('pendingTasksQueue', requestId, JSON.stringify(taskData));
+    return new Promise((resolve, reject) => {
+      pendingTaskResults.set(requestId, { resolve, reject, taskData });
+    });
+  }
 
+  await log(`Attempting to delegate task ${task.id} to ${botName}`, { taskId: task.id });
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const maxAttempts = 3;
@@ -227,16 +223,18 @@ export async function delegateTask(botSocketArg, botName, command, args) {
 
     const emitCommand = async () => {
       attempts++;
-      await log(`🌠 Attempt ${attempts}/${maxAttempts} to beam command to ${botName}, socket.connected: ${socket.connected}`);
+      await log(`🌠 Attempt ${attempts}/${maxAttempts} to beam command to ${botName}, socket.connected: ${socket.connected}`, { taskId: task.id });
 
       socket.emit('message', taskData, async (ack) => {
         callbackReceived = true;
         if (ack && ack.status === 'success') {
-          await log(`✅ Command acknowledged by cosmic relay: ${JSON.stringify(ack)}`);
+          await log(`Command acknowledged by ${botName}: ${JSON.stringify(ack)}`, { taskId: task.id });
         } else {
           const errMsg = ack?.message || 'No response';
-          await error(`⚠️ Command acknowledgment failed: ${JSON.stringify(ack)}`);
+          await error(`⚠️ Command acknowledgment failed: ${JSON.stringify(ack)}`, { taskId: task.id });
           if (attempts >= maxAttempts) {
+            pendingTasksQueue.set(requestId, taskData);
+            await hSet('pendingTasksQueue', requestId, JSON.stringify(taskData));
             reject(new Error(`Command failed after ${maxAttempts} attempts: ${errMsg}`));
           }
         }
@@ -254,57 +252,31 @@ export async function delegateTask(botSocketArg, botName, command, args) {
       if (data?.requestId === requestId && !processedMessages.has(messageId)) {
         socket.off('taskResult', taskResultHandler);
         await processTaskResult(data, args, socket, resolve, reject);
-      } else {
-        await log(`🌌 Ignoring taskResult with requestId ${data?.requestId} (expected ${requestId}) or already processed ${messageId}`);
       }
     };
 
     socket.off('taskResult');
     socket.on('taskResult', taskResultHandler);
 
-    // Fallback progress updates if backend delays
-    const progressInterval = setInterval(async () => {
-      const currentProgress = await get(`progress:${args.task.id}`) || 5;
-      if (parseInt(currentProgress) < 90) {
-        const newProgress = Math.min(parseInt(currentProgress) + 10, 90);
-        await set(`progress:${args.task.id}`, newProgress);
-        await emitCosmicMessage({
-          text: `🌌 "${args.task.name}" forging ahead, ${args.userName}! Progress at ${newProgress}%...`,
-          type: 'progressUpdate',
-          taskId: args.task.id,
-          progress: newProgress,
-          ip: 'unknown',
-          user: args.userName,
-          frontendId,
-          taskName: args.task.name,
-          taskType: args.task.type,
-          taskFeatures: args.task.features,
-          bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
-          messageId: `${args.task.id}-progress-${newProgress}`,
-        }, socket);
-      }
-    }, 10000);
-
     setTimeout(async () => {
       if (!callbackReceived) {
         socket.off('taskResult', taskResultHandler);
-        clearInterval(progressInterval);
-        const timeoutErr = new Error(`Task delegation timeout after 30s for ${command} to ${botName} with requestId ${requestId}`);
-        await error(`⚠️ ${timeoutErr.message}`);
+        await error(`⚠️ Task delegation timeout after 30s for ${command} to ${botName} with requestId ${requestId}`, { taskId: task.id });
+        pendingTasksQueue.set(requestId, taskData);
+        await hSet('pendingTasksQueue', requestId, JSON.stringify(taskData));
         await emitCosmicMessage({
-          text: `🌠 "${args.task.name}" signal lost, ${args.userName}! Cosmic relay timed out—retry?`,
+          text: `🌠 "${task.name}" signal lost, ${userName}! Cosmic relay timed out—retry?`,
           type: 'error',
-          taskId: args.task.id,
+          taskId: task.id,
           ip: 'unknown',
-          user: args.userName,
+          user: userName,
           frontendId,
           options: ['Retry'],
           bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-          messageId: `${args.task.id}-timeout`,
+          messageId: `${task.id}-timeout`,
         }, socket);
-        reject(timeoutErr);
+        reject(new Error(`Task delegation timeout after 30s`));
       }
-      clearInterval(progressInterval);
     }, 30000);
   });
 }
@@ -313,16 +285,6 @@ export async function delegateTask(botSocketArg, botName, command, args) {
  * Processes task result from bot_backend and caches it with cosmic flair.
  * @async
  * @param {Object} data - Task result data
- * @param {string} data.taskId - Task ID
- * @param {string} [data.content] - Task content (base64 ZIP)
- * @param {string} [data.fileName] - File name
- * @param {string} [data.type='html'] - Task type
- * @param {string} [data.name='unknown'] - Task name
- * @param {string} [data.frontendId] - Frontend ID
- * @param {string} [data.ip='unknown'] - IP address
- * @param {string} [data.taskFeatures='unknown'] - Task features
- * @param {number} [data.version=1] - Version
- * @param {string} [data.error] - Error message
  * @param {Object} args - Original task arguments
  * @param {Object} socket - WebSocket instance
  * @param {Function} resolve - Promise resolve
@@ -347,7 +309,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
     const tone = args.tone || DEFAULT_TONE;
     const requestId = data.requestId;
 
-    await log(`🌟 Decoding taskResult for ${taskId || 'unknown'}—content: ${content ? 'stellar payload acquired!' : 'no payload detected'}`);
+    await log(`🌟 Decoding taskResult for ${taskId || 'unknown'}—content: ${content ? 'stellar payload acquired!' : 'no payload detected'}`, { taskId });
 
     if (taskError || !taskId) {
       const errorMsg = await generateResponse(
@@ -369,14 +331,13 @@ async function processTaskResult(data, args, socket, resolve, reject) {
         messageId: `${requestId}-${taskId}-error`,
         bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
       }, socket);
-      await error(`⚠️ Task failed for frontendId ${frontendId} with requestId ${requestId}: ${taskError || 'Missing task data'}`);
+      await error(`⚠️ Task failed for frontendId ${frontendId} with requestId ${requestId}: ${taskError || 'Missing task data'}`, { taskId });
       reject(new Error(taskError || 'Invalid task data'));
       return;
     }
 
-    // Final progress update
     await emitCosmicMessage({
-      text: `🌌 "${name}" nearing completion, ${userName}! Final cosmic polish at 100%...`,
+      text: `🌌 "${name}" completed, ${userName}! Cosmic masterpiece at 100%...`,
       type: 'progressUpdate',
       taskId,
       progress: 100,
@@ -429,7 +390,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
       bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
     }, socket);
 
-    await log(`🚀 Task ${taskId} unleashed for ${userName}: ${name}—cosmic payload supernova-delivered!`);
+    await log(`🚀 Task ${taskId} unleashed for ${userName}: ${name}—cosmic payload supernova-delivered!`, { taskId });
 
     const taskData = await hGet('tasks', taskId);
     if (taskData) {
@@ -475,7 +436,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
     socket.off('message', responseHandler);
     socket.on('message', responseHandler);
   } catch (err) {
-    await error(`⚠️ TaskResult for requestId ${data?.requestId} crashed: ${err.message}`);
+    await error(`⚠️ TaskResult for requestId ${data?.requestId} crashed: ${err.message}`, { taskId: data?.taskId });
     const errorMsg = await generateResponse(
       `🌠 Yo ${args.userName || 'Guest'}, "${data?.name || 'unknown'}" hit a cosmic snag: ${err.message}. Retry or tweak it, star pilot?`,
       args.userName || 'Guest',
@@ -506,6 +467,19 @@ async function processTaskResult(data, args, socket, resolve, reject) {
 export function initializeStateManager() {
   botSocket.on('connect', async () => {
     await log('🌌 StateManager online—cosmic channels supernova-charged!');
+    // Process queued tasks on reconnect
+    const queuedTasks = await hGet('pendingTasksQueue');
+    if (queuedTasks) {
+      for (const [requestId, taskDataStr] of Object.entries(queuedTasks)) {
+        const taskData = JSON.parse(taskDataStr);
+        pendingTasksQueue.set(requestId, taskData);
+        if (botSocket.connected) {
+          await delegateTask(botSocket, taskData.target, taskData.command, taskData.args);
+          await hDel('pendingTasksQueue', requestId);
+          pendingTasksQueue.delete(requestId);
+        }
+      }
+    }
     for (const [messageId, message] of pendingTaskResults) {
       if (botSocket.connected) {
         await emitCosmicMessage(message, botSocket);
@@ -517,7 +491,7 @@ export function initializeStateManager() {
   botSocket.on('disconnect', async () => await error('⚠️ StateManager offline—cosmic signal lost in the void!'));
 
   botSocket.on('taskResult', async (data) => {
-    await log(`🌟 TaskResult supernova-received from bot_backend: ${JSON.stringify(data)}`);
+    await log(`🌟 TaskResult supernova-received from bot_backend: ${JSON.stringify(data)}`, { taskId: data.taskId });
     const task = await hGet('tasks', data.taskId);
     if (task) {
       const taskObj = JSON.parse(task);
@@ -528,14 +502,14 @@ export function initializeStateManager() {
       };
       await processTaskResult(data, args, botSocket, () => {}, () => {});
     } else {
-      await error(`⚠️ Task ${data.taskId} not found in cosmic ledger—lost in hyperspace!`);
+      await error(`⚠️ Task ${data.taskId} not found in cosmic ledger—lost in hyperspace!`, { taskId: data.taskId });
     }
   });
 
   botSocket.on('message', async (data) => {
     const messageId = `${data?.requestId || data?.taskId || Date.now()}-${data?.type || 'unknown'}-${data?.text?.slice(0, 50) || 'no-text'}`;
     if (processedMessages.has(messageId)) {
-      await log(`✨ Message ${messageId} already supernova-processed—cosmic efficiency reigns!`);
+      await log(`✨ Message ${messageId} already supernova-processed—cosmic efficiency reigns!`, { taskId: data?.taskId });
       return;
     }
 
@@ -567,7 +541,7 @@ export function initializeStateManager() {
         messageId,
         bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#fff' },
       }, botSocket);
-      await log(`🌌 Task ${taskId} supernova-queued for ${user}—cosmic ledger updated!`);
+      await log(`🌌 Task ${taskId} supernova-queued for ${user}—cosmic ledger updated!`, { taskId });
     }
 
     if (data.commandFlag && data.text === 'store_project' && data.taskId) {
@@ -608,7 +582,7 @@ export function initializeStateManager() {
         messageId: `${taskId}-store-success`,
         bubbleStyle: { background: 'linear-gradient(135deg, #00ccff, #0066ff)', color: '#fff' },
       }, botSocket);
-      await log(`🌟 Project ${taskId} supernova-cached for ${user}—ready for cosmic retrieval!`);
+      await log(`🌟 Project ${taskId} supernova-cached for ${user}—ready for cosmic retrieval!`, { taskId });
     }
 
     if (data.commandFlag && data.text.toLowerCase().includes('enhance this') && data.taskId && data.fileName) {
@@ -636,10 +610,10 @@ export function initializeStateManager() {
 // Ignition sequence with cosmic flair
 (async () => {
   try {
-    await log('🌌 stateManager.js v2025-04-08-02 supernova-ignited with interstellar precision!');
+    await log('🌌 stateManager.js v2025-04-09-03 supernova-ignited with interstellar precision!');
     const stored = await getLastGeneratedTask();
     if (stored) {
-      await log(`🌟 Loaded last task ${stored.taskId} from cosmic vault—sync supernova-restored!`);
+      await log(`🌟 Loaded last task ${stored.taskId} from cosmic vault—sync supernova-restored!`, { taskId: stored.taskId });
     }
     initializeStateManager();
   } catch (err) {

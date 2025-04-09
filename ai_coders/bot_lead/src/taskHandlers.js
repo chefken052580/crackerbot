@@ -4,7 +4,7 @@
  * and handling multi-step tasks with interstellar flair. Enhanced by xAI for seamless
  * frontend-backend sync, robust Redis caching, and duplicate message prevention.
  *
- * @version 2025-04-08-01
+ * @version 2025-04-09-04
  * @author CrackerBot Team, enhanced by xAI
  * @module taskHandlers
  */
@@ -24,7 +24,7 @@ const TASK_TYPES = Object.keys(extensionMap)
   .filter((ext) => ext !== 'zip');
 const BUILD_INTENT_KEYWORDS = ['build', 'create', 'make', 'start', 'construct', 'design', 'develop'];
 
-// Global WebSocket error listener for debugging
+// Global WebSocket error listener
 botSocket.on('error', async (err) => {
   await error(`WebSocket error: ${err.message}`);
 });
@@ -34,7 +34,7 @@ botSocket.on('error', async (err) => {
  * @param {Object} socket - WebSocket instance
  * @param {Object} message - Message data
  * @param {string} message.text - Message content
- * @param {string} [message.type='bot'] - теплота сообщения
+ * @param {string} [message.type='bot'] - Message type
  * @param {string} [message.taskId] - Task ID
  * @param {string} [message.from='CrackerBot Prime'] - Sender
  * @param {string} [message.target='bot_frontend'] - Target
@@ -101,9 +101,9 @@ export async function sendMessage(socket, message) {
 
   try {
     await emitCosmicMessage(msgData, socket);
-    await log(`🚀 Beamed to ${target} for ${msgData.user} (ID: ${frontendId}): "${text}"`);
+    await log(`🚀 Beamed to ${target} for ${msgData.user} (ID: ${frontendId}): "${text}"`, { taskId });
   } catch (err) {
-    await error(`Failed to beam message to ${target} for ${msgData.user} (ID: ${frontendId}): ${err.message}`);
+    await error(`Failed to beam message to ${target} for ${msgData.user} (ID: ${frontendId}): ${err.message}`, { taskId });
   }
 }
 
@@ -118,7 +118,7 @@ async function cleanupTaskFiles(taskId, userName) {
     args: { taskId, userName },
     target: 'bot_backend',
   });
-  await log(`🧹 Dispatched cleanup signal for task ${taskId} to bot_backend for ${userName}`);
+  await log(`🧹 Dispatched cleanup signal for task ${taskId} to bot_backend for ${userName}`, { taskId });
 }
 
 /**
@@ -136,7 +136,6 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
     const userKey = `user:${frontendId}`;
     const welcomeKey = `welcomeSent:${frontendId}`;
 
-    // Get or initialize task state
     let taskState;
     try {
       const storedState = await get(stateKey);
@@ -146,7 +145,6 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
       taskState = { step: 'name', taskId: `initial:${frontendId}` };
     }
 
-    // Get persisted user name from Redis
     let persistedUserName;
     try {
       const userData = await get(userKey);
@@ -156,20 +154,17 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
       persistedUserName = null;
     }
 
-    // Determine effective user name
     const effectiveUserName = initialName && /^[a-zA-Z0-9_-]{1,20}$/.test(initialName) 
       ? initialName 
       : persistedUserName && /^[a-zA-Z0-9_-]{1,20}$/.test(persistedUserName) 
         ? persistedUserName 
         : 'Guest';
 
-    // Persist user name if changed or new
     if (!persistedUserName || effectiveUserName !== persistedUserName) {
       await setUserName(effectiveUserName, frontendId);
       await log(`🌟 Persisted user name "${effectiveUserName}" for ${frontendId}`);
     }
 
-    // Check welcome status with session-specific key
     const welcomeSent = await get(welcomeKey);
     if (!welcomeSent) {
       if (effectiveUserName === 'Guest') {
@@ -191,7 +186,7 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
         });
         taskState.step = 'name';
         await set(stateKey, JSON.stringify(taskState));
-        await set(welcomeKey, 'true', 86400); // Expire in 24 hours
+        await set(welcomeKey, 'true', 86400);
         await log(`🌟 Beamed welcome to ${effectiveUserName} (ID: ${frontendId})`);
       } else {
         const storedProjects = await getCompletedProjects(effectiveUserName);
@@ -216,7 +211,7 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
         });
         taskState.step = 'choice';
         await set(stateKey, JSON.stringify(taskState));
-        await set(welcomeKey, 'true', 86400); // Expire in 24 hours
+        await set(welcomeKey, 'true', 86400);
         await log(`🌟 Beamed welcome to ${effectiveUserName} (ID: ${frontendId})`);
       }
     } else {
@@ -285,7 +280,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
   }
 
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
-  await log(`📩 Decoding cosmic signal for ${persistedUserName} (ID: ${frontendId}): "${text}" - Orbiting step: ${taskState.step}`);
+  await log(`📩 Decoding cosmic signal for ${persistedUserName} (ID: ${frontendId}): "${text}" - Orbiting step: ${taskState.step}`, { taskId: taskState.taskId });
 
   if (commandFlag) {
     const [command, ...args] = text.trim().split(' ');
@@ -393,7 +388,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
   switch (taskState.step) {
     case 'name':
       if (choice && /^[a-zA-Z0-9_-]+$/.test(choice) && choice.length <= 20) {
-        persistedUserName = choice.trim(); // Preserve original case
+        persistedUserName = choice.trim();
         await setUserName(persistedUserName, frontendId);
         taskState.step = 'choice';
         taskState.taskId = `initial:${frontendId}`;
@@ -414,8 +409,8 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
           messageId: `${taskState.taskId}-welcome-choice`,
         });
-        await set(`welcomeSent:${frontendId}`, 'true', 86400); // Update welcome flag
-        await log(`🌠 Christened ${persistedUserName} for ${frontendId} - Warped to step: ${taskState.step}`);
+        await set(`welcomeSent:${frontendId}`, 'true', 86400);
+        await log(`🌠 Christened ${persistedUserName} for ${frontendId} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else {
         const invalidNameMsg = await generateResponse(
           `🌌 "${choice}" won’t orbit—max 20 chars, alphanumeric only. Retry, cosmic namer!`,
@@ -456,7 +451,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
           messageId: `chat:${Date.now()}`,
         });
-        await log(`🗣️ Chat channel opened for ${persistedUserName} - Warped to step: ${taskState.step}`);
+        await log(`🗣️ Chat channel opened for ${persistedUserName} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else if (choiceLower === 'build-something-epic' || BUILD_INTENT_KEYWORDS.some((k) => choiceLower.includes(k))) {
         const newTaskId = Date.now().toString();
         taskState.step = 'project_name';
@@ -478,7 +473,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
           messageId: `${newTaskId}-project_name`,
         });
-        await log(`⚒️ Build saga initiated for ${persistedUserName} with task ${newTaskId} - Warped to step: ${taskState.step}`);
+        await log(`⚒️ Build saga initiated for ${persistedUserName} with task ${newTaskId} - Warped to step: ${taskState.step}`, { taskId: newTaskId });
       } else {
         const invalidChoiceMsg = await generateResponse(
           `🌠 ${persistedUserName}, align your orbit: 'Chat' or 'Build-Something-Epic'. The stars await!`,
@@ -538,7 +533,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
           messageId: `${taskState.taskId}-type`,
         });
-        await log(`🌟 "${taskName}" pending for ${persistedUserName} (ID: ${frontendId}) - Warped to step: ${taskState.step}`);
+        await log(`🌟 "${taskName}" pending for ${persistedUserName} (ID: ${frontendId}) - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else {
         const invalidNameMsg = await generateResponse(
           `🌌 "${choice}" won’t hold orbit—50 chars max, alphanumeric only! Rename your cosmic relic, ${persistedUserName}!`,
@@ -592,7 +587,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
           messageId: `${taskState.taskId}-${taskState.step}`,
         });
-        await log(`🌟 Type "${selectedType}" aligned for ${persistedUserName} (ID: ${frontendId}) - Warped to step: ${taskState.step}`);
+        await log(`🌟 Type "${selectedType}" aligned for ${persistedUserName} (ID: ${frontendId}) - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else {
         const invalidTypeMsg = await generateResponse(
           `🌠 "${choice}" drifts beyond our galaxy, ${persistedUserName}! Select a valid tech orbit.`,
@@ -636,7 +631,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
         messageId: `${taskState.taskId}-features`,
       });
-      await log(`🌟 Network "${taskState.network || 'none'}" locked for ${persistedUserName} (ID: ${frontendId}) - Warped to step: ${taskState.step}`);
+      await log(`🌟 Network "${taskState.network || 'none'}" locked for ${persistedUserName} (ID: ${frontendId}) - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       break;
 
     case 'pending_features':
@@ -644,16 +639,15 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
       taskState.step = 'building';
       await set(stateKey, JSON.stringify(taskState));
       await updateTaskStatus(taskState.taskId, 'in_progress');
-      const buildMsg = await generateResponse(
+      const buildStartMsg = await generateResponse(
         `⚡ "${taskState.taskName}" ignites with "${taskState.features}", ${persistedUserName}! Cosmic assembly in motion! 🌌✨`,
         persistedUserName,
         DEFAULT_TONE
       );
       await sendMessage(botSocket, {
-        text: buildMsg,
-        type: 'progressUpdate',
+        text: buildStartMsg,
+        type: 'building',
         taskId: taskState.taskId,
-        progress: 0,
         ip,
         user: persistedUserName,
         frontendId,
@@ -661,7 +655,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         taskType: taskState.taskType,
         taskFeatures: taskState.features,
         bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
-        messageId: `${taskState.taskId}-building-start`,
+        messageId: `${taskState.taskId}-building`,
       });
       try {
         await delegateTask(botSocket, 'bot_backend', 'buildTask', {
@@ -678,9 +672,9 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           tone: DEFAULT_TONE,
           frontendId,
         });
-        await log(`⚒️ Task ${taskState.taskId} delegated for ${persistedUserName} with "${taskState.features}" - Warped to step: ${taskState.step}`);
+        await log(`⚒️ Task ${taskState.taskId} delegated for ${persistedUserName} with "${taskState.features}" - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } catch (err) {
-        await error(`Delegation failed for ${persistedUserName} (Task ${taskState.taskId}): ${err.message}`);
+        await error(`Delegation failed for ${persistedUserName} (Task ${taskState.taskId}): ${err.message}`, { taskId: taskState.taskId });
         const retryMsg = await generateResponse(
           `🌌 Cosmic relay hiccup, ${persistedUserName}! Build signal lost: ${err.message}. Retry or adjust features?`,
           persistedUserName,
@@ -700,8 +694,8 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
           messageId: `${taskState.taskId}-build-error`,
         });
-        // Keep state as 'building' to await user retry, rather than resetting
-        await log(`🌌 Awaiting retry for ${persistedUserName} (Task ${taskState.taskId})`);
+        // Keep state as 'building' to await user retry
+        await log(`🌌 Awaiting retry for ${persistedUserName} (Task ${taskState.taskId})`, { taskId: taskState.taskId });
       }
       break;
 
@@ -709,6 +703,24 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
       const buildChoiceLower = choice.toLowerCase();
       if (buildChoiceLower === 'retry') {
         try {
+          const retryStartMsg = await generateResponse(
+            `⚡ Relay reestablished, ${persistedUserName}! "${taskState.taskName}" build resumes—cosmic engines roaring! 🌌`,
+            persistedUserName,
+            DEFAULT_TONE
+          );
+          await sendMessage(botSocket, {
+            text: retryStartMsg,
+            type: 'building',
+            taskId: taskState.taskId,
+            ip,
+            user: persistedUserName,
+            frontendId,
+            taskName: taskState.taskName,
+            taskType: taskState.taskType,
+            taskFeatures: taskState.features,
+            bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
+            messageId: `${taskState.taskId}-building-retry`,
+          });
           await delegateTask(botSocket, 'bot_backend', 'buildTask', {
             task: {
               id: taskState.taskId,
@@ -723,28 +735,9 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
             tone: DEFAULT_TONE,
             frontendId,
           });
-          const retrySuccessMsg = await generateResponse(
-            `⚡ Relay reestablished, ${persistedUserName}! "${taskState.taskName}" build resumes—cosmic engines roaring! 🌌`,
-            persistedUserName,
-            DEFAULT_TONE
-          );
-          await sendMessage(botSocket, {
-            text: retrySuccessMsg,
-            type: 'progressUpdate',
-            taskId: taskState.taskId,
-            progress: 0,
-            ip,
-            user: persistedUserName,
-            frontendId,
-            taskName: taskState.taskName,
-            taskType: taskState.taskType,
-            taskFeatures: taskState.features,
-            bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
-            messageId: `${taskState.taskId}-building-retry`,
-          });
-          await log(`⚒️ Retry successful for ${persistedUserName} (Task ${taskState.taskId})`);
+          await log(`⚒️ Retry successful for ${persistedUserName} (Task ${taskState.taskId})`, { taskId: taskState.taskId });
         } catch (retryErr) {
-          await error(`Retry failed for ${persistedUserName} (Task ${taskState.taskId}): ${retryErr.message}`);
+          await error(`Retry failed for ${persistedUserName} (Task ${taskState.taskId}): ${retryErr.message}`, { taskId: taskState.taskId });
           const retryFailMsg = await generateResponse(
             `🌌 Persistent static, ${persistedUserName}! Retry failed: ${retryErr.message}. Adjust or retry again?`,
             persistedUserName,
@@ -787,7 +780,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
           messageId: `${taskState.taskId}-adjust-features`,
         });
-        await log(`🌟 Adjusted to pending_features for ${persistedUserName} (Task ${taskState.taskId})`);
+        await log(`🌟 Adjusted to pending_features for ${persistedUserName} (Task ${taskState.taskId})`, { taskId: taskState.taskId });
       }
       break;
 
@@ -815,7 +808,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
           messageId: `${taskState.taskId}-refine`,
         });
-        await log(`🌟 Refining task ${taskState.taskId} for ${persistedUserName} - Warped to step: ${taskState.step}`);
+        await log(`🌟 Refining task ${taskState.taskId} for ${persistedUserName} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else if (reviewChoiceLower === 'restart') {
         taskState.step = 'choice';
         taskState.features = null;
@@ -838,7 +831,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
           messageId: `${taskState.taskId}-restart`,
         });
-        await log(`🌌 Rebooted task ${taskState.taskId} for ${persistedUserName} - Warped to step: ${taskState.step}`);
+        await log(`🌌 Rebooted task ${taskState.taskId} for ${persistedUserName} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else if (reviewChoiceLower === 'done') {
         await cleanupTaskFiles(taskState.taskId, persistedUserName);
         await updateTaskStatus(taskState.taskId, 'completed');
@@ -871,7 +864,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
           messageId: `${taskState.taskId}-done`,
         });
-        await log(`✅ Task ${taskState.taskId} sealed in stardust for ${persistedUserName} - Warped to step: ${taskState.step}`);
+        await log(`✅ Task ${taskState.taskId} sealed in stardust for ${persistedUserName} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else {
         const invalidOptionMsg = await generateResponse(
           `🌠 "${choice}" veers off course, ${persistedUserName}! Chart your path for "${taskState.taskName}":`,
@@ -914,7 +907,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         });
         taskState.lastChatPrompt = choice;
         await set(stateKey, JSON.stringify(taskState));
-        await log(`🗣️ Cosmic banter beamed for ${persistedUserName} (ID: ${frontendId}) - Holding at step: ${taskState.step}`);
+        await log(`🗣️ Cosmic banter beamed for ${persistedUserName} (ID: ${frontendId}) - Holding at step: ${taskState.step}`, { taskId: taskState.taskId });
       }
       await storeMessage(persistedUserName, { text: choice, timestamp: new Date().toISOString(), frontendId });
       break;
@@ -938,7 +931,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
         messageId: `${taskState.taskId}-reset`,
       });
-      await error(`Reset orbit for ${frontendId} from unknown step: ${taskState.step || 'undefined'} - Warped to step: ${taskState.step}`);
+      await error(`Reset orbit for ${frontendId} from unknown step: ${taskState.step || 'undefined'} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
   }
 }
 
@@ -951,7 +944,7 @@ export function initializeTaskListeners(redisClient) {
 
   botSocket.on('message', async (msg) => {
     const { text, user, ip, frontendId, type, taskId, commandFlag } = msg;
-    await log(`📩 Cosmic transmission received: ${JSON.stringify(msg)}`);
+    await log(`📩 Cosmic transmission received: ${JSON.stringify(msg)}`, { taskId });
     try {
       if (type === 'task_response' || commandFlag || text) {
         await handleTaskResponse(msg, redisClient);
@@ -971,7 +964,7 @@ export function initializeTaskListeners(redisClient) {
         bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
         messageId: `error:${Date.now()}`,
       });
-      await error(`Cosmic error for ${user || 'Guest'}: ${err.stack}`);
+      await error(`Cosmic error for ${user || 'Guest'}: ${err.stack}`, { taskId });
     }
   });
 

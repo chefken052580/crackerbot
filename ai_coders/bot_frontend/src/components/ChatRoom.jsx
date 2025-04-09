@@ -2,7 +2,7 @@
  * Where interstellar ideas ignite and soar across the galaxy with supernova flair!
  * Enhanced by xAI for distinct user/project names, Redis caching, seamless task flow, and robust deduplication.
  *
- * @version 2025-04-07-09
+ * @version 2025-04-09-10
  * @author CrackerBot Team, enhanced by xAI
  * @module ChatRoom
  */
@@ -67,7 +67,7 @@ export function ChatRoom() {
   const [previewData, setPreviewData] = useState(null);
   const [userName, setUserName] = useState(localStorage.getItem('crackerBotUserName') || 'Guest');
   const [messageIds, setMessageIds] = useState(new Set());
-  const [persistentMessages, setPersistentMessages] = useState([]); // Store user inputs and key messages
+  const [persistentMessages, setPersistentMessages] = useState([]);
 
   const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
@@ -88,10 +88,6 @@ export function ChatRoom() {
       }
     }
     socketRef.current = new WebSocketManager(WEBSOCKET_SERVER_URL, {
-      /**
-       * Handles WebSocket connection, placing connect message at the top.
-       * @param {string} id - Frontend ID
-       */
       onConnect: (id) => {
         frontendIdRef.current = id;
         setIsConnected(true);
@@ -106,7 +102,6 @@ export function ChatRoom() {
             timestamp: new Date().toLocaleTimeString(),
             bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
           };
-          // Start with connect message at the top, followed by persistent messages
           const initialMessages = [connectMsg, ...persistentMessages];
           setMessageIds(new Set(['connect-msg']));
           return initialMessages;
@@ -114,10 +109,6 @@ export function ChatRoom() {
         socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
         socketRef.current.emit('frontend_connected', { ip: window.location.hostname, frontendId: id, userName });
       },
-      /**
-       * Processes incoming WebSocket messages with deduplication.
-       * @param {Object} data - Message data
-       */
       onMessage: (data) => {
         if (data.frontendId && data.frontendId !== frontendIdRef.current) {
           return;
@@ -176,32 +167,32 @@ export function ChatRoom() {
             taskFeatures: safeData.taskFeatures,
             projects: safeData.projects,
             progress: safeData.type === 'progressUpdate' ? safeData.progress : undefined,
-            isBuilding: safeData.type === 'progressUpdate' || (safeData.taskId && taskProgress[safeData.taskId] < 100),
+            isBuilding: safeData.type === 'building' || safeData.type === 'progressUpdate' || (safeData.taskId && taskProgress[safeData.taskId] < 100),
             bubbleStyle: safeData.bubbleStyle,
           };
 
           setMessages((prev) => {
-            // Deduplicate welcome-choice messages
             if (isWelcome && safeData.options.includes('Chat') && safeData.options.includes('Build-Something-Epic')) {
               const filteredPrev = prev.filter((msg) => !msg.id.includes('welcome-choice'));
               return [...filteredPrev, newMessage];
             }
 
-            if (safeData.type === 'progressUpdate' && safeData.taskId) {
-              setTaskProgress((prevProgress) => ({
-                ...prevProgress,
-                [safeData.taskId]: safeData.progress,
-              }));
-              const existingIdx = prev.findIndex((msg) => msg.taskId === safeData.taskId && msg.type === 'progressUpdate');
-              if (existingIdx >= 0) {
-                const updatedMessages = [...prev];
-                updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], ...newMessage };
-                return updatedMessages;
+            if (safeData.type === 'building' || safeData.type === 'progressUpdate') {
+              if (safeData.taskId) {
+                setTaskProgress((prevProgress) => ({
+                  ...prevProgress,
+                  [safeData.taskId]: safeData.progress || 0,
+                }));
+                const existingIdx = prev.findIndex((msg) => msg.taskId === safeData.taskId && (msg.type === 'building' || msg.type === 'progressUpdate'));
+                if (existingIdx >= 0) {
+                  const updatedMessages = [...prev];
+                  updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], ...newMessage };
+                  return updatedMessages;
+                }
               }
             }
 
             const updatedMessages = [...prev, newMessage];
-            // Persist key messages (welcome-name and user inputs)
             if (safeData.type === 'question' && safeData.text.toLowerCase().includes('name below') ||
                 safeData.from === 'You') {
               setPersistentMessages((prevPersistent) => {
@@ -221,6 +212,16 @@ export function ChatRoom() {
               step: 'type',
               taskStatus: 'pending',
             }));
+          } else if (safeData.type === 'building' && safeData.taskId) {
+            setCurrentTask((prev) => ({
+              taskId: safeData.taskId,
+              name: safeData.taskName || prev?.name || 'Unnamed Epic',
+              type: safeData.taskType || prev?.type || 'TBD',
+              features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+              step: 'building',
+              taskStatus: 'building',
+            }));
+            setTaskPending(null);
           } else if (safeData.type === 'question') {
             setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
             setCurrentTask((prev) => {
@@ -252,7 +253,7 @@ export function ChatRoom() {
             setEditMode(null);
           } else if (safeData.type === 'error' && safeData.taskId) {
             setTaskPending(null);
-            setCurrentTask(null);
+            setCurrentTask((prev) => prev && prev.taskId === safeData.taskId ? { ...prev, taskStatus: 'error' } : null);
             setEditMode(null);
             setTaskProgress((prev) => {
               const newProgress = { ...prev };
@@ -277,10 +278,6 @@ export function ChatRoom() {
           ]);
         }
       },
-      /**
-       * Handles WebSocket connection errors.
-       * @param {Error} error - Connection error
-       */
       onConnectError: (error) => {
         setMessages((prev) => [
           ...prev,
@@ -296,10 +293,6 @@ export function ChatRoom() {
         ]);
         setIsConnected(false);
       },
-      /**
-       * Handles WebSocket disconnection without clearing messages.
-       * @param {string} reason - Disconnect reason
-       */
       onDisconnect: (reason) => {
         setMessages((prev) => [
           ...prev,
@@ -403,10 +396,6 @@ export function ChatRoom() {
     };
   }, [colorScheme]);
 
-  /**
-   * Sends a message via WebSocket with enhanced task flow handling.
-   * @param {string} messageText - The message to send
-   */
   const sendMessage = useCallback((messageText) => {
     if (!socketRef.current || !messageText.trim() || !isConnected || isSending) {
       return;
@@ -537,10 +526,6 @@ export function ChatRoom() {
     }
   }, [isConnected, isSending, currentTask, userName]);
 
-  /**
-   * Handles input changes and command filtering.
-   * @param {React.ChangeEvent<HTMLInputElement>} e - Input change event
-   */
   const handleInputChange = useCallback((e) => {
     const value = e.target.value;
     setInput(value);
@@ -556,10 +541,6 @@ export function ChatRoom() {
     }
   }, []);
 
-  /**
-   * Handles keyboard navigation for commands and message sending.
-   * @param {React.KeyboardEvent<HTMLInputElement>} e - Keyboard event
-   */
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && input.trim()) {
       e.preventDefault();
@@ -683,11 +664,6 @@ export function ChatRoom() {
     localStorage.setItem('colorScheme', scheme);
   }, []);
 
-  /**
-   * Handles option clicks like Refine, Download, or Done.
-   * @param {string} option - The selected option
-   * @param {Object} [projectData] - Project data if from /projects
-   */
   const handleOptionClick = useCallback((option, projectData) => {
     if (projectData) {
       const { taskId, content, fileName, user } = projectData.projectData || {};
@@ -899,11 +875,11 @@ export function ChatRoom() {
 
             {currentTask && (
               <div className="text-[#00ff9f] my-2 font-mono border-t border-[#ff00ff] pt-2">
-                🌟 Pending Cosmic Creation: <br />
+                🌟 Cosmic Creation in Progress: <br />
                   Name: {currentTask.name || 'Unnamed Epic'} <br />
                   Type: {currentTask.type || 'TBD'} <br />
                   Features: {currentTask.features || 'Forging cosmic brilliance...'} <br />
-                  Status: {currentTask.taskStatus}
+                  Status: {currentTask.taskStatus === 'building' ? `Building (${taskProgress[currentTask.taskId] || 0}%)` : currentTask.taskStatus}
               </div>
             )}
 
@@ -949,12 +925,15 @@ export function ChatRoom() {
                       ? '✨ Select your tech constellation...'
                       : currentTask?.step === 'pending_features'
                       ? '⚒️ Describe your stellar features...'
+                      : currentTask?.step === 'building'
+                      ? '🌌 Building in progress—stand by for cosmic brilliance!'
                       : `🌌 Answer: ${taskPending?.question || ''}`
                     : editMode
                     ? '🌠 Refine your interstellar masterpiece...'
                     : '🌌 Transmit your cosmic will or /command...'
                 }
                 className={`flex-1 p-2 rounded-l-md ${currentScheme.chatBg} border border-[#ff00ff] ${currentScheme.text} focus:outline-none focus:ring-2 focus:ring-[#00ff9f] focus:shadow-[0_0_10px_#00ff9f] transition-shadow`}
+                disabled={currentTask?.step === 'building' && !taskPending}
               />
               <button
                 onClick={toggleRecording}
@@ -964,9 +943,9 @@ export function ChatRoom() {
               </button>
               <button
                 onClick={() => sendMessage(input)}
-                disabled={!isConnected || !input.trim() || isSending}
+                disabled={!isConnected || !input.trim() || isSending || (currentTask?.step === 'building' && !taskPending)}
                 className={`px-4 py-2 rounded-r-md transition ${
-                  isConnected && input.trim() && !isSending
+                  isConnected && input.trim() && !isSending && !(currentTask?.step === 'building' && !taskPending)
                     ? `${currentScheme.button} ${currentScheme.buttonText} hover:shadow-neon`
                     : 'bg-gray-500 text-gray-300 cursor-not-allowed'
                 }`}
