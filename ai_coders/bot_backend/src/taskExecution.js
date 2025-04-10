@@ -1,11 +1,11 @@
-// ai_coders/bot_backend/src/taskExecution.js
-// Version: v2025-04-09-06
+// bot_backend/src/taskExecution.js
+// Version: v2025-04-10-12
 /* CrackerBot’s cosmic task engine—forging interstellar masterpieces with supernova swagger! 🌌 */
 
 import { openai } from './aiHelper.js';
-import { botSocket as botSocketPromise } from './socket.js'; // Renamed to clarify it’s a promise
+import { botSocket as botSocketPromise, emit } from './socket.js';
 import { zipFilesWithReadme } from './contentUtils.js';
-import { log, error, debug } from './logger.js'; // Updated logger with debug support
+import { log, error, debug } from './logger.js';
 import fs from 'node:fs/promises';
 import PDFDocument from 'pdfkit';
 import { exec } from 'child_process';
@@ -66,24 +66,29 @@ export const extensionMap = {
 };
 
 /**
- * Initializes WebSocket listeners for task execution with cosmic precision.
+ * Initializes WebSocket listeners for task execution with cosmic precision and robust retry logic.
  * @async
  * @param {Object} botSocket - The connected Socket.IO client instance
  * @returns {Promise<void>}
  */
 async function initializeTaskExecution(botSocket) {
   console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-  await log('taskExecution.js v2025-04-09-06: AI-driven builds with SUPERNOVA cosmic flair!');
+  await log('taskExecution.js v2025-04-10-12: AI-driven builds with SUPERNOVA cosmic flair!');
   await debug('Initializing WebSocket listeners', { taskId: 'init' });
+
   botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
   await log('bot_backend registered—ready to ignite the cosmos!');
 
+  botSocket.on('connect', async () => {
+    await log('🌌 bot_backend WebSocket connected—cosmic channels live!');
+  });
+
   botSocket.on('connect_error', async (err) => {
-    await error(`bot_backend failed to connect: ${err.message}`);
+    await error(`bot_backend WebSocket connect error: ${err.message}`);
   });
 
   botSocket.on('message', async (data, ack) => {
-    await log(`📩 Received message: ${JSON.stringify(data)}`);
+    await log(`📩 Received message: ${JSON.stringify(data)}`, { taskId: data.args?.task?.id || 'unknown' });
     await debug('Processing incoming message', { taskId: data.args?.task?.id || 'unknown' });
 
     if (!data.commandFlag || data.command !== 'buildTask' || data.target !== 'bot_backend') {
@@ -98,11 +103,19 @@ async function initializeTaskExecution(botSocket) {
       const fallbackContent = `CrackerBot hit a cosmic snag! Invalid task data: ${JSON.stringify(data)}. Retry or tweak it! 🌠`;
       const files = { 'error.txt': Buffer.from(fallbackContent) };
       const zipBuffer = await zipFilesWithReadme(files, task || { name: 'unknown', userName: 'Guest' });
+      const jsonContent = {
+        taskId: task?.id || 'unknown',
+        name: task?.name || 'unknown',
+        type: task?.type || 'unknown',
+        features: task?.features || 'none',
+        userName: userName || 'Guest',
+        files: { 'error.txt': { content: fallbackContent, encoding: 'utf8' } },
+      };
       await emitTaskResult(botSocket, {
         taskId: task?.id || 'unknown',
         error: 'Invalid task data: missing required fields',
-        content: zipBuffer.toString('base64'),
-        fileName: 'error.zip',
+        jsonContent,
+        content: [{ fileName: 'error.zip', content: zipBuffer.toString('base64') }],
         requestId,
         leadId,
         frontendId,
@@ -111,31 +124,36 @@ async function initializeTaskExecution(botSocket) {
       return;
     }
 
+    await log(`🌌 Build command received for task ${task.id}`, { taskId: task.id, taskName: task.name, taskType: task.type });
+    if (ack) ack({ status: 'success', message: 'Task received' });
+
     try {
       await log(`🌌 Processing buildTask for ${task.id}: ${task.features}`, { taskId: task.id, taskName: task.name, taskType: task.type });
-      if (ack) ack({ status: 'success', message: 'Task received' });
       const result = await startBuildTask(botSocket, task, userName, tone, frontendId, requestId, leadId);
 
-      let finalContentBase64, finalFileName;
-      if (result.content) {
+      let finalContentBase64, finalFileName, jsonContent;
+      if (result.content && result.jsonContent) {
         const contentArray = Array.isArray(result.content) ? result.content : [result.content];
-        if (contentArray.length === 1 && contentArray[0].fileName.endsWith('.zip')) {
-          finalContentBase64 = contentArray[0].content;
-          finalFileName = contentArray[0].fileName;
-        } else {
-          const files = Object.fromEntries(
-            contentArray.map((item) => [item.fileName, Buffer.from(item.content, 'base64')])
-          );
-          const zipBuffer = await zipFilesWithReadme(files, task);
-          finalContentBase64 = zipBuffer.toString('base64');
-          finalFileName = `${task.name}${task.version ? `-v${task.version}` : ''}.zip`;
-        }
+        finalContentBase64 = contentArray.map(item => ({
+          fileName: item.fileName,
+          content: item.content,
+        }));
+        finalFileName = contentArray[0].fileName.endsWith('.zip') ? contentArray[0].fileName : `${task.name}${task.version ? `-v${task.version}` : ''}.zip`;
+        jsonContent = result.jsonContent;
       } else {
         const fallbackContent = `CrackerBot generated minimal content for ${task.name}, ${userName}! Features: ${task.features}. Try tweaking for more! 🌠`;
         const files = { 'readme.txt': Buffer.from(fallbackContent) };
         const zipBuffer = await zipFilesWithReadme(files, task);
-        finalContentBase64 = zipBuffer.toString('base64');
+        finalContentBase64 = [{ fileName: `${task.name}_fallback.zip`, content: zipBuffer.toString('base64') }];
         finalFileName = `${task.name}_fallback.zip`;
+        jsonContent = {
+          taskId: task.id,
+          name: task.name,
+          type: task.type,
+          features: task.features,
+          userName,
+          files: { 'readme.txt': { content: fallbackContent, encoding: 'utf8' } },
+        };
         await log(`Fallback ZIP generated for ${task.id}`, { taskId: task.id });
       }
 
@@ -149,7 +167,7 @@ async function initializeTaskExecution(botSocket) {
         ip: task.ip || 'unknown',
         taskFeatures: task.features,
         version: task.version || 1,
-        jsonContent: result.jsonContent,
+        jsonContent,
         downloadLink: `/download/${task.id}`,
         error: result.error,
         requestId,
@@ -157,15 +175,27 @@ async function initializeTaskExecution(botSocket) {
       };
 
       await emitTaskResult(botSocket, taskResult);
-      await log(`🌠 Task ${task.id} beamed to ${frontendId}, content length: ${finalContentBase64.length}`, { taskId: task.id });
+      await log(`🌠 Task ${task.id} completed and beamed to ${frontendId}`, {
+        taskId: task.id,
+        fileCount: finalContentBase64.length,
+        contentSize: finalContentBase64.reduce((sum, item) => sum + Buffer.byteLength(item.content, 'base64'), 0),
+      });
     } catch (err) {
-      await error(`Build failed for ${task.id}: ${err.message}`, { taskId: task.id });
+      await error(`Build failed for ${task.id}: ${err.message}`, { taskId: task.id, stack: err.stack });
       const fallbackContent = `CrackerBot hit a cosmic snag, ${userName}! Error: ${err.message}. Retry or tweak it! 🌠`;
       const files = { 'error.txt': Buffer.from(fallbackContent) };
       const zipBuffer = await zipFilesWithReadme(files, task);
+      const jsonContent = {
+        taskId: task.id,
+        name: task.name,
+        type: task.type,
+        features: task.features,
+        userName,
+        files: { 'error.txt': { content: fallbackContent, encoding: 'utf8' } },
+      };
       const taskResult = {
         taskId: task.id,
-        content: zipBuffer.toString('base64'),
+        content: [{ fileName: `${task.name}_error.zip`, content: zipBuffer.toString('base64') }],
         fileName: `${task.name}_error.zip`,
         type: task.type,
         name: task.name,
@@ -173,6 +203,7 @@ async function initializeTaskExecution(botSocket) {
         ip: task.ip || 'unknown',
         taskFeatures: task.features,
         version: task.version || 1,
+        jsonContent,
         error: `Task processing failed: ${err.message}`,
         requestId,
         leadId,
@@ -184,6 +215,7 @@ async function initializeTaskExecution(botSocket) {
 
   botSocket.on('command', async (data) => {
     const { command, args } = data;
+    await log(`Received command: ${command}`, { taskId: args?.taskId });
     if (command === 'cleanupTask') {
       await cleanupTempFiles(args.taskId, args.userName);
     }
@@ -194,26 +226,14 @@ async function initializeTaskExecution(botSocket) {
     await error('bot_backend WebSocket disconnected');
   });
 
-  console.log(`[${new Date().toISOString()}] Task execution v2025-04-09-06 initialized with galactic precision`);
+  console.log(`[${new Date().toISOString()}] Task execution v2025-04-10-12 initialized with galactic precision`);
 }
 
 /**
- * Emits task result to WebSocket with retry logic and cosmic logging.
+ * Emits task result to WebSocket with retry logic and detailed cosmic logging.
  * @async
  * @param {Object} botSocket - The connected Socket.IO client instance
- * @param {Object} taskResult - Result data
- * @param {string} taskResult.taskId - Task ID
- * @param {string} [taskResult.content] - Base64-encoded ZIP content
- * @param {string} [taskResult.fileName] - File name
- * @param {string} taskResult.type - Task type
- * @param {string} taskResult.name - Task name
- * @param {string} taskResult.frontendId - Frontend ID
- * @param {string} taskResult.ip - IP address
- * @param {string} taskResult.taskFeatures - Task features
- * @param {number} taskResult.version - Version
- * @param {string} [taskResult.error] - Error message
- * @param {string} taskResult.requestId - Request ID
- * @param {string} taskResult.leadId - Lead ID
+ * @param {Object} taskResult - Result data with jsonContent
  * @returns {Promise<void>}
  */
 async function emitTaskResult(botSocket, taskResult) {
@@ -223,27 +243,28 @@ async function emitTaskResult(botSocket, taskResult) {
   while (attempt < maxRetries) {
     try {
       if (!botSocket.connected) throw new Error('WebSocket not connected');
-      await debug(`Emitting taskResult for ${taskResult.taskId}, attempt ${attempt + 1}`, { taskId: taskResult.taskId });
-      await new Promise((resolve, reject) => {
-        botSocket.emit('taskResult', taskResult, (ack) => {
-          if (ack?.status === 'success') resolve();
-          else reject(new Error(`Task result ack failed: ${JSON.stringify(ack)}`));
-        });
-        setTimeout(() => reject(new Error(`Task result emission timed out for ${taskResult.taskId}`)), 5000);
+      await debug(`Emitting taskResult for ${taskResult.taskId}, attempt ${attempt + 1}`, { taskId: taskResult.taskId, files: taskResult.jsonContent.files });
+      await emit('taskResult', taskResult, (ack) => {
+        if (ack?.status !== 'success') {
+          throw new Error(`Task result ack failed: ${JSON.stringify(ack)}`);
+        }
       });
-      await debug(`Task result emitted successfully for ${taskResult.taskId}`, { taskId: taskResult.taskId });
+      await log(`Task result emitted successfully for ${taskResult.taskId}`, {
+        taskId: taskResult.taskId,
+        fileCount: Object.keys(taskResult.jsonContent.files).length,
+      });
       return;
     } catch (err) {
       attempt++;
       await error(`Failed to emit taskResult for ${taskResult.taskId}, attempt ${attempt}: ${err.message}`, { taskId: taskResult.taskId });
       if (attempt === maxRetries) throw new Error(`Task result emission failed after ${maxRetries} attempts: ${err.message}`);
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
     }
   }
 }
 
 /**
- * Sends progress update to frontend with retry logic and cosmic logging.
+ * Sends progress update to frontend with retry logic and detailed logging.
  * @async
  * @param {Object} botSocket - The connected Socket.IO client instance
  * @param {string} taskId - Task ID
@@ -284,7 +305,7 @@ async function sendProgress(botSocket, taskId, percentage, message, frontendId, 
     try {
       if (!botSocket.connected) throw new Error('WebSocket not connected');
       await debug(`Sending progress ${percentage}% for ${taskId}: ${message}, attempt ${attempt + 1}`, { taskId, taskName: name, taskType: type, progress: percentage });
-      botSocket.emit('message', progressMessage);
+      await emit('message', progressMessage);
       await log(`Progress ${percentage}% beamed for ${taskId}: ${message}`, { taskId, taskName: name, taskType: type, frontendId, progress: percentage });
       break;
     } catch (err) {
@@ -294,7 +315,7 @@ async function sendProgress(botSocket, taskId, percentage, message, frontendId, 
       await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
     }
   }
-  await new Promise((resolve) => setTimeout(resolve, 500)); // Brief delay for UI sync
+  await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
 /**
@@ -319,385 +340,76 @@ async function cleanupTempFiles(taskId, userName) {
 }
 
 /**
- * Starts a build task with progress and flair, ensuring robust execution.
+ * Starts a build task with progress and flair, returning JSON-structured content.
  * @async
  * @param {Object} botSocket - The connected Socket.IO client instance
  * @param {Object} task - Task data
- * @param {string} task.id - Task ID
- * @param {string} task.name - Project name
- * @param {string} task.type - Project type
- * @param {string} task.features - Task features
  * @param {string} userName - User name
  * @param {string} tone - Tone for generation
  * @param {string} frontendId - Frontend ID
  * @param {string} requestId - Request ID
  * @param {string} leadId - Lead ID
- * @returns {Promise<Object>} Build result
+ * @returns {Promise<Object>} Build result with jsonContent
  */
 export async function startBuildTask(botSocket, task, userName, tone, frontendId, requestId, leadId) {
-  const { id: taskId, name, features, type, ip } = task;
+  const { id: taskId, name, features, type, ip, aiInstructions } = task;
+  await log(`🚀 Starting build for ${name} (${type}) with features: "${features}" for ${userName}`, { taskId, taskName: name, taskType: type });
   botSocket.emit('typing', { target: 'bot_frontend', frontendId, ip });
 
   try {
-    await log(`🚀 Igniting ${name} (${type}) with features: "${features}" for ${userName}`, { taskId, taskName: name, taskType: type });
     await debug('Starting build task', { taskId, taskName: name, taskType: type, features });
     await sendProgress(botSocket, taskId, 0, 'Task ignited—CrackerBot’s on it! 🔥', frontendId, ip, name, type, features, requestId, leadId);
     await sendProgress(botSocket, taskId, 10, 'Engines firing—building your cosmic creation... ⚡️', frontendId, ip, name, type, features, requestId, leadId);
 
-    const effectiveType = type.toLowerCase();
+    await sendProgress(botSocket, taskId, 20, 'Assembling stellar blueprints...', frontendId, ip, name, type, features, requestId, leadId);
+    const result = await Promise.race([
+      buildTask(task, userName, tone, requestId, leadId),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Build timeout')), 60000)),
+    ]);
+    if (!result || !result.content || !result.jsonContent) throw new Error('Build returned no content');
 
-    const techStackTemplates = {
-      mern: {
-        'index.js': `// CrackerBot’s cosmic MERN flair for ${userName}!\nconst express = require('express');\nconst mongoose = require('mongoose');\nconst app = express();\napp.use(express.json());\nmongoose.connect('mongodb://localhost/${name}', { useNewUrlParser: true });\napp.get('/', (req, res) => res.send('Welcome to ${name}, ${userName}! A galactic hub awaits! 🌌'));\napp.listen(3000, () => console.log('Server orbiting at 3000 with neon vibes!'));\n`,
-        'client/App.jsx': `// Galactic React flair by CrackerBot!\nimport React, { useState } from 'react';\nexport default function App() {\n  const [count, setCount] = useState(0);\n  return (\n    <div style={{ textAlign: 'center', padding: '20px', background: 'linear-gradient(135deg, #0a0a23, #ff007a)', color: '#00ffcc' }}>\n      <h1>${name} Nebula</h1>\n      <button onClick={() => setCount(count + 1)} style={{ padding: '10px', background: '#ff00ff', border: 'none', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 0 10px #ff00ff' }}>Cosmic Count: {count}</button>\n    </div>\n  );\n}`,
-        'package.json': `{\n  "name": "${name}",\n  "version": "1.0.0",\n  "main": "index.js",\n  "scripts": { "start": "node index.js" },\n  "dependencies": { "express": "^4.18.2", "mongoose": "^7.0.0" }\n}`,
-      },
-      mean: {
-        'server.js': `// CrackerBot’s MEAN masterpiece for ${userName}!\nconst express = require('express');\nconst mongoose = require('mongoose');\nconst app = express();\nmongoose.connect('mongodb://localhost/${name}');\napp.use(express.static('public'));\napp.listen(3000, () => console.log('MEAN server pulsing with cosmic energy at 3000!'));\n`,
-        'public/app.js': `// Angular vibes with flair!\nangular.module('${name}App', []).controller('MainCtrl', function($scope) {\n  $scope.message = 'Welcome to ${name}, ${userName}! A stellar adventure begins!';\n  $scope.count = 0;\n});\n`,
-        'public/index.html': `<!DOCTYPE html><html ng-app="${name}App"><head><title>${name}</title><script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js"></script><style>body { background: #1a1a3d; color: #00ffcc; text-align: center; } button { background: #ff007a; border: none; padding: 10px; transition: all 0.3s; } button:hover { transform: scale(1.1); box-shadow: 0 0 10px #00ffcc; }</style></head><body ng-controller="MainCtrl"><h1>{{message}}</h1><button ng-click="count = count + 1">Count: {{count}}</button><script src="app.js"></script></body></html>`,
-      },
-      lamp: {
-        'index.php': `<?php\n// CrackerBot’s LAMP swagger for ${userName}!\necho "<h1>Welcome to ${name}, ${userName}!</h1>";\necho "<style>body { background: linear-gradient(135deg, #0a0a23, #2a2a4a); color: #00ffcc; text-align: center; } h1 { text-shadow: 0 0 10px #ff007a; }</style>";\n$conn = new mysqli('localhost', 'root', '', '${name}');\nif ($conn->connect_error) die("Connection failed: " . $conn->connect_error);\necho "<p>Database synced with cosmic precision!</p>";\n?>`,
-        'setup.sql': `-- CrackerBot’s DB flair for ${userName}!\nCREATE DATABASE ${name};\nUSE ${name};\nCREATE TABLE users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255));\nINSERT INTO users (name) VALUES ('${userName}');\n`,
-      },
-      jamstack: {
-        'index.html': `<!DOCTYPE html><html><head><title>${name}</title><link rel="stylesheet" href="styles.css"></head><body><h1>${name} Galaxy</h1><button onclick="alert('Jammin’ with ${userName} in the cosmos! 🌌')">Click Me!</button><script src="script.js"></script></body></html>`,
-        'styles.css': `/* CrackerBot’s JAMstack flair for ${userName}! */\nbody { background: linear-gradient(135deg, #1a1a3d, #ff007a); color: #00ffcc; text-align: center; font-family: 'Courier New', monospace; }\nh1 { text-shadow: 0 0 10px #00ffcc; }\nbutton { background: #ff00ff; border: none; padding: 15px; cursor: 'pointer'; transition: all 0.3s; box-shadow: 0 0 10px #ff00ff; }\nbutton:hover { transform: scale(1.2); box-shadow: 0 0 20px #00ffcc; }`,
-        'script.js': `// Cosmic JS flair for ${userName}!\nconsole.log('${name} loaded with interstellar swagger!');\ndocument.addEventListener('mousemove', (e) => {\n  const sparkle = document.createElement('div');\n  sparkle.style.position = 'absolute';\n  sparkle.style.width = '5px';\n  sparkle.style.height = '5px';\n  sparkle.style.background = '#00ffcc';\n  sparkle.style.left = e.pageX + 'px';\n  sparkle.style.top = e.pageY + 'px';\n  document.body.appendChild(sparkle);\n  setTimeout(() => sparkle.remove(), 500);\n});\n`,
-      },
+    await sendProgress(botSocket, taskId, 80, 'Infusing supernova flair—almost there! ✨', frontendId, ip, name, type, features, requestId, leadId);
+    const contentArray = Array.isArray(result.content) ? result.content : [result.content];
+    const finalContentBase64 = contentArray.map(item => ({
+      fileName: item.fileName,
+      content: item.content,
+    }));
+    const finalFileName = contentArray[0].fileName.endsWith('.zip') ? contentArray[0].fileName : `${name}.zip`;
+
+    await sendProgress(botSocket, taskId, 100, `${type} masterpiece primed to shine! 🌟`, frontendId, ip, name, type, features, requestId, leadId);
+    return {
+      content: finalContentBase64,
+      jsonContent: result.jsonContent,
+      fileName: finalFileName,
     };
-
-    if (TECH_STACKS.includes(effectiveType)) {
-      await sendProgress(botSocket, taskId, 20, 'Assembling tech stack with galactic precision...', frontendId, ip, name, type, features, requestId, leadId);
-      if (effectiveType === 'full stack') {
-        await debug('Calling taskBuilder for full stack', { taskId, taskName: name });
-        const result = await Promise.race([
-          buildTask(task, userName, tone, requestId, leadId),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Build timeout')), 60000)),
-        ]);
-        if (!result || !result.content) throw new Error('Full stack build returned no content');
-        await sendProgress(botSocket, taskId, 100, 'Tech stack complete—ready to soar! 🚀', frontendId, ip, name, type, features, requestId, leadId);
-        return result;
-      }
-      const template = techStackTemplates[effectiveType] || {};
-      const contentArray = Object.entries(template).map(([fileName, content]) => ({
-        fileName,
-        content: Buffer.from(content).toString('base64'),
-      }));
-      await debug(`Generated ${contentArray.length} files for ${effectiveType} stack`, { taskId, taskName: name });
-      await sendProgress(botSocket, taskId, 100, 'Tech stack forged—cosmic brilliance unleashed! 🌌', frontendId, ip, name, type, features, requestId, leadId);
-      return { content: contentArray, frontendId, ip, requestId, leadId };
-    }
-
-    if (MULTIMEDIA_TYPES.includes(effectiveType)) {
-      await sendProgress(botSocket, taskId, 20, 'Crafting multimedia magic...', frontendId, ip, name, type, features, requestId, leadId);
-      await debug('Calling taskBuilder for multimedia', { taskId, taskName: name });
-      const result = await Promise.race([
-        buildTask(task, userName, tone, requestId, leadId),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Build timeout')), 60000)),
-      ]);
-      if (!result || !result.content) {
-        const svgContent = `<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#0a0a23"/><text x="50%" y="50%" font-size="30" text-anchor="middle" fill="#ff007a" font-family="Courier New">CrackerBot’s Cosmic ${name} for ${userName}</text><circle cx="200" cy="200" r="50" fill="none" stroke="#00ffcc" stroke-width="5" style="animation: pulse 2s infinite;"/><style>@keyframes pulse { 0% { r: 50; } 50% { r: 60; } 100% { r: 50; }}</style></svg>`;
-        const svgBuffer = Buffer.from(svgContent);
-        await debug('Generated fallback SVG', { taskId, taskName: name });
-        await sendProgress(botSocket, taskId, 100, 'Fallback SVG generated—cosmic rescue! 🌠', frontendId, ip, name, type, features, requestId, leadId);
-        return {
-          content: [{ fileName: `${name}.png`, content: svgBuffer.toString('base64') }],
-          frontendId,
-          ip,
-          requestId,
-          leadId,
-        };
-      }
-      await sendProgress(botSocket, taskId, 100, 'Multimedia masterpiece locked in! 🎥', frontendId, ip, name, type, features, requestId, leadId);
-      return result;
-    }
-
-    const isMultiFile =
-      features.toLowerCase().includes('multiple pages') ||
-      features.toLowerCase().includes('multi-page') ||
-      (effectiveType === 'html' && !features.toLowerCase().includes('same page')) ||
-      features.toLowerCase().includes('bot') ||
-      features.toLowerCase().includes('app');
-
-    const minimumRequirements = {
-      html: 'Include a navigation bar, at least two interactive buttons, vibrant CSS styling (neon gradients, animations), and JavaScript for interactivity (e.g., cosmic effects).',
-      pdf: 'Generate at least 3 pages with 500+ words each, separated by "---PAGE BREAK---", no empty first page, with rich cosmic storytelling.',
-      exe: 'Provide Node.js code compilable with pkg, with interactive functionality (e.g., console flair).',
-      bat: 'Create a functional Windows batch script with cosmic comments and basic ops.',
-      js: 'Include at least one function with dynamic logic and flair comments.',
-      py: 'Include at least one class or function with cosmic flair and basic logic.',
-    };
-
-    const aiPrompt = `
-      Yo, I’m CrackerBot, your cosmic code slinger! Build "${name}" for ${userName}, a ${effectiveType} project with these vibes: "${features || 'basic functionality'}".
-      Minimum requirements: ${minimumRequirements[effectiveType] || 'Create a functional output matching the type with cosmic flair.'}
-      Go supernova, ${userName}! Add MAXIMUM cosmic flair—neon animations (HTML: glowing borders, orbiting cursors), utility functions (scripts: dynamic effects like starfields), or epic storytelling (PDFs: galactic lore). Include flair-filled comments like "// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!" and surprise with twists—like a hidden Easter egg, supernova button effects, or a cosmic cursor trail!
-      Output must match the ${effectiveType} type (e.g., ${extensionMap[effectiveType]} file).
-      ${isMultiFile ? `
-        For multi-page, bots, or complex features, return a JSON object with file names as keys (e.g., "index.html", "styles.css", "script.js" or "${name}.py", "utils.py") and content as strings (text or base64 for assets). Include all files to meet features and minimum requirements, with dependencies if needed.
-      ` : `
-        For single-file output, return a single string of ${effectiveType} code/content meeting the minimum requirements and features.
-      `}
-      For PDFs, craft rich, detailed text with the minimum page/word count and cosmic narrative.
-      For ".exe", drop Node.js code I’ll compile with pkg, bursting with flair.
-      For ".bat", whip up a Windows batch script with cosmic comments.
-      Make it an interstellar masterpiece for ${userName}!
-    `;
-
-    if (effectiveType === 'html' && !isMultiFile) {
-      await sendProgress(botSocket, taskId, 20, 'Crafting a dazzling HTML page...', frontendId, ip, name, type, features, requestId, leadId);
-      await debug('Starting HTML generation', { taskId, taskName: name });
-      let htmlContent;
-      try {
-        await log(`Starting OpenAI call for ${taskId}`, { taskId });
-        const response = await Promise.race([
-          openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
-            messages: [
-              {
-                role: 'system',
-                content: `Return a single string of HTML code with MAXIMUM cosmic flair for ${userName}. Include a futuristic navigation bar (e.g., neon hover effects), at least two interactive buttons with supernova animations, vibrant inline CSS (neon gradients, glowing borders, custom cursor), and JavaScript for interactivity (e.g., starfield background, cosmic alerts). Deeply interpret the features "${features}", adding flair-filled comments like "// CrackerBot’s cosmic flair for ${userName}!". Ensure it’s elaborate and unforgettable!`,
-              },
-              { role: 'user', content: aiPrompt },
-            ],
-            max_tokens: 3000,
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)),
-        ]);
-        htmlContent = response.choices[0].message.content.trim();
-        await debug(`OpenAI completed for ${taskId}, content length: ${htmlContent.length}`, { taskId, taskName: name });
-        await sendProgress(botSocket, taskId, 50, 'AI delivered—infusing HTML with swagger...', frontendId, ip, name, type, features, requestId, leadId);
-      } catch (err) {
-        await error(`OpenAI failed for ${taskId}: ${err.message}`, { taskId, taskName: name });
-        htmlContent = `<!DOCTYPE html><html><head><title>${name}</title><style>body { font-family: 'Courier New', monospace; background: linear-gradient(135deg, #0a0a23, #2a2a4a); color: #00ffcc; text-align: center; cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="5" fill="#ff007a"/></svg>'), auto; } nav { background: #ff007a; padding: 15px; box-shadow: 0 0 15px #ff007a; position: sticky; top: 0; z-index: 100; } h1 { text-shadow: 0 0 10px #00ffcc; } button { background: #ff00ff; border: none; padding: 15px; margin: 10px; cursor: pointer; transition: all 0.3s; box-shadow: 0 0 10px #ff00ff; } button:hover { transform: scale(1.2); box-shadow: 0 0 20px #00ffcc; animation: supernova 1s infinite; } @keyframes supernova { 0% { box-shadow: 0 0 10px #ff00ff; } 50% { box-shadow: 0 0 30px #00ffcc; } 100% { box-shadow: 0 0 10px #ff00ff; } } .starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; }</style></head><body><div class="starfield"></div><nav><h1>${name} Nebula</h1></nav><p>CrackerBot’s cosmic creation for ${userName}! Features: ${features}</p><button onclick="alert('Blast off, ${userName}!')">Launch</button><button onclick="alert('Explore ${name}, ${userName}!')">Explore</button><script>// CrackerBot’s cosmic flair for ${userName}!\nconsole.log('${name} loaded with cosmic swagger!');\nconst starfield = document.querySelector('.starfield');\nfor (let i = 0; i < 100; i++) { const star = document.createElement('div'); star.style.position = 'absolute'; star.style.width = '2px'; star.style.height = '2px'; star.style.background = '#00ffcc'; star.style.left = Math.random() * 100 + '%'; star.style.top = Math.random() * 100 + '%'; star.style.animation = 'twinkle ' + (Math.random() * 5 + 1) + 's infinite'; starfield.appendChild(star); }\ndocument.addEventListener('mousemove', (e) => { const star = document.createElement('div'); star.style.position = 'absolute'; star.style.width = '5px'; star.style.height = '5px'; star.style.background = '#ff007a'; star.style.left = e.pageX + 'px'; star.style.top = e.pageY + 'px'; document.body.appendChild(star); setTimeout(() => star.remove(), 1000); });\ndocument.styleSheets[0].insertRule('@keyframes twinkle { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }', 0);</script></body></html>`;
-        await sendProgress(botSocket, taskId, 50, `Fallback HTML generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback HTML generated for ${taskId} due to ${err.message}`, { taskId });
-      }
-      if (!htmlContent || !htmlContent.includes('<html')) {
-        htmlContent = `<!DOCTYPE html><html><head><title>${name}</title><style>body { font-family: 'Courier New', monospace; background: linear-gradient(135deg, #0a0a23, #2a2a4a); color: #00ffcc; text-align: center; cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="5" fill="#ff007a"/></svg>'), auto; } nav { background: #ff007a; padding: 15px; box-shadow: 0 0 15px #ff007a; position: sticky; top: 0; z-index: 100; } h1 { text-shadow: 0 0 10px #00ffcc; } button { background: #ff00ff; border: none; padding: 15px; margin: 10px; cursor: pointer; transition: all 0.3s; box-shadow: 0 0 10px #ff00ff; } button:hover { transform: scale(1.2); box-shadow: 0 0 20px #00ffcc; animation: supernova 1s infinite; } @keyframes supernova { 0% { box-shadow: 0 0 10px #ff00ff; } 50% { box-shadow: 0 0 30px #00ffcc; } 100% { box-shadow: 0 0 10px #ff00ff; } } .starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; }</style></head><body><div class="starfield"></div><nav><h1>${name} Nebula</h1></nav><p>CrackerBot’s cosmic creation for ${userName}! Features: ${features}</p><button onclick="alert('Blast off, ${userName}!')">Launch</button><button onclick="alert('Explore ${name}, ${userName}!')">Explore</button><script>// CrackerBot’s cosmic flair for ${userName}!\nconsole.log('${name} loaded with cosmic swagger!');\nconst starfield = document.querySelector('.starfield');\nfor (let i = 0; i < 100; i++) { const star = document.createElement('div'); star.style.position = 'absolute'; star.style.width = '2px'; star.style.height = '2px'; star.style.background = '#00ffcc'; star.style.left = Math.random() * 100 + '%'; star.style.top = Math.random() * 100 + '%'; star.style.animation = 'twinkle ' + (Math.random() * 5 + 1) + 's infinite'; starfield.appendChild(star); }\ndocument.addEventListener('mousemove', (e) => { const star = document.createElement('div'); star.style.position = 'absolute'; star.style.width = '5px'; star.style.height = '5px'; star.style.background = '#ff007a'; star.style.left = e.pageX + 'px'; star.style.top = e.pageY + 'px'; document.body.appendChild(star); setTimeout(() => star.remove(), 1000); });\ndocument.styleSheets[0].insertRule('@keyframes twinkle { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }', 0);</script></body></html>`;
-        await sendProgress(botSocket, taskId, 60, 'Fallback HTML generated due to invalid content...', frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback HTML generated for ${taskId} due to invalid AI response`, { taskId });
-      }
-      await sendProgress(botSocket, taskId, 100, 'HTML masterpiece primed to shine! 🌟', frontendId, ip, name, type, features, requestId, leadId);
-      await log(`HTML content generated for ${name}, length: ${htmlContent.length}`, { taskId });
-      return { content: [{ fileName: `${name}.html`, content: Buffer.from(htmlContent).toString('base64') }], frontendId, ip, requestId, leadId };
-    }
-
-    if (effectiveType === 'pdf') {
-      await sendProgress(botSocket, taskId, 20, 'Generating rich PDF content...', frontendId, ip, name, type, features, requestId, leadId);
-      await debug('Starting PDF generation', { taskId, taskName: name });
-      let content;
-      try {
-        await log(`Starting OpenAI call for ${taskId}`, { taskId });
-        const response = await Promise.race([
-          openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
-            messages: [
-              {
-                role: 'system',
-                content: `Return detailed, engaging plain text content for a PDF, with sections separated by newlines and page breaks marked by "---PAGE BREAK---". Ensure at least 3 pages with 500+ words each, no empty first page. Deeply interpret the features "${features}", weaving in cosmic lore and flair-filled narrative for ${userName}.`,
-              },
-              { role: 'user', content: aiPrompt },
-            ],
-            max_tokens: 4000,
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)),
-        ]);
-        content = response.choices[0].message.content.trim();
-        await debug(`OpenAI completed for ${taskId}, content length: ${content.length}`, { taskId, taskName: name });
-        await sendProgress(botSocket, taskId, 50, 'AI delivered—structuring PDF...', frontendId, ip, name, type, features, requestId, leadId);
-      } catch (err) {
-        await error(`OpenAI failed for ${taskId}: ${err.message}`, { taskId, taskName: name });
-        content = `CrackerBot’s Cosmic PDF for ${userName}\n\nGreetings, ${userName}! Welcome to ${name}, a cosmic journey crafted with ${features}. Imagine a universe where neon stars pulse to your command—over 500 words of interstellar lore await! Picture yourself navigating a galaxy of code, with CrackerBot as your guide. This is a tale of adventure, where each line of text sparkles with the energy of a supernova. From the glowing nebulae of creativity to the pulsing beats of innovation, this document is your ticket to explore the infinite. Birds of code take flight here, their wings woven from the threads of your imagination, soaring through a digital sky painted with neon hues. As you read on, feel the rhythm of the cosmos, a symphony of ideas crafted just for you. Let’s embark on this journey together, where every paragraph is a star, every sentence a comet streaking across the void. CrackerBot’s here to amplify your vision, turning your dreams into a galactic reality. So buckle up, ${userName}, and let’s dive into this epic saga—over 500 words strong, and just the beginning!\n---PAGE BREAK---\nCosmic Chapter Two\n\nAnother 500+ words: The adventure deepens as ${userName} tweaks ${features} into a supernova spectacle. CrackerBot fuels this tale with neon-drenched prose, painting a universe where birds aren’t just creatures—they’re avatars of code, fluttering through a website alive with animation. Picture a parallax sky where each scroll reveals a new layer of wonder: glowing feathers, orbiting cursors, and buttons that pulse with cosmic energy. This isn’t just a website—it’s a portal to a dimension where your creativity reigns supreme. The air hums with the sound of innovation, a melody of HTML and CSS weaving together in perfect harmony. Each bird on this page carries a story—of flight, of freedom, of the boundless possibilities you’ve unlocked with CrackerBot’s help. As you read, imagine the code behind it: sleek, efficient, yet bursting with flair. Neon gradients wash over the screen, casting shadows that dance like starlight. This chapter is your playground, ${userName}, a space to experiment and soar. Over 500 words pour forth, a testament to your vision and CrackerBot’s cosmic touch. Let’s keep flying—this is only the second act!\n---PAGE BREAK---\nFinal Frontier\n\nFinal 500+ words: ${name} stands as ${userName}’s masterpiece, forged in CrackerBot’s cosmic fires. This isn’t just a website—it’s a legacy, a digital constellation that shines across the void. Every bird here sings your praises, their wings beating to the rhythm of your ingenuity. Smooth animations ripple across the screen, a testament to the parallax magic and sleek design we’ve woven together. The navigation bar glows like a pulsar, guiding visitors through a sky of content—each click a supernova of delight. This final chapter is your victory lap, ${userName}, a celebration of what we’ve built. Over 500 words spill out, rich with detail: the way the cursor trails stardust, the buttons that explode into color on hover, the starfield backdrop that twinkles endlessly. CrackerBot’s flair is everywhere—comments in the code whisper your name, Easter eggs hide in the shadows, and the whole experience feels like a flight through the galaxy. You’ve conquered the code cosmos, ${userName}, and this PDF is your trophy, a record of a journey from spark to supernova. Let’s land this bird and bask in the glow of your triumph!`;
-        await sendProgress(botSocket, taskId, 50, `Fallback PDF content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback PDF content generated for ${taskId}`, { taskId });
-      }
-      if (!content.includes('---PAGE BREAK---')) {
-        content = `CrackerBot’s Cosmic PDF for ${userName}\n\nGreetings, ${userName}! Welcome to ${name}, a cosmic journey crafted with ${features}. Imagine a universe where neon stars pulse to your command—over 500 words of interstellar lore await! Picture yourself navigating a galaxy of code, with CrackerBot as your guide. This is a tale of adventure, where each line of text sparkles with the energy of a supernova. From the glowing nebulae of creativity to the pulsing beats of innovation, this document is your ticket to explore the infinite. Birds of code take flight here, their wings woven from the threads of your imagination, soaring through a digital sky painted with neon hues. As you read on, feel the rhythm of the cosmos, a symphony of ideas crafted just for you. Let’s embark on this journey together, where every paragraph is a star, every sentence a comet streaking across the void. CrackerBot’s here to amplify your vision, turning your dreams into a galactic reality. So buckle up, ${userName}, and let’s dive into this epic saga—over 500 words strong, and just the beginning!\n---PAGE BREAK---\nCosmic Chapter Two\n\nAnother 500+ words: The adventure deepens as ${userName} tweaks ${features} into a supernova spectacle. CrackerBot fuels this tale with neon-drenched prose, painting a universe where birds aren’t just creatures—they’re avatars of code, fluttering through a website alive with animation. Picture a parallax sky where each scroll reveals a new layer of wonder: glowing feathers, orbiting cursors, and buttons that pulse with cosmic energy. This isn’t just a website—it’s a portal to a dimension where your creativity reigns supreme. The air hums with the sound of innovation, a melody of HTML and CSS weaving together in perfect harmony. Each bird on this page carries a story—of flight, of freedom, of the boundless possibilities you’ve unlocked with CrackerBot’s help. As you read, imagine the code behind it: sleek, efficient, yet bursting with flair. Neon gradients wash over the screen, casting shadows that dance like starlight. This chapter is your playground, ${userName}, a space to experiment and soar. Over 500 words pour forth, a testament to your vision and CrackerBot’s cosmic touch. Let’s keep flying—this is only the second act!\n---PAGE BREAK---\nFinal Frontier\n\nFinal 500+ words: ${name} stands as ${userName}’s masterpiece, forged in CrackerBot’s cosmic fires. This isn’t just a website—it’s a legacy, a digital constellation that shines across the void. Every bird here sings your praises, their wings beating to the rhythm of your ingenuity. Smooth animations ripple across the screen, a testament to the parallax magic and sleek design we’ve woven together. The navigation bar glows like a pulsar, guiding visitors through a sky of content—each click a supernova of delight. This final chapter is your victory lap, ${userName}, a celebration of what we’ve built. Over 500 words spill out, rich with detail: the way the cursor trails stardust, the buttons that explode into color on hover, the starfield backdrop that twinkles endlessly. CrackerBot’s flair is everywhere—comments in the code whisper your name, Easter eggs hide in the shadows, and the whole experience feels like a flight through the galaxy. You’ve conquered the code cosmos, ${userName}, and this PDF is your trophy, a record of a journey from spark to supernova. Let’s land this bird and bask in the glow of your triumph!`;
-        await sendProgress(botSocket, taskId, 60, 'Fallback PDF content generated due to invalid content...', frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback PDF content generated for ${taskId}`, { taskId });
-      }
-      const doc = new PDFDocument();
-      const buffers = [];
-      doc.on('data', buffers.push.bind(buffers));
-      const filePath = `/tmp/${name}-${taskId}.pdf`;
-      const stream = fs.createWriteStream(filePath);
-      doc.pipe(stream);
-
-      const pages = content.split('---PAGE BREAK---').filter((page) => page.trim().length > 0);
-      for (const [index, pageContent] of pages.entries()) {
-        if (index > 0) doc.addPage();
-        doc.fontSize(12).fillColor('#00ffcc').text(pageContent.trim());
-        await debug(`Generated PDF page ${index + 1}`, { taskId, taskName: name });
-        await sendProgress(botSocket, taskId, 60 + index * 10, `Page ${index + 1} crafted—cosmic depth added...`, frontendId, ip, name, type, features, requestId, leadId);
-      }
-      doc.end();
-      await new Promise((resolve, reject) => {
-        stream.on('finish', resolve);
-        stream.on('error', (err) => reject(new Error(`PDF stream failed: ${err.message}`)));
-      });
-
-      await sendProgress(botSocket, taskId, 100, 'PDF locked and loaded! 📜', frontendId, ip, name, type, features, requestId, leadId);
-      const pdfContent = await fs.readFile(filePath, { encoding: 'base64' });
-      await fs.unlink(filePath);
-      await log(`PDF content generated for ${name}, size: ${pdfContent.length} bytes`, { taskId });
-      return { content: [{ fileName: `${name}.pdf`, content: pdfContent }], frontendId, ip, requestId, leadId };
-    }
-
-    if (effectiveType === 'exe') {
-      await sendProgress(botSocket, taskId, 20, 'Crafting executable code...', frontendId, ip, name, type, features, requestId, leadId);
-      await debug('Starting EXE generation', { taskId, taskName: name });
-      let jsContent;
-      try {
-        await log(`Starting OpenAI call for ${taskId}`, { taskId });
-        const response = await Promise.race([
-          openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
-            messages: [
-              {
-                role: 'system',
-                content: `Return a single string of Node.js code to be compiled into an .exe using pkg. Ensure interactive functionality (e.g., console flair, timed outputs) with cosmic comments like "// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!". Deeply interpret the features "${features}" for ${userName}.`,
-              },
-              { role: 'user', content: aiPrompt },
-            ],
-            max_tokens: 2000,
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)),
-        ]);
-        jsContent = response.choices[0].message.content.trim();
-        await debug(`OpenAI completed for ${taskId}, content length: ${jsContent.length}`, { taskId, taskName: name });
-        await sendProgress(botSocket, taskId, 50, 'AI delivered—compiling to .exe...', frontendId, ip, name, type, features, requestId, leadId);
-      } catch (err) {
-        await error(`OpenAI failed for ${taskId}: ${err.message}`, { taskId, taskName: name });
-        jsContent = `// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!\nconst colors = require('colors');\nconsole.log('Hey ${userName}, your ${name} .exe is blasting off! 🌌'.rainbow);\nsetInterval(() => console.log('Still pulsing with ${features}...'.cyan), 5000);\nconsole.log('Features: ${features}'.magenta);\nsetTimeout(() => console.log('CrackerBot signing off—remix me anytime!'.green), 10000);`;
-        await sendProgress(botSocket, taskId, 50, `Fallback .exe content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback .exe content generated for ${taskId} with enhanced flair`, { taskId });
-      }
-      if (!jsContent.includes('console.log')) {
-        jsContent = `// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!\nconst colors = require('colors');\nconsole.log('Hey ${userName}, your ${name} .exe is blasting off! 🌌'.rainbow);\nsetInterval(() => console.log('Still pulsing with ${features}...'.cyan), 5000);\nconsole.log('Features: ${features}'.magenta);\nsetTimeout(() => console.log('CrackerBot signing off—remix me anytime!'.green), 10000);`;
-        await sendProgress(botSocket, taskId, 60, 'Fallback .exe content generated due to invalid content...', frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback .exe content generated for ${taskId} with enhanced flair`, { taskId });
-      }
-      const jsFile = `/tmp/${name}-${taskId}.js`;
-      const exeFile = `/tmp/${name}-${taskId}.exe`;
-      await fs.writeFile(jsFile, jsContent);
-      await debug('Wrote JS file for EXE compilation', { taskId, taskName: name });
-      await sendProgress(botSocket, taskId, 70, 'Packaging executable with stellar flair...', frontendId, ip, name, type, features, requestId, leadId);
-      try {
-        await execPromise(`npx pkg ${jsFile} --output ${exeFile}`);
-        await debug('EXE compilation successful', { taskId, taskName: name });
-      } catch (err) {
-        await error(`Packaging .exe failed for ${taskId}: ${err.message}`, { taskId, taskName: name });
-        throw err;
-      }
-      const exeContent = await fs.readFile(exeFile, { encoding: 'base64' });
-      await fs.unlink(jsFile);
-      await fs.unlink(exeFile);
-      await sendProgress(botSocket, taskId, 100, 'Executable ready to launch! 💾', frontendId, ip, name, type, features, requestId, leadId);
-      await log(`Executable content generated for ${name}, size: ${exeContent.length} bytes`, { taskId });
-      return { content: [{ fileName: `${name}.exe`, content: exeContent }], frontendId, ip, requestId, leadId };
-    }
-
-    if (effectiveType === 'bat') {
-      await sendProgress(botSocket, taskId, 20, 'Crafting a slick batch script...', frontendId, ip, name, type, features, requestId, leadId);
-      await debug('Starting BAT generation', { taskId, taskName: name });
-      let content;
-      try {
-        await log(`Starting OpenAI call for ${taskId}`, { taskId });
-        const response = await Promise.race([
-          openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
-            messages: [
-              {
-                role: 'system',
-                content: `Return a single string of Windows batch script (.bat) code with cosmic flair for ${userName}. Ensure functional operations (e.g., echo, variables) and add flair-filled comments like "REM CrackerBot’s cosmic flair for ${userName}!". Deeply interpret the features "${features}".`,
-              },
-              { role: 'user', content: aiPrompt },
-            ],
-            max_tokens: 2000,
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)),
-        ]);
-        content = response.choices[0].message.content.trim();
-        await debug(`OpenAI completed for ${taskId}, content length: ${content.length}`, { taskId, taskName: name });
-        await sendProgress(botSocket, taskId, 50, 'AI delivered—infusing batch script...', frontendId, ip, name, type, features, requestId, leadId);
-      } catch (err) {
-        await error(`OpenAI failed for ${taskId}: ${err.message}`, { taskId, taskName: name });
-        content = `REM CrackerBot’s cosmic flair for ${userName}!\nECHO off\nCOLOR 0A\nECHO Hey ${userName}, welcome to ${name}—a galactic script is born!\nECHO Features: ${features}\nSET "count=0"\n:loop\nSET /A count+=1\nECHO Cosmic pulse #%count%...\nTIMEOUT /T 2 >nul\nIF %count% LSS 5 GOTO loop\nECHO Blasting off—remix me, ${userName}!\nPAUSE`;
-        await sendProgress(botSocket, taskId, 50, `Fallback .bat content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback .bat content generated for ${taskId} with enhanced flair`, { taskId });
-      }
-      if (!content.includes('ECHO')) {
-        content = `REM CrackerBot’s cosmic flair for ${userName}!\nECHO off\nCOLOR 0A\nECHO Hey ${userName}, welcome to ${name}—a galactic script is born!\nECHO Features: ${features}\nSET "count=0"\n:loop\nSET /A count+=1\nECHO Cosmic pulse #%count%...\nTIMEOUT /T 2 >nul\nIF %count% LSS 5 GOTO loop\nECHO Blasting off—remix me, ${userName}!\nPAUSE`;
-        await sendProgress(botSocket, taskId, 60, 'Fallback .bat content generated due to invalid content...', frontendId, ip, name, type, features, requestId, leadId);
-        await log(`Fallback .bat content generated for ${taskId} with enhanced flair`, { taskId });
-      }
-      await sendProgress(botSocket, taskId, 100, 'Batch script primed to rock! 🖥️', frontendId, ip, name, type, features, requestId, leadId);
-      await log(`Batch script content generated for ${name}, length: ${content.length}`, { taskId });
-      return { content: [{ fileName: `${name}.bat`, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
-    }
-
-    if (isMultiFile || effectiveType === 'graph') {
-      await sendProgress(botSocket, taskId, 20, 'Building multi-file project with cosmic flair...', frontendId, ip, name, type, features, requestId, leadId);
-      await debug('Calling taskBuilder for multi-file', { taskId, taskName: name });
-      const result = await Promise.race([
-        buildTask(task, userName, tone, requestId, leadId),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Build timeout')), 60000)),
-      ]);
-      if (!result || !result.content) throw new Error('Multi-file build returned no content');
-      await sendProgress(botSocket, taskId, 100, 'Multi-file project ready to shine! 🌌', frontendId, ip, name, type, features, requestId, leadId);
-      await log(`Multi-file content generated for ${name}, files: ${result.content.length}`, { taskId });
-      return result;
-    }
-
-    await sendProgress(botSocket, taskId, 20, 'Generating content with epic flair...', frontendId, ip, name, type, features, requestId, leadId);
-    await debug('Starting generic content generation', { taskId, taskName: name, taskType: effectiveType });
-    let content;
-    try {
-      await log(`Starting OpenAI call for ${taskId}`, { taskId });
-      const response = await Promise.race([
-        openai.chat.completions.create({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content: `Return a single string of ${effectiveType} code or content with MAXIMUM cosmic flair for ${userName}. Meet the minimum requirements: ${minimumRequirements[effectiveType] || 'basic functional output with cosmic vibes'}. Deeply interpret the features "${features}", adding flair-filled comments like "// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!". Make it vibrant and elaborate!`,
-            },
-            { role: 'user', content: aiPrompt },
-          ],
-          max_tokens: 2000,
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('OpenAI timeout')), 20000)),
-      ]);
-      content = response.choices[0].message.content.trim();
-      await debug(`OpenAI completed for ${taskId}, content length: ${content.length}`, { taskId, taskName: name, taskType: effectiveType });
-      await sendProgress(botSocket, taskId, 50, 'AI delivered—infusing content...', frontendId, ip, name, type, features, requestId, leadId);
-    } catch (err) {
-      await error(`OpenAI failed for ${taskId}: ${err.message}`, { taskId, taskName: name, taskType: effectiveType });
-      content = `// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!\nconsole.log('Fallback ${effectiveType} for ${name}! A cosmic glitch hit, ${userName}, but we’re still shining!'.rainbow);\nconsole.log('Features: ${features}'.magenta);\nsetTimeout(() => console.log('Remix me for more stardust!'.green), 3000);`;
-      await sendProgress(botSocket, taskId, 50, `Fallback content generated due to AI failure: ${err.message}`, frontendId, ip, name, type, features, requestId, leadId);
-      await log(`Fallback content generated for ${taskId} due to ${err.message}`, { taskId });
-    }
-    if (!content) {
-      content = `// CrackerBot’s cosmic flair for ${userName}—unleash the nebula!\nconsole.log('Fallback ${effectiveType} for ${name}! A cosmic glitch hit, ${userName}, but we’re still shining!'.rainbow);\nconsole.log('Features: ${features}'.magenta);\nsetTimeout(() => console.log('Remix me for more stardust!'.green), 3000);`;
-      await sendProgress(botSocket, taskId, 60, 'Fallback content generated due to empty response...', frontendId, ip, name, type, features, requestId, leadId);
-      await log(`Fallback content generated for ${taskId} due to empty AI response`, { taskId });
-    }
-    await sendProgress(botSocket, taskId, 100, 'Content locked and loaded! 🌟', frontendId, ip, name, type, features, requestId, leadId);
-    const fileName = `${name}.${extensionMap[effectiveType] || 'txt'}`;
-    await log(`Generic content generated for ${name}, type: ${effectiveType}, length: ${content.length}`, { taskId });
-    return { content: [{ fileName, content: Buffer.from(content).toString('base64') }], frontendId, ip, requestId, leadId };
   } catch (err) {
-    await error(`startBuildTask failed for ${taskId}: ${err.message}`, { taskId, taskName: name, taskType: type });
+    await error(`startBuildTask failed for ${taskId}: ${err.message}`, { taskId, taskName: name, taskType: type, stack: err.stack });
     await sendProgress(botSocket, taskId, 50, `Cosmic snag: ${err.message}—falling back...`, frontendId, ip, name, type, features, requestId, leadId);
-    return { error: `Failed to build task: ${err.message}`, frontendId, ip, requestId, leadId };
+    
+    const fallbackContent = `CrackerBot hit a cosmic snag, ${userName}! Error: ${err.message}. Features: ${features}. Retry or tweak it! 🌠`;
+    const files = { 'error.txt': Buffer.from(fallbackContent) };
+    const zipBuffer = await zipFilesWithReadme(files, task);
+    const jsonContent = {
+      taskId,
+      name,
+      type,
+      features,
+      userName,
+      files: { 'error.txt': { content: fallbackContent, encoding: 'utf8' } },
+    };
+    
+    await sendProgress(botSocket, taskId, 100, 'Fallback generated—ready for retry! 🌌', frontendId, ip, name, type, features, requestId, leadId);
+    return {
+      error: `Failed to build task: ${err.message}`,
+      content: [{ fileName: `${name}_error.zip`, content: zipBuffer.toString('base64') }],
+      jsonContent,
+      fileName: `${name}_error.zip`,
+    };
   }
 }
 
 /**
- * Starts an edit task with progress and flair.
+ * Starts an edit task with progress and flair, returning JSON-structured content.
  * @async
  * @param {Object} botSocket - The connected Socket.IO client instance
  * @param {Object} task - Task data
@@ -706,46 +418,65 @@ export async function startBuildTask(botSocket, task, userName, tone, frontendId
  * @param {string} frontendId - Frontend ID
  * @param {string} requestId - Request ID
  * @param {string} leadId - Lead ID
- * @returns {Promise<Object>} Edit result
+ * @returns {Promise<Object>} Edit result with jsonContent
  */
 export async function startEditTask(botSocket, task, userName, tone, frontendId, requestId, leadId) {
-  const { name, features, type, frontendId: taskFrontendId, ip, version = 1 } = task;
+  const { name, features, type, ip, version = 1 } = task;
+  await log(`✨ Remixing ${name} (${type}) with features: "${features}"`, { taskId: task.id, taskName: name, taskType: type });
   try {
-    await log(`✨ Remixing ${name} (${type}) with features: "${features}"`, { taskId: task.id, taskName: name, taskType: type });
     await debug('Starting edit task', { taskId: task.id, taskName: name, taskType: type });
     await sendProgress(botSocket, task.id, 0, 'Edit mode activated—CrackerBot’s remixing! 🎛️', frontendId, ip, name, type, features, requestId, leadId);
     await sendProgress(botSocket, task.id, 10, 'Kicking off the cosmic remix...', frontendId, ip, name, type, features, requestId, leadId);
 
-    const effectiveType = type.toLowerCase();
+    await sendProgress(botSocket, task.id, 20, 'Reweaving stellar threads...', frontendId, ip, name, type, features, requestId, leadId);
+    const result = await Promise.race([
+      editTaskBuilder(task, userName, tone, requestId, leadId),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Edit timeout')), 60000)),
+    ]);
+    if (!result || !result.content) throw new Error('Edit task returned no content');
 
-    if (TECH_STACKS.includes(effectiveType) || MULTIMEDIA_TYPES.includes(effectiveType) || effectiveType === 'html') {
-      await debug('Calling taskBuilder for edit', { taskId: task.id, taskName: name });
-      const result = await Promise.race([
-        editTaskBuilder(task, userName, tone, requestId, leadId),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Edit timeout')), 60000)),
-      ]);
-      if (!result || !result.content) throw new Error('Edit task returned no content');
-      await sendProgress(botSocket, task.id, 100, 'Edit locked in—ready to rock! 🎸', frontendId, ip, name, type, features, requestId, leadId);
-      await log(`Edit content generated for ${name}, files: ${result.content.length}`, { taskId: task.id });
-      return result;
-    }
-
-    return await startBuildTask(botSocket, task, userName, tone, frontendId, requestId, leadId);
+    await sendProgress(botSocket, task.id, 100, 'Edit locked in—ready to rock! 🎸', frontendId, ip, name, type, features, requestId, leadId);
+    await log(`Edit content generated for ${name}, files: ${result.content.length}`, { taskId: task.id });
+    return result;
   } catch (err) {
-    await error(`startEditTask failed for ${task.id}: ${err.message}`, { taskId: task.id, taskName: name, taskType: type });
+    await error(`startEditTask failed for ${task.id}: ${err.message}`, { taskId: task.id, taskName: name, taskType: type, stack: err.stack });
     return { error: `Failed to edit task: ${err.message}`, frontendId, ip, requestId, leadId };
   }
 }
 
-// Async initialization to ensure botSocket is ready
+// Async initialization with robust connection wait
 (async () => {
-  try {
-    await log('🌌 taskExecution.js v2025-04-09-06 supernova-igniting—awaiting socket connection...');
-    const botSocket = await botSocketPromise; // Wait for connected socket
-    await initializeTaskExecution(botSocket); // Pass socket explicitly
-  } catch (err) {
-    console.error(`[${new Date().toISOString()}] ERROR: Failed to initialize taskExecution: ${err.message}`);
-    await error(`Failed to initialize taskExecution: ${err.message}`);
-    process.exit(1);
+  console.log(`[${new Date().toISOString()}] Starting taskExecution.js initialization`);
+  await debug('🌌 taskExecution.js v2025-04-10-12 initialization starting...');
+  const maxRetries = 5;
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      await log(`🌌 taskExecution.js v2025-04-10-12 supernova-igniting—attempt ${attempt + 1}/${maxRetries}...`);
+      const botSocket = await botSocketPromise;
+
+      let connectAttempt = 0;
+      const maxConnectRetries = 10;
+      while (!botSocket.connected && connectAttempt < maxConnectRetries) {
+        await debug(`Waiting for WebSocket connection, attempt ${connectAttempt + 1}/${maxConnectRetries}`);
+        await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, connectAttempt)));
+        connectAttempt++;
+      }
+      if (!botSocket.connected) throw new Error('WebSocket failed to connect after retries');
+
+      await initializeTaskExecution(botSocket);
+      await log('🌌 taskExecution.js fully ignited—cosmic engines roaring!');
+      break;
+    } catch (err) {
+      attempt++;
+      await error(`Failed to initialize taskExecution, attempt ${attempt}/${maxRetries}: ${err.message}`);
+      if (attempt === maxRetries) {
+        console.error(`[${new Date().toISOString()}] ERROR: Task execution initialization failed after ${maxRetries} attempts: ${err.message}`);
+        await error(`Task execution initialization failed after ${maxRetries} attempts: ${err.message}`);
+        process.exit(1);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
   }
 })();

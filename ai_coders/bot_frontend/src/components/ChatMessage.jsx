@@ -1,6 +1,6 @@
 /* CrackerBot’s cosmic messenger—delivering supernova chats with flair and precision! 🌌
  * Enhanced by xAI for static AI responses, robust user name handling, and cosmic interactivity.
- * Version: v2025-04-06-12
+ * Version: v2025-04-10-14
  */
 
 import React, { Component } from 'react';
@@ -28,11 +28,9 @@ class ChatMessage extends Component {
     const { message, progress } = this.props;
     const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
     console.log(`[${new Date().toISOString()}] 🌠 ChatMessage mounted: ${JSON.stringify(msg)}`);
-    if (msg.type === 'progressUpdate' && msg.taskId && msg.progress !== undefined) {
-      this.setState({ taskProgress: msg.progress });
-      console.log(`[${new Date().toISOString()}] 🌟 Initial progress set for task ${msg.taskId}: ${msg.progress}%`);
-    } else if (progress !== undefined && msg.taskId) {
-      this.setState({ taskProgress: progress });
+    if (msg.type === 'progressUpdate' || msg.type === 'building') {
+      this.setState({ taskProgress: progress !== undefined ? progress : msg.progress || 0 });
+      console.log(`[${new Date().toISOString()}] 🌟 Initial progress set for task ${msg.taskId}: ${this.state.taskProgress}%`);
     }
   }
 
@@ -40,11 +38,10 @@ class ChatMessage extends Component {
     const { message, progress } = this.props;
     const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
     if (prevProps.progress !== progress || prevProps.message.progress !== msg.progress) {
-      if (msg.type === 'progressUpdate' && msg.taskId && msg.progress !== undefined) {
-        this.setState({ taskProgress: msg.progress });
-        console.log(`[${new Date().toISOString()}] 🌟 Progress updated for task ${msg.taskId}: ${msg.progress}%`);
-      } else if (progress !== undefined && msg.taskId) {
-        this.setState({ taskProgress: progress });
+      if (msg.type === 'progressUpdate' || msg.type === 'building') {
+        const newProgress = progress !== undefined ? progress : msg.progress || 0;
+        this.setState({ taskProgress: newProgress });
+        console.log(`[${new Date().toISOString()}] 🌟 Progress updated for task ${msg.taskId}: ${newProgress}%`);
       }
     }
   }
@@ -74,40 +71,39 @@ class ChatMessage extends Component {
   };
 
   renderProgressBar = () => {
-    const { message, progress } = this.props;
+    const { message } = this.props;
     const { taskProgress } = this.state;
     const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
-    const hasProgress = taskProgress !== null;
-    const progressValue = taskProgress !== null ? taskProgress : msg.progress || progress;
+    const hasProgress = taskProgress !== null && (msg.type === 'building' || msg.type === 'progressUpdate');
 
-    if (!hasProgress || progressValue === undefined) {
+    if (!hasProgress) {
       console.log(`[${new Date().toISOString()}] Skipping progress bar—no cosmic construction for ${msg.taskId || 'unknown'}`);
       return null;
     }
 
-    const clampedProgress = Math.min(Math.max(progressValue, 0), 100);
+    const clampedProgress = Math.min(Math.max(taskProgress, 0), 100);
     const isComplete = clampedProgress === 100;
     const gradient = isComplete
       ? 'linear-gradient(to right, #00ff9f, #ff00ff, #00ffff)'
-      : `linear-gradient(to right, #ff00ff 0%, #00ffff 50%, #00ff9f ${clampedProgress}%, #333333 ${clampedProgress}% 100%)`;
+      : `linear-gradient(to right, #ff0066 0%, #ffcc00 ${clampedProgress}%, #333333 ${clampedProgress}% 100%)`;
 
     return (
-      <div className="progress-bar-container mt-2 w-full max-w-md">
+      <div className="progress-bar-container mt-2 w-full max-w-lg">
         <div
-          className="progress-bar h-4 rounded-full shadow-[0_0_15px_#00ff9f] bg-gray-900 overflow-hidden relative"
-          style={{ width: '100%', transition: 'all 0.7s ease-in-out' }}
+          className="progress-bar h-3 rounded-full bg-gray-900 overflow-hidden relative border border-[#ff00ff]"
+          style={{ transition: 'all 0.5s ease-in-out' }}
         >
           <div
             className={`progress-fill h-full absolute top-0 left-0 ${isComplete ? 'animate-glow' : 'animate-pulse'}`}
             style={{
               width: `${clampedProgress}%`,
               background: gradient,
-              boxShadow: '0 0 20px rgba(0, 255, 159, 0.9)',
+              boxShadow: '0 0 15px rgba(255, 0, 102, 0.9)',
             }}
           />
         </div>
-        <span className="text-sm mt-1 block text-center font-mono text-[#00ff9f]">
-          {clampedProgress}% - {isComplete ? 'Cosmic Build Complete! 🌟' : 'Warping Through Hyperspace! 🚀'}
+        <span className="text-sm mt-1 block text-center font-mono text-[#ffcc00]">
+          {clampedProgress}% - {isComplete ? 'Supernova Complete! 🌟' : 'Forging Cosmic Brilliance! 🚀'}
         </span>
       </div>
     );
@@ -135,17 +131,17 @@ class ChatMessage extends Component {
           <a
             href={downloadLink}
             download={fileName}
-            className={`${colorScheme.accent || 'text-[#00ff9f]'} px-5 py-2 rounded-full hover:underline hover:text-[#00ff9f] transition-all duration-300 font-semibold tracking-wider border-2 border-[#ff00ff] shadow-[0_0_15px_#ff00ff]`}
+            className={`${colorScheme.accent || 'text-[#00ff9f]'} px-6 py-2 rounded-full bg-gradient-to-r from-[#ff0066] to-[#ffcc00] hover:from-[#ff3399] hover:to-[#ffdd33] text-white font-semibold tracking-wider border-2 border-[#00ff9f] shadow-[0_0_15px_#ffcc00] hover:shadow-[0_0_25px_#ffcc00] transition-all duration-300`}
           >
-            Download 🌠
+            Snag Cosmic Loot 🌠
           </a>
         )}
         {hasContent && (
           <button
             onClick={this.handlePreviewClick}
-            className={`${colorScheme.button || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} ${colorScheme.buttonText || 'text-white'} px-5 py-2 rounded-full hover:scale-110 hover:shadow-[0_0_20px_#00ff9f] transition-all duration-300 border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]`}
+            className={`${colorScheme.button || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} ${colorScheme.buttonText || 'text-white'} px-6 py-2 rounded-full hover:scale-105 hover:shadow-[0_0_20px_#00ff9f] transition-all duration-300 border-2 border-[#ff00ff] shadow-[0_0_15px_#ff00ff]`}
           >
-            Preview 🚀
+            Warp Preview 🚀
           </button>
         )}
       </div>
@@ -176,7 +172,7 @@ class ChatMessage extends Component {
                     console.warn(`[${new Date().toISOString()}] onOptionClick is not defined for option: ${text}`);
                   }
                 }}
-                className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-lg hover:scale-105 hover:shadow-[0_0_15px_#00ff9f] transition-all duration-300 border-2 border-[#00ff9f]`}
+                className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-lg hover:scale-105 hover:shadow-[0_0_15px_#ffcc00] transition-all duration-300 border-2 border-[#ffcc00]`}
               >
                 {text}
               </button>
@@ -186,7 +182,7 @@ class ChatMessage extends Component {
       );
     } catch (err) {
       console.error(`[${new Date().toISOString()}] ⚠️ Error rendering options: ${err.message}`);
-      return <p className="text-red-500">Error rendering options: {err.message}</p>;
+      return <p className="text-red-500">Error rendering options: ${err.message}</p>;
     }
   };
 
@@ -231,7 +227,7 @@ class ChatMessage extends Component {
     if (hasError) {
       return (
         <div className="chat-message text-white bg-red-900 p-4 rounded-lg shadow-lg">
-          <p>⚠️ Cosmic Transmission Error: {errorMessage}</p>
+          <p>⚠️ Cosmic Transmission Error: ${errorMessage}</p>
         </div>
       );
     }
@@ -245,6 +241,8 @@ class ChatMessage extends Component {
             ? 'linear-gradient(135deg, #ffcc00, #ff6600)'
             : msg.type === 'progressUpdate'
             ? 'linear-gradient(135deg, #ff0066, #ffcc00)'
+            : msg.type === 'building'
+            ? 'linear-gradient(135deg, #ffcc00, #ff6600)'
             : msg.type === 'taskResult' || msg.type === 'question'
             ? 'linear-gradient(135deg, #00ff99, #0066ff)'
             : 'linear-gradient(135deg, #ff00cc, #3333ff)',
@@ -258,6 +256,8 @@ class ChatMessage extends Component {
         ? colorScheme.system || 'text-[#ffcc00]'
         : msg.type === 'progressUpdate'
         ? `${colorScheme.bot || 'text-[#ff00cc]'} progress-message`
+        : msg.type === 'building'
+        ? `${colorScheme.bot || 'text-[#ffcc00]'} building-message`
         : msg.type === 'taskResult' || msg.type === 'question'
         ? `${colorScheme.bot || 'text-[#00ff99]'} cosmic-result`
         : colorScheme.bot || 'text-[#ff00cc]'
@@ -271,8 +271,8 @@ class ChatMessage extends Component {
         style={{
           background: bubbleStyle.background,
           color: bubbleStyle.color,
-          border: '2px solid #00ff9f',
-          boxShadow: '0 0 15px rgba(0, 255, 159, 0.5)',
+          border: '2px solid #ffcc00',
+          boxShadow: '0 0 15px rgba(255, 204, 0, 0.5)',
         }}
         data-user={msg.user}
       >

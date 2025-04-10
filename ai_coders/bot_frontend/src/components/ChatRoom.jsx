@@ -2,7 +2,7 @@
  * Where interstellar ideas ignite and soar across the galaxy with supernova flair!
  * Enhanced by xAI for distinct user/project names, Redis caching, seamless task flow, and robust deduplication.
  *
- * @version 2025-04-09-10
+ * @version 2025-04-10-16
  * @author CrackerBot Team, enhanced by xAI
  * @module ChatRoom
  */
@@ -13,11 +13,15 @@ import ChatMessage from './ChatMessage.jsx';
 import PreviewPopup from './PreviewPopup.jsx';
 import { commands, colorSchemes } from '../config/chatConfig.js';
 
-/**
- * ErrorBoundary component to catch rendering errors in ChatMessage.
- * @param {Object} props - Component props
- * @param {React.ReactNode} props.children - Child components to render
- */
+// Singleton WebSocket instance
+const socketInstance = new WebSocketManager('wss://websocket-visually-sterling-spider.ngrok-free.app', {
+  onConnect: () => {},
+  onMessage: () => {},
+  onTyping: () => {},
+  onConnectError: () => {},
+  onDisconnect: () => {},
+});
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -45,17 +49,13 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-/**
- * Main ChatRoom component for CrackerBot’s cosmic interface.
- * @returns {JSX.Element} The rendered chatroom UI
- */
 export function ChatRoom() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [showCommands, setShowCommands] = useState(false);
   const [filteredCommands, setFilteredCommands] = useState(commands);
   const [commandIndex, setCommandIndex] = useState(-1);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(socketInstance.isConnected());
   const [isTyping, setIsTyping] = useState({});
   const [taskPending, setTaskPending] = useState(null);
   const [currentTask, setCurrentTask] = useState(null);
@@ -68,257 +68,261 @@ export function ChatRoom() {
   const [userName, setUserName] = useState(localStorage.getItem('crackerBotUserName') || 'Guest');
   const [messageIds, setMessageIds] = useState(new Set());
   const [persistentMessages, setPersistentMessages] = useState([]);
+  const [frontendId, setFrontendId] = useState(null);
 
   const chatContainerRef = useRef(null);
-  const socketRef = useRef(null);
+  const socketRef = useRef(socketInstance);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
   const recognitionRef = useRef(null);
   const canvasRef = useRef(null);
-  const frontendIdRef = useRef(null);
+  const initialLoadRef = useRef(true);
 
-  const WEBSOCKET_SERVER_URL = 'wss://websocket-visually-sterling-spider.ngrok-free.app';
+  const initializeSocketListeners = useCallback(() => {
+    socketRef.current.callbacks.onConnect = (id) => {
+      setFrontendId(id);
+      setIsConnected(true);
+      const connectMsg = {
+        id: `connect-${Date.now()}`,
+        from: 'System',
+        user: userName,
+        text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
+        type: 'system',
+        timestamp: new Date().toLocaleTimeString(),
+        bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
+      };
+      setMessages((prev) => {
+        const filteredPrev = prev.filter((msg) => msg.id !== connectMsg.id);
+        const initialMessages = [connectMsg, ...persistentMessages, ...filteredPrev];
+        setMessageIds(new Set(initialMessages.map(msg => msg.id)));
+        return initialMessages;
+      });
+      socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
+      socketRef.current.emit('frontend_connected', {
+        ip: window.location.hostname,
+        frontendId: id,
+        userName,
+        sessionId: localStorage.getItem('sessionId') || crypto.randomUUID(),
+      });
+    };
 
-  const initializeSocket = useCallback(() => {
-    if (socketRef.current) {
+    socketRef.current.callbacks.onMessage = (data) => {
+      if (data.frontendId && data.frontendId !== frontendId) return;
+
+      const messageId = data.messageId || `${data.taskId || Date.now()}-${data.type || 'unknown'}-${data.text?.slice(0, 50) || 'no-text'}`;
+      const isWelcome = data.taskId?.startsWith('initial') && (data.type === 'success' || data.type === 'question') && data.options?.includes('Chat');
+      const dedupeKey = isWelcome ? `${data.taskId}-welcome` : messageId;
+
+      if (messageIds.has(dedupeKey)) return;
+
+      setMessageIds((prevIds) => new Set(prevIds).add(dedupeKey));
+
+      const safeData = {
+        text: typeof data.text === 'string' ? data.text : 'No cosmic transmission received',
+        type: data.type || 'bot',
+        from: data.from || 'CrackerBot Prime',
+        taskId: data.taskId || null,
+        options: Array.isArray(data.options) ? data.options : [],
+        frontendId: data.frontendId || null,
+        ip: data.ip || 'unknown',
+        finalContent: data.finalContent || data.content || null,
+        downloadLink: data.downloadLink || null,
+        taskName: data.taskName || null,
+        taskType: data.taskType || null,
+        taskFeatures: data.taskFeatures || null,
+        projects: data.projects || null,
+        progress: typeof data.progress === 'number' ? data.progress : undefined,
+        bubbleStyle: data.bubbleStyle || {},
+        user: data.user || userName,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+
       try {
-        socketRef.current.disconnect();
-      } catch (err) {
-        console.log(`⚠️ Error cleaning up socket: ${err.message}`);
-      }
-    }
-    socketRef.current = new WebSocketManager(WEBSOCKET_SERVER_URL, {
-      onConnect: (id) => {
-        frontendIdRef.current = id;
-        setIsConnected(true);
-        setMessageIds(new Set());
-        setMessages(() => {
-          const connectMsg = {
-            id: 'connect-msg',
-            from: 'System',
-            user: userName,
-            text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
-            type: 'system',
-            timestamp: new Date().toLocaleTimeString(),
-            bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
-          };
-          const initialMessages = [connectMsg, ...persistentMessages];
-          setMessageIds(new Set(['connect-msg']));
-          return initialMessages;
-        });
-        socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
-        socketRef.current.emit('frontend_connected', { ip: window.location.hostname, frontendId: id, userName });
-      },
-      onMessage: (data) => {
-        if (data.frontendId && data.frontendId !== frontendIdRef.current) {
-          return;
+        if (safeData.type === 'success' && safeData.taskId?.startsWith('initial') && safeData.user !== 'Guest' && safeData.user !== userName) {
+          setUserName(safeData.user);
+          localStorage.setItem('crackerBotUserName', safeData.user);
         }
 
-        const messageId = data.messageId || `${data.taskId || Date.now()}-${data.type || 'unknown'}-${data.text?.slice(0, 50) || 'no-text'}`;
-        const isWelcome = data.taskId?.startsWith('initial') && (data.type === 'success' || data.type === 'question') && data.options?.includes('Chat');
-        const dedupeKey = isWelcome ? `${data.taskId}-welcome` : messageId;
-
-        if (messageIds.has(dedupeKey)) {
-          return;
-        }
-
-        setMessageIds((prevIds) => new Set(prevIds).add(dedupeKey));
-
-        const safeData = {
-          text: typeof data.text === 'string' ? data.text : 'No cosmic transmission received',
-          type: data.type || 'bot',
-          from: data.from || 'CrackerBot Prime',
-          taskId: data.taskId || null,
-          options: Array.isArray(data.options) ? data.options : [],
-          frontendId: data.frontendId || null,
-          ip: data.ip || 'unknown',
-          finalContent: data.finalContent || data.content || null,
-          downloadLink: data.downloadLink || null,
-          taskName: data.taskName || null,
-          taskType: data.taskType || null,
-          taskFeatures: data.taskFeatures || null,
-          projects: data.projects || null,
-          progress: typeof data.progress === 'number' ? data.progress : undefined,
-          bubbleStyle: data.bubbleStyle || {},
-          user: data.user || userName,
-          timestamp: new Date().toLocaleTimeString(),
+        const newMessage = {
+          id: dedupeKey,
+          from: safeData.from,
+          user: safeData.user,
+          text: safeData.text,
+          type: safeData.type,
+          finalContent: safeData.finalContent,
+          downloadLink: safeData.downloadLink,
+          taskId: safeData.taskId,
+          options: safeData.options,
+          timestamp: safeData.timestamp,
+          frontendId: safeData.frontendId,
+          taskName: safeData.taskName,
+          taskType: safeData.taskType,
+          taskFeatures: safeData.taskFeatures,
+          projects: safeData.projects,
+          progress: safeData.type === 'progressUpdate' ? safeData.progress : taskProgress[safeData.taskId],
+          isBuilding: safeData.type === 'building' || safeData.type === 'progressUpdate' || (safeData.taskId && taskProgress[safeData.taskId] < 100),
+          bubbleStyle: safeData.bubbleStyle,
         };
 
-        try {
-          if (safeData.type === 'success' && safeData.taskId?.startsWith('initial') && safeData.user !== 'Guest' && safeData.user !== userName) {
-            setUserName(safeData.user);
-            localStorage.setItem('crackerBotUserName', safeData.user);
-          }
+        setMessages((prev) => {
+          const updatedPrev = isWelcome && safeData.options.includes('Chat') && safeData.options.includes('Build-Something-Epic')
+            ? prev.filter((msg) => !msg.id.includes('welcome-choice'))
+            : prev;
 
-          const newMessage = {
-            id: dedupeKey,
-            from: safeData.from,
-            user: safeData.user,
-            text: safeData.text,
-            type: safeData.type,
-            finalContent: safeData.finalContent,
-            downloadLink: safeData.downloadLink,
-            taskId: safeData.taskId,
-            options: safeData.options,
-            timestamp: safeData.timestamp,
-            frontendId: safeData.frontendId,
-            taskName: safeData.taskName,
-            taskType: safeData.taskType,
-            taskFeatures: safeData.taskFeatures,
-            projects: safeData.projects,
-            progress: safeData.type === 'progressUpdate' ? safeData.progress : undefined,
-            isBuilding: safeData.type === 'building' || safeData.type === 'progressUpdate' || (safeData.taskId && taskProgress[safeData.taskId] < 100),
-            bubbleStyle: safeData.bubbleStyle,
-          };
-
-          setMessages((prev) => {
-            if (isWelcome && safeData.options.includes('Chat') && safeData.options.includes('Build-Something-Epic')) {
-              const filteredPrev = prev.filter((msg) => !msg.id.includes('welcome-choice'));
-              return [...filteredPrev, newMessage];
-            }
-
-            if (safeData.type === 'building' || safeData.type === 'progressUpdate') {
-              if (safeData.taskId) {
-                setTaskProgress((prevProgress) => ({
-                  ...prevProgress,
-                  [safeData.taskId]: safeData.progress || 0,
-                }));
-                const existingIdx = prev.findIndex((msg) => msg.taskId === safeData.taskId && (msg.type === 'building' || msg.type === 'progressUpdate'));
-                if (existingIdx >= 0) {
-                  const updatedMessages = [...prev];
-                  updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], ...newMessage };
-                  return updatedMessages;
-                }
+          if (safeData.type === 'building' || safeData.type === 'progressUpdate') {
+            if (safeData.taskId) {
+              setTaskProgress((prevProgress) => ({
+                ...prevProgress,
+                [safeData.taskId]: safeData.progress !== undefined ? safeData.progress : prevProgress[safeData.taskId] || 0,
+              }));
+              const existingIdx = updatedPrev.findIndex((msg) => msg.taskId === safeData.taskId && (msg.type === 'building' || msg.type === 'progressUpdate'));
+              if (existingIdx >= 0) {
+                const updatedMessages = [...updatedPrev];
+                updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], ...newMessage, progress: taskProgress[safeData.taskId] || safeData.progress || 0 };
+                return updatedMessages;
               }
             }
-
-            const updatedMessages = [...prev, newMessage];
-            if (safeData.type === 'question' && safeData.text.toLowerCase().includes('name below') ||
-                safeData.from === 'You') {
-              setPersistentMessages((prevPersistent) => {
-                const newPersistent = [...prevPersistent.filter((msg) => msg.id !== dedupeKey), newMessage];
-                return newPersistent;
-              });
-            }
-            return updatedMessages;
-          });
-
-          if (safeData.type === 'pending' && safeData.taskId) {
-            setCurrentTask((prev) => ({
-              taskId: safeData.taskId,
-              name: safeData.taskName || prev?.name || 'Unnamed Epic',
-              type: safeData.taskType || prev?.type || 'TBD',
-              features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
-              step: 'type',
-              taskStatus: 'pending',
-            }));
-          } else if (safeData.type === 'building' && safeData.taskId) {
-            setCurrentTask((prev) => ({
-              taskId: safeData.taskId,
-              name: safeData.taskName || prev?.name || 'Unnamed Epic',
-              type: safeData.taskType || prev?.type || 'TBD',
-              features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
-              step: 'building',
-              taskStatus: 'building',
-            }));
-            setTaskPending(null);
-          } else if (safeData.type === 'question') {
-            setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
-            setCurrentTask((prev) => {
-              const step = safeData.text.toLowerCase().includes('name below') ? 'name' :
-                safeData.text.toLowerCase().includes('chat') || safeData.text.toLowerCase().includes('build') ? 'choice' :
-                safeData.text.toLowerCase().includes('tech') ? 'type' :
-                safeData.text.toLowerCase().includes('features') ? 'pending_features' : 'review';
-              return {
-                taskId: safeData.taskId,
-                name: safeData.taskName || prev?.name || 'Unnamed Epic',
-                type: safeData.taskType || prev?.type || 'TBD',
-                features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
-                step,
-                taskStatus: 'pending',
-              };
-            });
-          } else if (safeData.type === 'taskResult') {
-            setTaskPending(null);
-            setCurrentTask((prev) => prev ? { ...prev, taskStatus: 'completed', name: safeData.taskName || prev.name, type: safeData.taskType, features: safeData.taskFeatures } : null);
-            setEditMode(null);
-            setTaskProgress((prev) => ({ ...prev, [safeData.taskId]: 100 }));
-          } else if (safeData.type === 'success' && !safeData.projects) {
-            setTaskPending(null);
-            if (safeData.taskId?.startsWith('initial')) {
-              setCurrentTask((prev) => prev ? { ...prev, step: 'choice' } : { step: 'choice', taskId: safeData.taskId });
-            } else {
-              setCurrentTask(null);
-            }
-            setEditMode(null);
-          } else if (safeData.type === 'error' && safeData.taskId) {
-            setTaskPending(null);
-            setCurrentTask((prev) => prev && prev.taskId === safeData.taskId ? { ...prev, taskStatus: 'error' } : null);
-            setEditMode(null);
-            setTaskProgress((prev) => {
-              const newProgress = { ...prev };
-              delete newProgress[safeData.taskId];
-              return newProgress;
-            });
           }
 
-          setIsTyping((prev) => ({ ...prev, [safeData.from]: false }));
-        } catch (err) {
-          setMessages((prev) => [
+          const updatedMessages = [...updatedPrev, newMessage];
+          if (safeData.type === 'question' || safeData.from === 'You') {
+            setPersistentMessages((prevPersistent) => {
+              const newPersistent = [...prevPersistent.filter((msg) => msg.id !== dedupeKey), newMessage];
+              return newPersistent;
+            });
+          }
+          return updatedMessages;
+        });
+
+        if (safeData.type === 'pending' && safeData.taskId) {
+          setCurrentTask((prev) => ({
+            taskId: safeData.taskId,
+            name: safeData.taskName || prev?.name || 'Unnamed Epic',
+            type: safeData.taskType || prev?.type || 'TBD',
+            features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+            step: 'type',
+            taskStatus: 'pending',
+          }));
+        } else if (safeData.type === 'building' && safeData.taskId) {
+          setCurrentTask((prev) => ({
+            taskId: safeData.taskId,
+            name: safeData.taskName || prev?.name || 'Unnamed Epic',
+            type: safeData.taskType || prev?.type || 'TBD',
+            features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+            step: 'building',
+            taskStatus: 'building',
+          }));
+          setTaskPending(null);
+        } else if (safeData.type === 'progressUpdate' && safeData.taskId) {
+          setTaskProgress((prev) => ({
             ...prev,
-            {
-              id: `${Date.now()}-error`,
-              from: 'System',
-              user: userName,
-              text: `Cosmic glitch processing message: ${err.message}`,
-              type: 'error',
-              timestamp: new Date().toLocaleTimeString(),
-              bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-            },
-          ]);
+            [safeData.taskId]: safeData.progress,
+          }));
+          setCurrentTask((prev) => prev?.taskId === safeData.taskId ? { ...prev, taskStatus: 'building' } : prev);
+        } else if (safeData.type === 'question') {
+          setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
+          setCurrentTask((prev) => {
+            const step = safeData.text.toLowerCase().includes('name below') ? 'name' :
+              safeData.text.toLowerCase().includes('chat') || safeData.text.toLowerCase().includes('build') ? 'choice' :
+              safeData.text.toLowerCase().includes('tech') ? 'type' :
+              safeData.text.toLowerCase().includes('features') ? 'pending_features' : 'review';
+            return {
+              taskId: safeData.taskId,
+              name: safeData.taskName || prev?.name || 'Unnamed Epic',
+              type: safeData.taskType || prev?.type || 'TBD',
+              features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+              step,
+              taskStatus: 'pending',
+            };
+          });
+        } else if (safeData.type === 'taskResult') {
+          setTaskPending(null);
+          setCurrentTask((prev) => prev ? { ...prev, taskStatus: 'completed', name: safeData.taskName || prev.name, type: safeData.taskType, features: safeData.taskFeatures } : null);
+          setEditMode(null);
+          setTaskProgress((prev) => ({ ...prev, [safeData.taskId]: 100 }));
+        } else if (safeData.type === 'success' && !safeData.projects) {
+          setTaskPending(null);
+          if (safeData.taskId?.startsWith('initial')) {
+            setCurrentTask((prev) => prev ? { ...prev, step: 'choice' } : { step: 'choice', taskId: safeData.taskId });
+          } else {
+            setCurrentTask(null);
+          }
+          setEditMode(null);
+        } else if (safeData.type === 'error' && safeData.taskId) {
+          setTaskPending(null);
+          setCurrentTask((prev) => prev && prev.taskId === safeData.taskId ? { ...prev, taskStatus: 'error' } : null);
+          setEditMode(null);
+          setTaskProgress((prev) => {
+            const newProgress = { ...prev };
+            delete newProgress[safeData.taskId];
+            return newProgress;
+          });
         }
-      },
-      onConnectError: (error) => {
+
+        setIsTyping((prev) => ({ ...prev, [safeData.from]: false }));
+      } catch (err) {
         setMessages((prev) => [
           ...prev,
           {
             id: `${Date.now()}-error`,
             from: 'System',
             user: userName,
-            text: `Signal snag: ${error.message}—retrying warp connection! ⚡️`,
+            text: `Cosmic glitch processing message: ${err.message}`,
             type: 'error',
             timestamp: new Date().toLocaleTimeString(),
             bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
           },
         ]);
-        setIsConnected(false);
-      },
-      onDisconnect: (reason) => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-disconnect`,
-            from: 'System',
-            user: userName,
-            text: `Cosmic link severed: ${reason}—realigning soon! 💥`,
-            type: 'error',
-            timestamp: new Date().toLocaleTimeString(),
-            bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-          },
-        ]);
-        setIsConnected(false);
-        setMessageIds(new Set());
-      },
-    });
-  }, [taskProgress, userName]);
+      }
+    };
+
+    socketRef.current.callbacks.onConnectError = (error) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-error`,
+          from: 'System',
+          user: userName,
+          text: `Signal snag: ${error.message}—retrying warp connection! ⚡️`,
+          type: 'error',
+          timestamp: new Date().toLocaleTimeString(),
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
+        },
+      ]);
+      setIsConnected(false);
+    };
+
+    socketRef.current.callbacks.onDisconnect = (reason) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-disconnect`,
+          from: 'System',
+          user: userName,
+          text: `Cosmic link severed: ${reason}—realigning soon! 💥`,
+          type: 'error',
+          timestamp: new Date().toLocaleTimeString(),
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
+        },
+      ]);
+      setIsConnected(false);
+    };
+
+    socketRef.current.callbacks.onTyping = (data) => {
+      if (data.frontendId && data.frontendId !== frontendId) return;
+      setIsTyping((prev) => ({ ...prev, 'CrackerBot Prime': true }));
+      setTimeout(() => setIsTyping((prev) => ({ ...prev, 'CrackerBot Prime': false })), 2000);
+    };
+  }, [taskProgress, userName, persistentMessages, frontendId]);
 
   useEffect(() => {
-    initializeSocket();
+    initializeSocketListeners();
+    socketRef.current.connect(); // Ensure connection on mount
     return () => {
-      if (socketRef.current) socketRef.current.disconnect();
+      // Only cleanup intervals or recognition, keep socket alive
       if (recognitionRef.current) recognitionRef.current.stop();
     };
-  }, [initializeSocket]);
+  }, [initializeSocketListeners]);
 
   useEffect(() => {
     try {
@@ -346,7 +350,12 @@ export function ChatRoom() {
 
   useEffect(() => {
     if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      if (initialLoadRef.current) {
+        chatContainerRef.current.scrollTop = 0;
+        initialLoadRef.current = false;
+      } else {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
     }
   }, [messages, isTyping]);
 
@@ -397,19 +406,21 @@ export function ChatRoom() {
   }, [colorScheme]);
 
   const sendMessage = useCallback((messageText) => {
-    if (!socketRef.current || !messageText.trim() || !isConnected || isSending) {
-      return;
-    }
+    if (!socketRef.current || !messageText.trim() || !isConnected || isSending) return;
 
     setIsSending(true);
+    const sessionId = localStorage.getItem('sessionId') || crypto.randomUUID();
     const messageData = {
       text: messageText.trim(),
       type: messageText.startsWith('/') ? 'command' : 'task_response',
-      frontendId: frontendIdRef.current,
+      frontendId: frontendId,
       ip: window.location.hostname,
       target: 'bot_lead',
       user: userName,
+      sessionId,
+      taskId: currentTask ? currentTask.taskId : undefined,
     };
+    localStorage.setItem('sessionId', sessionId);
 
     const userMessage = {
       id: `${Date.now()}-${messageText.slice(0, 50)}`,
@@ -419,11 +430,13 @@ export function ChatRoom() {
       type: messageText.startsWith('/') ? 'command' : 'task_response',
       timestamp: new Date().toLocaleTimeString(),
       bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #00ccff)', color: '#000' },
+      taskId: currentTask ? currentTask.taskId : undefined,
     };
 
     try {
       setMessages((prev) => [...prev, userMessage]);
       setPersistentMessages((prevPersistent) => [...prevPersistent, userMessage]);
+      setMessageIds((prevIds) => new Set(prevIds).add(userMessage.id));
 
       if (messageText.startsWith('/')) {
         messageData.commandFlag = true;
@@ -446,10 +459,11 @@ export function ChatRoom() {
           ]);
         } else if (command === '/reset_name') {
           socketRef.current.emit('message', messageData);
-          setCurrentTask({ taskId: `initial:${frontendIdRef.current}`, step: 'name', taskStatus: 'pending' });
+          setCurrentTask({ taskId: `initial:${frontendId}`, step: 'name', taskStatus: 'pending' });
           setUserName('Guest');
           localStorage.setItem('crackerBotUserName', 'Guest');
           setPersistentMessages([]);
+          localStorage.removeItem('sessionId');
         } else if (command === '/projects') {
           socketRef.current.emit('message', messageData);
         } else {
@@ -457,7 +471,6 @@ export function ChatRoom() {
         }
       } else {
         if (currentTask) {
-          messageData.taskId = currentTask.taskId;
           if (currentTask.step === 'name' && currentTask.taskId.startsWith('initial')) {
             const newUserName = messageText.trim();
             setUserName(newUserName);
@@ -524,7 +537,7 @@ export function ChatRoom() {
         inputRef.current?.focus();
       }, 100);
     }
-  }, [isConnected, isSending, currentTask, userName]);
+  }, [isConnected, isSending, currentTask, userName, frontendId]);
 
   const handleInputChange = useCallback((e) => {
     const value = e.target.value;
@@ -642,7 +655,7 @@ export function ChatRoom() {
     socketRef.current.emit('message', {
       text: '/clear_cache',
       type: 'command',
-      frontendId: frontendIdRef.current,
+      frontendId: frontendId,
       ip: window.location.hostname,
       target: 'bot_lead',
       user: userName,
@@ -656,8 +669,9 @@ export function ChatRoom() {
     localStorage.setItem('crackerBotUserName', 'Guest');
     setMessageIds(new Set());
     setPersistentMessages([]);
-    initializeSocket();
-  }, [initializeSocket, userName]);
+    localStorage.removeItem('sessionId');
+    socketRef.current.connect();
+  }, [frontendId, userName]);
 
   const handleColorChange = useCallback((scheme) => {
     setColorScheme(scheme);
@@ -676,10 +690,11 @@ export function ChatRoom() {
           text: 'Refine Project',
           type: 'task_response',
           taskId,
-          frontendId: frontendIdRef.current,
+          frontendId: frontendId,
           ip: window.location.hostname,
           target: 'bot_lead',
           user: user || userName,
+          sessionId: localStorage.getItem('sessionId'),
         });
       } else if (option === 'Download') {
         if (content && fileName) {
@@ -707,10 +722,11 @@ export function ChatRoom() {
           text: `/delete ${taskId}`,
           type: 'command',
           taskId,
-          frontendId: frontendIdRef.current,
+          frontendId: frontendId,
           ip: window.location.hostname,
           target: 'bot_lead',
           user: user || userName,
+          sessionId: localStorage.getItem('sessionId'),
         });
       }
     } else {
@@ -720,10 +736,11 @@ export function ChatRoom() {
           text: `/restart ${currentTask.taskId}`,
           type: 'command',
           taskId: currentTask.taskId,
-          frontendId: frontendIdRef.current,
+          frontendId: frontendId,
           ip: window.location.hostname,
           target: 'bot_lead',
           user: userName,
+          sessionId: localStorage.getItem('sessionId'),
         });
         setEditMode(currentTask.taskId);
       } else if (option === 'Refine Project' && currentTask) {
@@ -733,10 +750,11 @@ export function ChatRoom() {
           text: 'Refine Project',
           type: 'task_response',
           taskId: currentTask.taskId,
-          frontendId: frontendIdRef.current,
+          frontendId: frontendId,
           ip: window.location.hostname,
           target: 'bot_lead',
           user: userName,
+          sessionId: localStorage.getItem('sessionId'),
         });
       } else if (option === 'Done' && currentTask) {
         const taskResult = messages.find((m) => m.taskId === currentTask.taskId && m.type === 'taskResult');
@@ -744,7 +762,7 @@ export function ChatRoom() {
           text: 'store_project',
           type: 'command',
           taskId: currentTask.taskId,
-          frontendId: frontendIdRef.current,
+          frontendId: frontendId,
           ip: window.location.hostname,
           target: 'bot_lead',
           user: userName,
@@ -752,6 +770,7 @@ export function ChatRoom() {
           taskType: currentTask.type,
           taskFeatures: currentTask.features,
           finalContent: taskResult?.finalContent,
+          sessionId: localStorage.getItem('sessionId'),
         });
         setCurrentTask(null);
         setTaskPending(null);
@@ -763,7 +782,7 @@ export function ChatRoom() {
         });
       }
     }
-  }, [currentTask, messages, sendMessage, userName]);
+  }, [currentTask, messages, sendMessage, userName, frontendId]);
 
   const handlePreviewClick = useCallback((msg) => {
     setPreviewData({ fileContent: msg.finalContent, fileName: msg.fileName || `${msg.taskName || 'cosmic_download'}.zip`, taskId: msg.taskId });
@@ -845,7 +864,7 @@ export function ChatRoom() {
         </div>
 
         <div className="flex-1 flex items-center justify-center relative z-10">
-          <div className={`w-full max-w-3xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? 'border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]' : ''}`}>
+          <div className={`w-full max-w-6xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? 'border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]' : ''}`}>
             <div
               ref={chatContainerRef}
               className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}
@@ -876,10 +895,18 @@ export function ChatRoom() {
             {currentTask && (
               <div className="text-[#00ff9f] my-2 font-mono border-t border-[#ff00ff] pt-2">
                 🌟 Cosmic Creation in Progress: <br />
-                  Name: {currentTask.name || 'Unnamed Epic'} <br />
-                  Type: {currentTask.type || 'TBD'} <br />
-                  Features: {currentTask.features || 'Forging cosmic brilliance...'} <br />
-                  Status: {currentTask.taskStatus === 'building' ? `Building (${taskProgress[currentTask.taskId] || 0}%)` : currentTask.taskStatus}
+                Name: {currentTask.name || 'Unnamed Epic'} <br />
+                Type: {currentTask.type || 'TBD'} <br />
+                Features: {currentTask.features || 'Forging cosmic brilliance...'} <br />
+                Status: {currentTask.taskStatus === 'building' ? `Building (${taskProgress[currentTask.taskId] || 0}%)` : currentTask.taskStatus}
+                {currentTask.taskStatus === 'building' && (
+                  <div className="w-full bg-gray-700 rounded-full h-2.5 mt-2">
+                    <div
+                      className="bg-gradient-to-r from-[#ff0066] to-[#ffcc00] h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${taskProgress[currentTask.taskId] || 0}%` }}
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -888,7 +915,7 @@ export function ChatRoom() {
                 ref={commandsRef}
                 tabIndex={0}
                 onKeyDown={handleKeyDown}
-                className={`absolute bottom-12 left-0 w-full max-w-3xl ${currentScheme.chatBg} border border-[#ff00ff] rounded-md shadow-[0_0_10px_#ff00ff] p-2 z-20 max-h-64 overflow-y-auto`}
+                className={`absolute bottom-12 left-0 w-full max-w-6xl ${currentScheme.chatBg} border border-[#ff00ff] rounded-md shadow-[0_0_10px_#ff00ff] p-2 z-20 max-h-64 overflow-y-auto`}
               >
                 {filteredCommands.length > 0 ? (
                   filteredCommands.map((cmd, idx) => (

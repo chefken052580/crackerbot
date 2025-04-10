@@ -1,5 +1,5 @@
 // ai_coders/bot_backend/src/server.js
-// Version: v2025-04-09-06
+// Version: v2025-04-10-08
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -8,6 +8,7 @@ import { log, error } from './logger.js';
 import { generatePdf, generateImage } from './fileGenerator.js';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
+import './taskExecution.js'; // Import taskExecution.js to handle buildTask commands
 
 const BOT_NAME = 'bot_backend';
 const app = express();
@@ -15,7 +16,7 @@ const server = createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Log startup with flair
-console.log(`[${new Date().toISOString()}] ${BOT_NAME} server.js v2025-04-09-06 igniting...`);
+console.log(`[${new Date().toISOString()}] ${BOT_NAME} server.js v2025-04-10-08 igniting...`);
 await log(`🌌 ${BOT_NAME} server.js powering up with cosmic energy!`, 'INFO');
 
 const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['https://visually-sterling-spider.ngrok-free.app'];
@@ -45,10 +46,10 @@ app.get('/health', async (req, res) => {
 });
 
 app.post('/api/generate-file', async (req, res) => {
-  const taskId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`; // Unique ID for this request
-  const frontendId = req.headers['x-frontend-id'] || 'unknown'; // Optional frontend ID
+  const taskId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const frontendId = req.headers['x-frontend-id'] || 'unknown';
   const ip = req.ip;
-  const botSocket = await botSocketPromise; // Ensure socket is ready
+  const botSocket = await botSocketPromise;
 
   try {
     const { command, args } = req.body;
@@ -152,7 +153,7 @@ async function sendProgress(botSocket, taskId, percentage, message, frontendId, 
     messageId: `${taskId}-progress-${percentage}`,
   };
   try {
-    await emit('message', progressMessage); // Await async emit from socket.js
+    await emit('message', progressMessage);
     await log(`Progress ${percentage}% for "${taskId}": ${message}`, 'INFO', { taskId, frontendId, ip });
   } catch (err) {
     await error(`Progress send failed for "${taskId}": ${err.message}`);

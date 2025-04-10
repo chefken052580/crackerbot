@@ -65,9 +65,9 @@ code {
 
 /* Custom animations */
 @keyframes pulse {
-  0% { opacity: 0.7; transform: scale(1); }
+  0% { opacity: 0.8; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.05); }
-  100% { opacity: 0.7; transform: scale(1); }
+  100% { opacity: 0.8; transform: scale(1); }
 }
 
 @keyframes bounce {
@@ -76,9 +76,9 @@ code {
 }
 
 @keyframes glow {
-  0% { box-shadow: 0 0 5px currentColor; }
-  50% { box-shadow: 0 0 15px currentColor; }
-  100% { box-shadow: 0 0 5px currentColor; }
+  0% { box-shadow: 0 0 15px rgba(0, 255, 159, 0.9); }
+  50% { box-shadow: 0 0 25px rgba(255, 0, 255, 1); }
+  100% { box-shadow: 0 0 15px rgba(0, 255, 159, 0.9); }
 }
 
 @keyframes matrixGlitch {
@@ -120,6 +120,14 @@ code {
 }
 
 /* Animation utility classes */
+.animate-pulse {
+  animation: pulse 1.5s infinite;
+}
+
+.animate-glow {
+  animation: glow 2s infinite;
+}
+
 .animate-supernova {
   animation: supernova 1.5s ease-in-out;
 }
@@ -134,7 +142,7 @@ code {
 
 /* Chat message base styles */
 .chat-message {
-  @apply p-2 mb-2 rounded shadow-sm;
+  @apply p-4 mb-2 rounded-lg shadow-lg w-full max-w-full;
 }
 
 /* User message enhancements */
@@ -144,12 +152,11 @@ code {
 
 /* Theme-specific user message styles */
 .neon .user-message {
-  @apply text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform rotate-1;
+  @apply text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-4 transform rotate-1;
 }
 
-/* Command-specific styles for neon theme */
 .neon .user-message.command {
-  @apply text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-2 transform rotate-1;
+  @apply text-neon-yellow bg-gray-700 shadow-lg border-2 border-neon-yellow rounded-lg p-4 transform rotate-1;
 }
 
 .neon .user-message.command p {
@@ -162,19 +169,19 @@ code {
 }
 
 .cyberpunk .user-message {
-  @apply text-cyber-pink bg-gray-900 shadow-md border-2 border-cyber-pink rounded-md p-2 transform -rotate-1 animate-glow;
+  @apply text-cyber-pink bg-gray-900 shadow-md border-2 border-cyber-pink rounded-md p-4 transform -rotate-1 animate-glow;
 }
 
 .retro .user-message {
-  @apply text-retro-orange bg-retro-dark shadow-inner border-2 border-retro-orange rounded-sm p-2 font-mono;
+  @apply text-retro-orange bg-retro-dark shadow-inner border-2 border-retro-orange rounded-sm p-4 font-mono;
 }
 
 .pastel .user-message {
-  @apply text-pastel-pink bg-pastel-light shadow-md border-2 border-pastel-pink rounded-full p-2 transform skew-y-2 animate-bounce;
+  @apply text-pastel-pink bg-pastel-light shadow-md border-2 border-pastel-pink rounded-full p-4 transform skew-y-2 animate-bounce;
 }
 
 .matrix .user-message {
-  @apply text-matrix-green bg-matrix-bg shadow-lg border-2 border-matrix-green rounded-sm p-2 animate-matrix-glitch font-mono;
+  @apply text-matrix-green bg-matrix-bg shadow-lg border-2 border-matrix-green rounded-sm p-4 animate-matrix-glitch font-mono;
 }
 
 /* Theme-specific AI response styles */
@@ -198,49 +205,63 @@ code {
   @apply text-matrix-green bg-matrix-bg;
 }
 
-/* Theme-specific enhancements */
+/* Theme-specific chat background */
+.neon .chat-bg {
+  @apply bg-gray-800;
+}
+
 .cyberpunk .chat-bg {
   @apply bg-gray-900;
-}
-
-.cyberpunk button:hover {
-  @apply text-cyber-dark bg-cyber-pink shadow-glow;
-}
-
-.cyberpunk input:focus {
-  @apply ring-cyber-cyan bg-gray-900 text-cyber-cyan;
 }
 
 .retro .chat-bg {
   @apply bg-retro-dark;
 }
 
-.retro button:hover {
-  @apply text-stone-900 bg-retro-orange shadow-inner;
-}
-
-.retro input:focus {
-  @apply ring-retro-orange bg-retro-dark text-retro-orange;
-}
-
 .pastel .chat-bg {
   @apply bg-pastel-light;
-}
-
-.pastel button:hover {
-  @apply text-pastel-dark bg-pastel-teal shadow-md;
-}
-
-.pastel input:focus {
-  @apply ring-pastel-teal bg-pastel-light text-pastel-dark;
 }
 
 .matrix .chat-bg {
   @apply bg-matrix-bg;
 }
 
+/* Theme-specific button hover effects */
+.neon button:hover {
+  @apply text-white bg-gradient-to-r from-[#ff00cc] to-[#3333ff] shadow-[0_0_15px_#00ff85];
+}
+
+.cyberpunk button:hover {
+  @apply text-cyber-dark bg-cyber-pink shadow-glow;
+}
+
+.retro button:hover {
+  @apply text-stone-900 bg-retro-orange shadow-inner;
+}
+
+.pastel button:hover {
+  @apply text-pastel-dark bg-pastel-teal shadow-md;
+}
+
 .matrix button:hover {
   @apply text-matrix-dark bg-neon-blue shadow-matrix-glow;
+}
+
+/* Theme-specific input focus styles */
+.neon input:focus {
+  @apply ring-[#00ff9f] bg-gray-800 text-[#00ff9f] shadow-[0_0_10px_#00ff9f];
+}
+
+.cyberpunk input:focus {
+  @apply ring-cyber-cyan bg-gray-900 text-cyber-cyan;
+}
+
+.retro input:focus {
+  @apply ring-retro-orange bg-retro-dark text-retro-orange;
+}
+
+.pastel input:focus {
+  @apply ring-pastel-teal bg-pastel-light text-pastel-dark;
 }
 
 .matrix input:focus {
@@ -283,17 +304,17 @@ code {
 
 /* Progress bar styles with radiant glow */
 .task-progress-container {
-  @apply mt-2 w-full max-w-md mx-auto; /* Centered */
+  @apply mt-2 w-full max-w-lg mx-auto;
 }
 
 .task-progress-bar {
-  @apply h-6 rounded-full bg-gray-800 border border-gray-600 relative overflow-hidden; /* Thicker: 24px */
+  @apply h-3 rounded-full bg-gray-800 border border-[#ffcc00] relative overflow-hidden;
   animation: radiantGlow 2s infinite;
 }
 
 .task-progress-fill {
   @apply h-full rounded-full;
-  background: linear-gradient(to right, #ff004f, #fff700 50%, #00ff85); /* Neon red to yellow to green */
+  background: linear-gradient(to right, #ff0066, #ffcc00); /* Pink to yellow */
   transition: width 0.5s ease-in-out;
 }
 
@@ -325,27 +346,39 @@ code {
 
 /* Progress message styling */
 .progress-message {
-  @apply border-l-2;
+  @apply border-l-4;
+}
+
+.building-message {
+  @apply border-l-4;
 }
 
 .neon .progress-message {
-  border-color: #00ff85; /* Neon green */
+  border-color: #ff0066;
 }
 
-.cyberpunk .progress-message {
+.neon .building-message {
+  border-color: #ffcc00;
+}
+
+.cyberpunk .progress-message,
+.cyberpunk .building-message {
   border-color: #00e5ff;
 }
 
-.retro .progress-message {
+.retro .progress-message,
+.retro .building-message {
   border-color: #ff8c00;
 }
 
-.pastel .progress-message {
+.pastel .progress-message,
+.pastel .building-message {
   border-color: #ff85a2;
 }
 
-.matrix .progress-message {
-  border-color: #00ff85; /* Neon green */
+.matrix .progress-message,
+.matrix .building-message {
+  border-color: #00ff85;
 }
 
 /* Neon pulse animation */
@@ -355,10 +388,10 @@ code {
 
 /* Hover effects */
 .hover\:shadow-neon:hover {
-  box-shadow: 0 0 15px #00ff85, 0 0 30px #00ff8580; /* Neon green */
+  box-shadow: 0 0 15px #00ff85, 0 0 30px #00ff8580;
 }
 
 .hover\:text-neon-green:hover {
-  color: #00ff85; /* Neon green */
+  color: #00ff85;
   text-shadow: 0 0 10px #00ff85;
 }

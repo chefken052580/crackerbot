@@ -4,7 +4,7 @@
  * and handling multi-step tasks with interstellar flair. Enhanced by xAI for seamless
  * frontend-backend sync, robust Redis caching, and duplicate message prevention.
  *
- * @version 2025-04-09-04
+ * @version 2025-04-10-03
  * @author CrackerBot Team, enhanced by xAI
  * @module taskHandlers
  */
@@ -30,7 +30,7 @@ botSocket.on('error', async (err) => {
 });
 
 /**
- * Sends a message via WebSocket with cosmic styling.
+ * Sends a message via WebSocket with cosmic styling and JSON compatibility.
  * @param {Object} socket - WebSocket instance
  * @param {Object} message - Message data
  * @param {string} message.text - Message content
@@ -39,14 +39,14 @@ botSocket.on('error', async (err) => {
  * @param {string} [message.from='CrackerBot Prime'] - Sender
  * @param {string} [message.target='bot_frontend'] - Target
  * @param {string} [message.ip] - IP address
- * @param {string} [message.user] - User name
+ * @param {string} [message.user] - User name (plain string)
  * @param {string} message.frontendId - Frontend ID (required)
  * @param {string[]} [message.options] - Response options
  * @param {string} [message.taskName] - Task name
  * @param {string} [message.taskType] - Task type
  * @param {string} [message.taskFeatures] - Task features
  * @param {string} [message.content] - Task content
- * @param {string} [message.finalContent] - Final task content
+ * @param {string} [message.finalContent] - Final task content (base64)
  * @param {string} [message.fileName] - File name
  * @param {string} [message.downloadLink] - Download link
  * @param {string} [message.messageId] - Unique message ID
@@ -77,6 +77,7 @@ export async function sendMessage(socket, message) {
   if (!frontendId) throw new Error('Missing frontendId in sendMessage');
 
   const staticBubbleStyle = { background: bubbleStyle.background, color: bubbleStyle.color };
+  const userString = typeof user === 'string' ? user : 'Guest';
 
   const msgData = {
     text,
@@ -85,7 +86,7 @@ export async function sendMessage(socket, message) {
     from,
     target,
     ip: ip || 'unknown',
-    user: user || 'Guest',
+    user: userString,
     frontendId,
     options,
     taskName,
@@ -97,13 +98,15 @@ export async function sendMessage(socket, message) {
     downloadLink,
     messageId: messageId || `${taskId || Date.now()}-${type}`,
     bubbleStyle: staticBubbleStyle,
+    timestamp: new Date().toISOString(),
   };
 
   try {
     await emitCosmicMessage(msgData, socket);
-    await log(`🚀 Beamed to ${target} for ${msgData.user} (ID: ${frontendId}): "${text}"`, { taskId });
+    await log(`🚀 Beamed to ${target} for ${userString} (ID: ${frontendId}): "${text}"`, { taskId });
+    await storeMessage(userString, msgData); // Cache message for chat log export
   } catch (err) {
-    await error(`Failed to beam message to ${target} for ${msgData.user} (ID: ${frontendId}): ${err.message}`, { taskId });
+    await error(`Failed to beam message to ${target} for ${userString} (ID: ${frontendId}): ${err.message}`, { taskId });
   }
 }
 
@@ -122,7 +125,7 @@ async function cleanupTaskFiles(taskId, userName) {
 }
 
 /**
- * Handles new frontend connections with a cosmic welcome, preventing duplicate options.
+ * Handles new frontend connections with a cosmic welcome, preserving task state across reconnects.
  * @param {Object} data - Connection data
  * @param {string} data.ip - IP address
  * @param {string} data.frontendId - Frontend ID
@@ -131,14 +134,15 @@ async function cleanupTaskFiles(taskId, userName) {
  */
 export async function handleFrontendConnected({ ip, frontendId, userName: initialName, sessionId }) {
   try {
-    await log(`🌌 Frontend ${frontendId} warped in—${initialName || 'Guest'} primed for action!`);
+    await log(`🌌 Frontend ${frontendId} connected - ${initialName || 'Guest'} ready!`);
     const stateKey = `taskState:${frontendId}`;
     const userKey = `user:${frontendId}`;
+    const sessionKey = sessionId ? `session:${sessionId}` : null;
     const welcomeKey = `welcomeSent:${frontendId}`;
 
     let taskState;
     try {
-      const storedState = await get(stateKey);
+      const storedState = sessionKey ? await get(sessionKey) : await get(stateKey);
       taskState = storedState ? JSON.parse(storedState) : { step: 'name', taskId: `initial:${frontendId}` };
     } catch (parseErr) {
       await error(`Failed to parse taskState for ${frontendId}: ${parseErr.message}`);
@@ -154,19 +158,21 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
       persistedUserName = null;
     }
 
-    const effectiveUserName = initialName && /^[a-zA-Z0-9_-]{1,20}$/.test(initialName) 
-      ? initialName 
-      : persistedUserName && /^[a-zA-Z0-9_-]{1,20}$/.test(persistedUserName) 
-        ? persistedUserName 
+    const effectiveUserName = initialName && /^[a-zA-Z0-9_-]{1,20}$/.test(initialName)
+      ? initialName
+      : persistedUserName && /^[a-zA-Z0-9_-]{1,20}$/.test(persistedUserName)
+        ? persistedUserName
         : 'Guest';
 
     if (!persistedUserName || effectiveUserName !== persistedUserName) {
       await setUserName(effectiveUserName, frontendId);
-      await log(`🌟 Persisted user name "${effectiveUserName}" for ${frontendId}`);
+      await log(`🌟 Persisted user name "${effectiveUserName}" for frontend ${frontendId}—galactic records updated! ✨`);
     }
 
     const welcomeSent = await get(welcomeKey);
-    if (!welcomeSent) {
+    const taskExists = taskState.taskId && taskState.step === 'building' ? await hGet('tasks', taskState.taskId) : null;
+
+    if (!welcomeSent || taskState.step === 'name') {
       if (effectiveUserName === 'Guest') {
         const welcomeMsg = await generateResponse(
           `Greetings, cosmic wanderer! Your star awaits naming—shine bright in the Luminara Serenity! 🌠`,
@@ -186,6 +192,7 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
         });
         taskState.step = 'name';
         await set(stateKey, JSON.stringify(taskState));
+        if (sessionKey) await set(sessionKey, JSON.stringify(taskState));
         await set(welcomeKey, 'true', 86400);
         await log(`🌟 Beamed welcome to ${effectiveUserName} (ID: ${frontendId})`);
       } else {
@@ -211,34 +218,89 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
         });
         taskState.step = 'choice';
         await set(stateKey, JSON.stringify(taskState));
+        if (sessionKey) await set(sessionKey, JSON.stringify(taskState));
         await set(welcomeKey, 'true', 86400);
         await log(`🌟 Beamed welcome to ${effectiveUserName} (ID: ${frontendId})`);
       }
     } else {
       await log(`🌌 Welcome already sent for ${effectiveUserName} (ID: ${frontendId}), resuming flow`);
-      if (!taskState.step || taskState.step === 'name') {
+      if (!taskState.step) {
         taskState.step = effectiveUserName === 'Guest' ? 'name' : 'choice';
-        await set(stateKey, JSON.stringify(taskState));
-        if (taskState.step === 'choice') {
-          const resumeMsg = await generateResponse(
-            `Welcome back, ${effectiveUserName}! Ready to blaze through the cosmos? 🌌`,
-            effectiveUserName,
-            DEFAULT_TONE
-          );
-          await sendMessage(botSocket, {
-            text: resumeMsg,
-            taskId: taskState.taskId,
-            ip,
-            user: effectiveUserName,
-            frontendId,
-            type: 'success',
-            options: ['Chat', 'Build-Something-Epic'],
-            bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
-            messageId: `${taskState.taskId}-welcome-choice-resume`,
-          });
-        }
-        await log(`🌌 Adjusted TaskState for ${effectiveUserName} (ID: ${frontendId}) to step: ${taskState.step}`);
+        taskState.taskId = `initial:${frontendId}`;
       }
+
+      if (taskState.step === 'building' && taskExists) {
+        const resumeBuildMsg = await generateResponse(
+          `🌌 Reconnected, ${effectiveUserName}! "${taskState.taskName}" build resumes—cosmic engines still roaring! 🚀`,
+          effectiveUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: resumeBuildMsg,
+          type: 'building',
+          taskId: taskState.taskId,
+          ip,
+          user: effectiveUserName,
+          frontendId,
+          taskName: taskState.taskName,
+          taskType: taskState.taskType,
+          taskFeatures: taskState.taskFeatures,
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
+          messageId: `${taskState.taskId}-building-resume`,
+        });
+        await sendMessage(botSocket, {
+          text: `Current features: "${taskState.taskFeatures}"`,
+          type: 'feature_update',
+          taskId: taskState.taskId,
+          ip,
+          user: effectiveUserName,
+          frontendId,
+          taskName: taskState.taskName,
+          taskType: taskState.taskType,
+          taskFeatures: taskState.taskFeatures,
+          bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
+          messageId: `${taskState.taskId}-feature-update-resume`,
+        });
+        await log(`🌌 Resumed building state for ${effectiveUserName} (ID: ${frontendId}) - Task ${taskState.taskId} in progress`);
+      } else if (taskState.step === 'choice') {
+        const resumeMsg = await generateResponse(
+          `🌌 Welcome back, ${effectiveUserName}! Ready to blaze through the cosmos? 🌌`,
+          effectiveUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: resumeMsg,
+          type: 'success',
+          taskId: taskState.taskId,
+          ip,
+          user: effectiveUserName,
+          frontendId,
+          options: ['Chat', 'Build-Something-Epic'],
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
+          messageId: `${taskState.taskId}-welcome-choice-resume`,
+        });
+        await log(`🌌 Resumed at choice for ${effectiveUserName} (ID: ${frontendId})`);
+      } else {
+        const resumeMsg = await generateResponse(
+          `🌌 Reconnected, ${effectiveUserName}! Picking up where the stars left us—what’s your next move? 🌠`,
+          effectiveUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: resumeMsg,
+          type: 'success',
+          taskId: taskState.taskId,
+          ip,
+          user: effectiveUserName,
+          frontendId,
+          options: taskState.step === 'choice' ? ['Chat', 'Build-Something-Epic'] : undefined,
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
+          messageId: `${taskState.taskId}-resume`,
+        });
+        await log(`🌌 Resumed at step ${taskState.step} for ${effectiveUserName} (ID: ${frontendId})`);
+      }
+      await set(stateKey, JSON.stringify(taskState));
+      if (sessionKey) await set(sessionKey, JSON.stringify(taskState));
     }
   } catch (err) {
     await error(`Frontend connect error for ${frontendId}: ${err.message}`);
@@ -246,7 +308,7 @@ export async function handleFrontendConnected({ ip, frontendId, userName: initia
 }
 
 /**
- * Processes user task responses and advances the cosmic workflow.
+ * Processes user task responses and advances the cosmic workflow with JSON caching.
  * @param {Object} msg - Message data
  * @param {string} msg.text - User input
  * @param {string} [msg.user] - User name
@@ -295,12 +357,12 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         const pendingTasks = await redisClient.hKeys('pendingTasks');
         for (const taskId of pendingTasks) {
           const task = await hGet('pendingTasks', taskId);
-          if (task && task.frontendId === frontendId) await hDel('pendingTasks', taskId);
+          if (task && JSON.parse(task).frontendId === frontendId) await hDel('pendingTasks', taskId);
         }
         const tasks = await redisClient.hKeys('tasks');
         for (const taskId of tasks) {
           const task = await hGet('tasks', taskId);
-          if (task && task.frontendId === frontendId) await hDel('tasks', taskId);
+          if (task && JSON.parse(task).frontendId === frontendId) await hDel('tasks', taskId);
         }
         taskState = { step: 'name', taskId: `initial:${frontendId}` };
         await set(stateKey, JSON.stringify(taskState));
@@ -453,7 +515,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         });
         await log(`🗣️ Chat channel opened for ${persistedUserName} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else if (choiceLower === 'build-something-epic' || BUILD_INTENT_KEYWORDS.some((k) => choiceLower.includes(k))) {
-        const newTaskId = Date.now().toString();
+        const newTaskId = `${Date.now()}:${frontendId}`;
         taskState.step = 'project_name';
         taskState.taskId = newTaskId;
         await set(stateKey, JSON.stringify(taskState));
@@ -579,8 +641,8 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           ip,
           user: persistedUserName,
           frontendId,
-          options: taskState.step === 'network' 
-            ? ['mainnet-beta', 'testnet', 'devnet', 'none'] 
+          options: taskState.step === 'network'
+            ? ['mainnet-beta', 'testnet', 'devnet', 'none']
             : ['Type your feature details!'],
           taskName: taskState.taskName,
           taskType: selectedType,
@@ -635,12 +697,28 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
       break;
 
     case 'pending_features':
-      taskState.features = choice || 'basic cosmic functionality';
+      taskState.taskFeatures = choice || 'basic cosmic functionality';
       taskState.step = 'building';
       await set(stateKey, JSON.stringify(taskState));
+
+      const taskData = {
+        taskId: taskState.taskId,
+        frontendId,
+        user: persistedUserName,
+        name: taskState.taskName,
+        type: taskState.taskType,
+        features: taskState.taskFeatures,
+        network: taskState.network,
+        status: 'in_progress',
+        createdAt: new Date().toISOString(),
+        progress: 0,
+      };
+      await hSet('tasks', taskState.taskId, JSON.stringify(taskData));
       await updateTaskStatus(taskState.taskId, 'in_progress');
+      await log(`🌌 Task ${taskState.taskId} supernova-registered in cosmic ledger for ${persistedUserName}`, { taskId: taskState.taskId });
+
       const buildStartMsg = await generateResponse(
-        `⚡ "${taskState.taskName}" ignites with "${taskState.features}", ${persistedUserName}! Cosmic assembly in motion! 🌌✨`,
+        `⚡ "${taskState.taskName}" ignites with "${taskState.taskFeatures}", ${persistedUserName}! Cosmic assembly in motion! 🌌✨`,
         persistedUserName,
         DEFAULT_TONE
       );
@@ -653,26 +731,41 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         frontendId,
         taskName: taskState.taskName,
         taskType: taskState.taskType,
-        taskFeatures: taskState.features,
+        taskFeatures: taskState.taskFeatures,
         bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
         messageId: `${taskState.taskId}-building`,
       });
+
+      await sendMessage(botSocket, {
+        text: `Current features: "${taskState.taskFeatures}"`,
+        type: 'feature_update',
+        taskId: taskState.taskId,
+        ip,
+        user: persistedUserName,
+        frontendId,
+        taskName: taskState.taskName,
+        taskType: taskState.taskType,
+        taskFeatures: taskState.taskFeatures,
+        bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
+        messageId: `${taskState.taskId}-feature-update`,
+      });
+
       try {
         await delegateTask(botSocket, 'bot_backend', 'buildTask', {
           task: {
             id: taskState.taskId,
             name: taskState.taskName,
             type: taskState.taskType,
-            features: taskState.features,
+            features: taskState.taskFeatures,
             network: taskState.network,
             flair: true,
-            aiInstructions: `Forge "${taskState.taskName}" for ${persistedUserName} with "${taskState.features}"—infuse cosmic animations, stellar annotations, and optimized galactic structures!`,
+            aiInstructions: `Forge "${taskState.taskName}" for ${persistedUserName} with "${taskState.taskFeatures}"—infuse cosmic animations, stellar annotations, and optimized galactic structures! Ignite the cosmos with supernova flair! 🌌✨`,
           },
           userName: persistedUserName,
           tone: DEFAULT_TONE,
           frontendId,
         });
-        await log(`⚒️ Task ${taskState.taskId} delegated for ${persistedUserName} with "${taskState.features}" - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
+        await log(`⚒️ Task ${taskState.taskId} delegated for ${persistedUserName} with "${taskState.taskFeatures}" - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } catch (err) {
         await error(`Delegation failed for ${persistedUserName} (Task ${taskState.taskId}): ${err.message}`, { taskId: taskState.taskId });
         const retryMsg = await generateResponse(
@@ -690,12 +783,10 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           options: ['Retry', 'Adjust Features'],
           taskName: taskState.taskName,
           taskType: taskState.taskType,
-          taskFeatures: taskState.features,
+          taskFeatures: taskState.taskFeatures,
           bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
           messageId: `${taskState.taskId}-build-error`,
         });
-        // Keep state as 'building' to await user retry
-        await log(`🌌 Awaiting retry for ${persistedUserName} (Task ${taskState.taskId})`, { taskId: taskState.taskId });
       }
       break;
 
@@ -717,19 +808,39 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
             frontendId,
             taskName: taskState.taskName,
             taskType: taskState.taskType,
-            taskFeatures: taskState.features,
+            taskFeatures: taskState.taskFeatures,
             bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
             messageId: `${taskState.taskId}-building-retry`,
           });
+
+          const taskExists = await hGet('tasks', taskState.taskId);
+          if (!taskExists) {
+            const taskData = {
+              taskId: taskState.taskId,
+              frontendId,
+              user: persistedUserName,
+              name: taskState.taskName,
+              type: taskState.taskType,
+              features: taskState.taskFeatures,
+              network: taskState.network,
+              status: 'in_progress',
+              createdAt: new Date().toISOString(),
+              progress: 0,
+            };
+            await hSet('tasks', taskState.taskId, JSON.stringify(taskData));
+            await log(`🌟 Re-registered task ${taskState.taskId} for ${persistedUserName}`, { taskId: taskState.taskId });
+          }
+          await updateTaskStatus(taskState.taskId, 'in_progress');
+
           await delegateTask(botSocket, 'bot_backend', 'buildTask', {
             task: {
               id: taskState.taskId,
               name: taskState.taskName,
               type: taskState.taskType,
-              features: taskState.features,
+              features: taskState.taskFeatures,
               network: taskState.network,
               flair: true,
-              aiInstructions: `Forge "${taskState.taskName}" for ${persistedUserName} with "${taskState.features}"—infuse cosmic animations, stellar annotations, and optimized galactic structures!`,
+              aiInstructions: `Forge "${taskState.taskName}" for ${persistedUserName} with "${taskState.taskFeatures}"—infuse cosmic animations, stellar annotations, and optimized galactic structures! Ignite the cosmos with supernova flair! 🌌✨`,
             },
             userName: persistedUserName,
             tone: DEFAULT_TONE,
@@ -753,7 +864,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
             options: ['Retry', 'Adjust Features'],
             taskName: taskState.taskName,
             taskType: taskState.taskType,
-            taskFeatures: taskState.features,
+            taskFeatures: taskState.taskFeatures,
             bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
             messageId: `${taskState.taskId}-build-retry-error`,
           });
@@ -776,11 +887,31 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           options: ['Type your feature details!'],
           taskName: taskState.taskName,
           taskType: taskState.taskType,
-          taskFeatures: taskState.features,
+          taskFeatures: taskState.taskFeatures,
           bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
           messageId: `${taskState.taskId}-adjust-features`,
         });
         await log(`🌟 Adjusted to pending_features for ${persistedUserName} (Task ${taskState.taskId})`, { taskId: taskState.taskId });
+      } else {
+        const buildingMsg = await generateResponse(
+          `🌌 "${taskState.taskName}" is still forging, ${persistedUserName}! Hold tight or tweak the cosmic recipe.`,
+          persistedUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: buildingMsg,
+          type: 'building',
+          taskId: taskState.taskId,
+          ip,
+          user: persistedUserName,
+          frontendId,
+          options: ['Retry', 'Adjust Features'],
+          taskName: taskState.taskName,
+          taskType: taskState.taskType,
+          taskFeatures: taskState.taskFeatures,
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff6600, #ff00ff)', color: '#fff' },
+          messageId: `${taskState.taskId}-building-continue`,
+        });
       }
       break;
 
@@ -804,14 +935,14 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           options: ['Type your additional features!'],
           taskName: taskState.taskName,
           taskType: taskState.taskType,
-          taskFeatures: taskState.features,
+          taskFeatures: taskState.taskFeatures,
           bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #ffcc00)', color: '#000' },
           messageId: `${taskState.taskId}-refine`,
         });
         await log(`🌟 Refining task ${taskState.taskId} for ${persistedUserName} - Warped to step: ${taskState.step}`, { taskId: taskState.taskId });
       } else if (reviewChoiceLower === 'restart') {
         taskState.step = 'choice';
-        taskState.features = null;
+        taskState.taskFeatures = null;
         await set(stateKey, JSON.stringify(taskState));
         const restartMsg = await generateResponse(
           `🌌 Rebooting "${taskState.taskName}", ${persistedUserName}! A pristine cosmic slate awaits—what’s your next vector?`,
@@ -835,18 +966,26 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
       } else if (reviewChoiceLower === 'done') {
         await cleanupTaskFiles(taskState.taskId, persistedUserName);
         await updateTaskStatus(taskState.taskId, 'completed');
-        await cacheCompletedTask({
+        const taskResult = {
           taskId: taskState.taskId,
           userName: persistedUserName,
           taskName: taskState.taskName,
           taskType: taskState.taskType,
-          features: taskState.features,
+          features: taskState.taskFeatures,
           network: taskState.network,
           frontendId,
-        });
+          finalContent: taskState.finalContent, // Set by stateManager.js
+          fileName: taskState.fileName,         // Set by stateManager.js
+          downloadLink: taskState.downloadLink, // Set by stateManager.js
+          completedAt: new Date().toISOString(),
+        };
+        await cacheCompletedTask(taskResult);
         await hDel('tasks', taskState.taskId);
         taskState.step = 'choice';
         taskState.taskId = `initial:${frontendId}`;
+        taskState.finalContent = null;
+        taskState.fileName = null;
+        taskState.downloadLink = null;
         await set(stateKey, JSON.stringify(taskState));
         const doneMsg = await generateResponse(
           `✨ "${taskState.taskName}" etched in stardust, ${persistedUserName}! Your cosmic vault grows—what’s next, starforge?`,
@@ -881,7 +1020,7 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
           options: ['Restart', 'Refine Project', 'Done'],
           taskName: taskState.taskName,
           taskType: taskState.taskType,
-          taskFeatures: taskState.features,
+          taskFeatures: taskState.taskFeatures,
           bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
           messageId: `${taskState.taskId}-review-retry`,
         });

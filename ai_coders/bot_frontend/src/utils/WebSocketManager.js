@@ -1,5 +1,5 @@
 // bot_frontend/src/utils/WebSocketManager.js
-// Version: v2025-04-03-03
+// Version: v2025-04-10-05
 // Cosmic WebSocket relay for CrackerBot—forged with xAI’s supernova precision!
 
 import io from "socket.io-client";
@@ -18,16 +18,18 @@ import io from "socket.io-client";
 class WebSocketManager {
   constructor(url, { onConnect, onMessage, onTyping, onConnectError, onDisconnect }) {
     this.url = url;
-    this.callbacks = { onConnect, onMessage, onTyping, onConnectError, onDisconnect };
+    this.callbacks = { onConnect, onMessage, onTyping: onTyping || (() => {}), onConnectError, onDisconnect };
     this.messageQueue = [];
     this.socket = io(url, {
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000,
-      timeout: 20000,
+      reconnectionDelayMax: 15000,
+      timeout: 60000,
       transports: ["websocket"],
       path: "/socket.io",
+      randomizationFactor: 0.5,
+      autoConnect: false, // Manual connect for control
     });
 
     this.socket.on("connect", () => {
@@ -41,7 +43,10 @@ class WebSocketManager {
       this.callbacks.onMessage(data);
     });
 
-    this.socket.on("typing", this.callbacks.onTyping || (() => {}));
+    this.socket.on("typing", (data) => {
+      console.log(`[${new Date().toISOString()}] ✍️ WebSocketManager: Typing signal received:`, data);
+      this.callbacks.onTyping(data);
+    });
 
     this.socket.on("connect_error", (error) => {
       console.error(`[${new Date().toISOString()}] 💥 WebSocketManager: Galactic link fractured: ${error.message}`);
@@ -55,6 +60,15 @@ class WebSocketManager {
 
     this.socket.on("reconnect", (attempt) => {
       console.log(`[${new Date().toISOString()}] 🔄 WebSocketManager: Re-warped after ${attempt} cosmic retries`);
+      this.flushQueue();
+    });
+
+    this.socket.on("reconnect_attempt", (attempt) => {
+      console.log(`[${new Date().toISOString()}] 🔄 WebSocketManager: Attempting reconnect #${attempt}`);
+    });
+
+    this.socket.on("error", (error) => {
+      console.error(`[${new Date().toISOString()}] ⚠️ WebSocketManager: Cosmic error detected: ${error.message}`);
     });
 
     this.heartbeatInterval = setInterval(() => {
@@ -63,41 +77,67 @@ class WebSocketManager {
         console.log(`[${new Date().toISOString()}] 🌟 WebSocketManager: Pulsing with interstellar vitality!`);
       }
     }, 30000);
+
+    this.connect(); // Explicitly connect on instantiation
   }
 
   /**
-   * Emits an event to the WebSocket server, queuing if disconnected.
+   * Emits an event to the WebSocket server, queuing if disconnected with retry logic.
    * @param {string} event - Event name
    * @param {Object} data - Event data
    * @param {Function} [callback] - Optional callback for acknowledgment
    */
   emit(event, data, callback) {
-    const message = { event, data, callback };
-    try {
-      if (this.socket.connected) {
-        this.socket.emit(event, data, callback);
-        console.log(`[${new Date().toISOString()}] 📡 WebSocketManager: Beamed ${event} into the cosmos:`, data);
-      } else {
-        this.messageQueue.push(message);
-        console.log(`[${new Date().toISOString()}] 🌙 WebSocketManager: Stashed ${event} in cosmic queue`);
+    const message = { event, data, callback, attempts: 0, maxAttempts: 5, timestamp: Date.now() };
+    const emitMessage = () => {
+      try {
+        if (this.socket.connected) {
+          this.socket.emit(event, data, (ack) => {
+            if (callback) callback(ack);
+            console.log(`[${new Date().toISOString()}] 📡 WebSocketManager: Beamed ${event} into the cosmos:`, data);
+          });
+        } else {
+          this.messageQueue.push(message);
+          console.log(`[${new Date().toISOString()}] 🌙 WebSocketManager: Stashed ${event} in cosmic queue—Pending connection`);
+        }
+      } catch (err) {
+        message.attempts++;
+        console.error(`[${new Date().toISOString()}] ⚠️ WebSocketManager: Emission failed for ${event} (Attempt ${message.attempts}/${message.maxAttempts}): ${err.message}`);
+        if (message.attempts < message.maxAttempts) {
+          this.messageQueue.push(message);
+        } else {
+          console.error(`[${new Date().toISOString()}] 💥 WebSocketManager: Abandoned ${event} after ${message.maxAttempts} failed attempts`);
+        }
       }
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] ⚠️ WebSocketManager: Emission failed for ${event}: ${err.message}`);
-    }
+    };
+
+    emitMessage();
   }
 
   /**
-   * Flushes queued messages when connection is restored.
+   * Flushes queued messages when connection is restored with retry handling.
    */
   flushQueue() {
     while (this.messageQueue.length > 0 && this.socket.connected) {
+      const message = this.messageQueue.shift();
       try {
-        const { event, data, callback } = this.messageQueue.shift();
-        this.socket.emit(event, data, callback);
-        console.log(`[${new Date().toISOString()}] 🚀 WebSocketManager: Launched queued ${event} into orbit`);
+        this.socket.emit(message.event, message.data, (ack) => {
+          if (message.callback) message.callback(ack);
+        });
+        console.log(`[${new Date().toISOString()}] 🚀 WebSocketManager: Launched queued ${message.event} into orbit`);
       } catch (err) {
-        console.error(`[${new Date().toISOString()}] ⚠️ WebSocketManager: Queue flush error: ${err.message}`);
+        message.attempts++;
+        console.error(`[${new Date().toISOString()}] ⚠️ WebSocketManager: Queue flush error for ${message.event} (Attempt ${message.attempts}/${message.maxAttempts}): ${err.message}`);
+        if (message.attempts < message.maxAttempts) {
+          this.messageQueue.unshift(message);
+          setTimeout(() => this.flushQueue(), 2000 * message.attempts); // Increased backoff
+        } else {
+          console.error(`[${new Date().toISOString()}] 💥 WebSocketManager: Dropped ${message.event} after ${message.maxAttempts} failed attempts`);
+        }
       }
+    }
+    if (this.messageQueue.length > 0) {
+      console.log(`[${new Date().toISOString()}] ⏳ WebSocketManager: ${this.messageQueue.length} messages remain queued—Awaiting reconnection`);
     }
   }
 
@@ -113,9 +153,10 @@ class WebSocketManager {
       this.socket.off("connect_error");
       this.socket.off("disconnect");
       this.socket.off("reconnect");
+      this.socket.off("reconnect_attempt");
+      this.socket.off("error");
       this.socket.disconnect();
-      this.messageQueue = [];
-      console.log(`[${new Date().toISOString()}] 🛸 WebSocketManager: Detached from cosmic network`);
+      console.log(`[${new Date().toISOString()}] 🛸 WebSocketManager: Detached from cosmic network—Queue preserved with ${this.messageQueue.length} messages`);
     } catch (err) {
       console.error(`[${new Date().toISOString()}] ⚠️ WebSocketManager: Disconnect error: ${err.message}`);
     }
