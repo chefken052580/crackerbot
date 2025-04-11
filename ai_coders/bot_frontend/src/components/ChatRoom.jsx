@@ -1,8 +1,8 @@
 /* CrackerBot’s Cosmic Chatroom Component
  * Where interstellar ideas ignite and soar across the galaxy with supernova flair!
- * Enhanced by xAI for distinct user/project names, Redis caching, seamless task flow, and robust deduplication.
+ * Enhanced by xAI for distinct user/project names, Redis caching, seamless task flow, robust deduplication, and cosmic UI upgrades.
  *
- * @version 2025-04-10-16
+ * @version 2025-04-11-03
  * @author CrackerBot Team, enhanced by xAI
  * @module ChatRoom
  */
@@ -22,6 +22,11 @@ const socketInstance = new WebSocketManager('wss://websocket-visually-sterling-s
   onDisconnect: () => {},
 });
 
+/**
+ * Error boundary component to catch and display rendering errors in ChatMessage.
+ * @param {Object} props - Component props
+ * @param {React.ReactNode} props.children - Child components to render
+ */
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -49,6 +54,10 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/**
+ * Main chatroom component for CrackerBot Cosmic Hub.
+ * @returns {JSX.Element} The rendered chatroom UI
+ */
 export function ChatRoom() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -78,7 +87,16 @@ export function ChatRoom() {
   const canvasRef = useRef(null);
   const initialLoadRef = useRef(true);
 
+  /**
+   * Initializes WebSocket event listeners with JSDoc documentation.
+   * @function initializeSocketListeners
+   */
   const initializeSocketListeners = useCallback(() => {
+    /**
+     * Handles WebSocket connection event.
+     * @event onConnect
+     * @param {string} id - Frontend ID assigned by the WebSocket server
+     */
     socketRef.current.callbacks.onConnect = (id) => {
       setFrontendId(id);
       setIsConnected(true);
@@ -94,7 +112,7 @@ export function ChatRoom() {
       setMessages((prev) => {
         const filteredPrev = prev.filter((msg) => msg.id !== connectMsg.id);
         const initialMessages = [connectMsg, ...persistentMessages, ...filteredPrev];
-        setMessageIds(new Set(initialMessages.map(msg => msg.id)));
+        setMessageIds(new Set(initialMessages.map((msg) => msg.id)));
         return initialMessages;
       });
       socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
@@ -106,6 +124,11 @@ export function ChatRoom() {
       });
     };
 
+    /**
+     * Handles incoming WebSocket messages.
+     * @event onMessage
+     * @param {Object} data - Message data from the server
+     */
     socketRef.current.callbacks.onMessage = (data) => {
       if (data.frontendId && data.frontendId !== frontendId) return;
 
@@ -158,9 +181,9 @@ export function ChatRoom() {
           taskName: safeData.taskName,
           taskType: safeData.taskType,
           taskFeatures: safeData.taskFeatures,
-          projects: safeData.projects,
-          progress: safeData.type === 'progressUpdate' ? safeData.progress : taskProgress[safeData.taskId],
-          isBuilding: safeData.type === 'building' || safeData.type === 'progressUpdate' || (safeData.taskId && taskProgress[safeData.taskId] < 100),
+          projects: data.projects || null,
+          progress: safeData.type === 'progressUpdate' ? safeData.progress : taskProgress[safeData.taskId] || 0,
+          isBuilding: safeData.type === 'building' || safeData.type === 'progressUpdate' || (safeData.taskId && (taskProgress[safeData.taskId] || 0) < 100),
           bubbleStyle: safeData.bubbleStyle,
         };
 
@@ -194,7 +217,26 @@ export function ChatRoom() {
           return updatedMessages;
         });
 
-        if (safeData.type === 'pending' && safeData.taskId) {
+        // Enhanced task result handling for download/preview
+        if (safeData.type === 'taskResult' && safeData.taskId) {
+          setTaskPending(null);
+          setCurrentTask((prev) => prev ? {
+            ...prev,
+            taskStatus: 'completed',
+            name: safeData.taskName || prev.name,
+            type: safeData.taskType || prev.type,
+            features: safeData.taskFeatures || prev.features
+          } : null);
+          setEditMode(null);
+          setTaskProgress((prev) => ({ ...prev, [safeData.taskId]: 100 }));
+          if (safeData.finalContent && safeData.downloadLink) {
+            setPreviewData({
+              fileContent: safeData.finalContent,
+              fileName: `${safeData.taskName || 'cosmic_project'}.zip`,
+              taskId: safeData.taskId,
+            });
+          }
+        } else if (safeData.type === 'pending' && safeData.taskId) {
           setCurrentTask((prev) => ({
             taskId: safeData.taskId,
             name: safeData.taskName || prev?.name || 'Unnamed Epic',
@@ -235,11 +277,6 @@ export function ChatRoom() {
               taskStatus: 'pending',
             };
           });
-        } else if (safeData.type === 'taskResult') {
-          setTaskPending(null);
-          setCurrentTask((prev) => prev ? { ...prev, taskStatus: 'completed', name: safeData.taskName || prev.name, type: safeData.taskType, features: safeData.taskFeatures } : null);
-          setEditMode(null);
-          setTaskProgress((prev) => ({ ...prev, [safeData.taskId]: 100 }));
         } else if (safeData.type === 'success' && !safeData.projects) {
           setTaskPending(null);
           if (safeData.taskId?.startsWith('initial')) {
@@ -276,6 +313,11 @@ export function ChatRoom() {
       }
     };
 
+    /**
+     * Handles WebSocket connection errors.
+     * @event onConnectError
+     * @param {Error} error - Connection error object
+     */
     socketRef.current.callbacks.onConnectError = (error) => {
       setMessages((prev) => [
         ...prev,
@@ -292,6 +334,11 @@ export function ChatRoom() {
       setIsConnected(false);
     };
 
+    /**
+     * Handles WebSocket disconnection.
+     * @event onDisconnect
+     * @param {string} reason - Reason for disconnection
+     */
     socketRef.current.callbacks.onDisconnect = (reason) => {
       setMessages((prev) => [
         ...prev,
@@ -308,6 +355,11 @@ export function ChatRoom() {
       setIsConnected(false);
     };
 
+    /**
+     * Handles typing indicators from the server.
+     * @event onTyping
+     * @param {Object} data - Typing event data
+     */
     socketRef.current.callbacks.onTyping = (data) => {
       if (data.frontendId && data.frontendId !== frontendId) return;
       setIsTyping((prev) => ({ ...prev, 'CrackerBot Prime': true }));
@@ -317,9 +369,8 @@ export function ChatRoom() {
 
   useEffect(() => {
     initializeSocketListeners();
-    socketRef.current.connect(); // Ensure connection on mount
+    socketRef.current.connect();
     return () => {
-      // Only cleanup intervals or recognition, keep socket alive
       if (recognitionRef.current) recognitionRef.current.stop();
     };
   }, [initializeSocketListeners]);
@@ -645,21 +696,32 @@ export function ChatRoom() {
     }
   }, [isRecording, sendMessage, userName]);
 
+  /**
+   * Handles manual reconnection and full reset via Warp Reconnect button.
+   * Clears username and all completed tasks from Redis, then restarts with welcome message.
+   * @function manualReconnect
+   */
   const manualReconnect = useCallback(() => {
     if (!socketRef.current) return;
     const confirmReset = window.confirm(
-      '⚠️ Warning: This will clear all your projects and reset your session to a fresh start. Continue?'
+      '⚠️ Warning: This will reset your username to "Guest" and erase all completed tasks from the cosmic archives. Ready to warp anew?'
     );
     if (!confirmReset) return;
-    socketRef.current.disconnect();
+
+    // Emit custom reset_all command to clear username and projects in Redis
+    const sessionId = localStorage.getItem('sessionId') || crypto.randomUUID();
     socketRef.current.emit('message', {
-      text: '/clear_cache',
+      text: '/reset_all',
       type: 'command',
+      commandFlag: true,
       frontendId: frontendId,
       ip: window.location.hostname,
       target: 'bot_lead',
       user: userName,
+      sessionId,
     });
+
+    // Reset frontend state
     setMessages([]);
     setTaskPending(null);
     setCurrentTask(null);
@@ -670,7 +732,24 @@ export function ChatRoom() {
     setMessageIds(new Set());
     setPersistentMessages([]);
     localStorage.removeItem('sessionId');
-    socketRef.current.connect();
+    setFrontendId(null);
+
+    // Disconnect and reconnect to trigger welcome message
+    socketRef.current.disconnect();
+    setTimeout(() => {
+      socketRef.current.connect();
+      setMessages([{
+        id: `reconnect-${Date.now()}`,
+        from: 'System',
+        user: 'Guest',
+        text: '🌌 Cosmic channels realigned—welcome back, Guest! Carve your legacy in the stars!',
+        type: 'system',
+        timestamp: new Date().toLocaleTimeString(),
+        bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #00ccff)', color: '#000' },
+      }]);
+      // Set initial task state to prompt for new name
+      setCurrentTask({ taskId: `initial:${frontendId || 'pending'}`, step: 'name', taskStatus: 'pending' });
+    }, 500);
   }, [frontendId, userName]);
 
   const handleColorChange = useCallback((scheme) => {
@@ -864,7 +943,8 @@ export function ChatRoom() {
         </div>
 
         <div className="flex-1 flex items-center justify-center relative z-10">
-          <div className={`w-full max-w-6xl flex flex-col h-[80vh] max-h-[80vh] mx-4 ${editMode ? 'border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]' : ''}`}>
+          {/* Increased width by 400px (200px per side) using chatroom-container class */}
+          <div className={`chatroom-container ${editMode ? 'border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]' : ''}`}>
             <div
               ref={chatContainerRef}
               className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}
@@ -900,11 +980,16 @@ export function ChatRoom() {
                 Features: {currentTask.features || 'Forging cosmic brilliance...'} <br />
                 Status: {currentTask.taskStatus === 'building' ? `Building (${taskProgress[currentTask.taskId] || 0}%)` : currentTask.taskStatus}
                 {currentTask.taskStatus === 'building' && (
-                  <div className="w-full bg-gray-700 rounded-full h-2.5 mt-2">
-                    <div
-                      className="bg-gradient-to-r from-[#ff0066] to-[#ffcc00] h-2.5 rounded-full transition-all duration-500"
-                      style={{ width: `${taskProgress[currentTask.taskId] || 0}%` }}
-                    />
+                  <div className="task-progress-container">
+                    <div className={`task-progress-bar ${taskProgress[currentTask.taskId] === 100 ? 'animate-supernova' : 'animate-star-pulse'}`}>
+                      <div
+                        className={`task-progress-fill ${taskProgress[currentTask.taskId] === 100 ? 'animate-fade-in' : 'animate-cosmic-wave'}`}
+                        style={{ width: `${taskProgress[currentTask.taskId] || 0}%` }}
+                      />
+                      <span className="task-progress-text">
+                        {`${taskProgress[currentTask.taskId] || 0}%${taskProgress[currentTask.taskId] === 100 ? ' - Cosmic Triumph! 🌌✨' : ' - Forging the Galaxy! 🚀'}`}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
@@ -915,7 +1000,7 @@ export function ChatRoom() {
                 ref={commandsRef}
                 tabIndex={0}
                 onKeyDown={handleKeyDown}
-                className={`absolute bottom-12 left-0 w-full max-w-6xl ${currentScheme.chatBg} border border-[#ff00ff] rounded-md shadow-[0_0_10px_#ff00ff] p-2 z-20 max-h-64 overflow-y-auto`}
+                className={`absolute bottom-12 left-0 w-full max-w-[calc(72rem+400px)] ${currentScheme.chatBg} border border-[#ff00ff] rounded-md shadow-[0_0_10px_#ff00ff] p-2 z-20 max-h-64 overflow-y-auto`}
               >
                 {filteredCommands.length > 0 ? (
                   filteredCommands.map((cmd, idx) => (

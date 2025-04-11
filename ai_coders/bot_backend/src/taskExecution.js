@@ -1,6 +1,8 @@
 // bot_backend/src/taskExecution.js
-// Version: v2025-04-10-12
-/* CrackerBot’s cosmic task engine—forging interstellar masterpieces with supernova swagger! 🌌 */
+// Version: v2025-04-11-04
+/* CrackerBot’s cosmic task engine—forging interstellar masterpieces with supernova swagger! 🌌
+ * Enhanced by xAI for reliable task completion, JSON-structured output, and cosmic precision.
+ */
 
 import { openai } from './aiHelper.js';
 import { botSocket as botSocketPromise, emit } from './socket.js';
@@ -73,7 +75,7 @@ export const extensionMap = {
  */
 async function initializeTaskExecution(botSocket) {
   console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-  await log('taskExecution.js v2025-04-10-12: AI-driven builds with SUPERNOVA cosmic flair!');
+  await log('taskExecution.js v2025-04-11-04: AI-driven builds with SUPERNOVA cosmic flair!');
   await debug('Initializing WebSocket listeners', { taskId: 'init' });
 
   botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
@@ -88,7 +90,7 @@ async function initializeTaskExecution(botSocket) {
   });
 
   botSocket.on('message', async (data, ack) => {
-    await log(`📩 Received message: ${JSON.stringify(data)}`, { taskId: data.args?.task?.id || 'unknown' });
+    await log(`📥 Received message: ${JSON.stringify(data)}`, { taskId: data.args?.task?.id || 'unknown' });
     await debug('Processing incoming message', { taskId: data.args?.task?.id || 'unknown' });
 
     if (!data.commandFlag || data.command !== 'buildTask' || data.target !== 'bot_backend') {
@@ -128,17 +130,13 @@ async function initializeTaskExecution(botSocket) {
     if (ack) ack({ status: 'success', message: 'Task received' });
 
     try {
-      await log(`🌌 Processing buildTask for ${task.id}: ${task.features}`, { taskId: task.id, taskName: task.name, taskType: task.type });
+      await log(`🌌 Executing buildTask ${task.id} for ${userName}`, { taskId: task.id, taskName: task.name, taskType: task.type });
       const result = await startBuildTask(botSocket, task, userName, tone, frontendId, requestId, leadId);
 
       let finalContentBase64, finalFileName, jsonContent;
       if (result.content && result.jsonContent) {
-        const contentArray = Array.isArray(result.content) ? result.content : [result.content];
-        finalContentBase64 = contentArray.map(item => ({
-          fileName: item.fileName,
-          content: item.content,
-        }));
-        finalFileName = contentArray[0].fileName.endsWith('.zip') ? contentArray[0].fileName : `${task.name}${task.version ? `-v${task.version}` : ''}.zip`;
+        finalContentBase64 = Array.isArray(result.content) ? result.content : [result.content];
+        finalFileName = finalContentBase64[0].fileName.endsWith('.zip') ? finalContentBase64[0].fileName : `${task.name}${task.version ? `-v${task.version}` : ''}.zip`;
         jsonContent = result.jsonContent;
       } else {
         const fallbackContent = `CrackerBot generated minimal content for ${task.name}, ${userName}! Features: ${task.features}. Try tweaking for more! 🌠`;
@@ -159,7 +157,8 @@ async function initializeTaskExecution(botSocket) {
 
       const taskResult = {
         taskId: task.id,
-        content: finalContentBase64,
+        content: finalContentBase64, // Array of { fileName, content }
+        finalContent: finalContentBase64[0].content, // Primary base64 content for backward compatibility
         fileName: finalFileName,
         type: task.type,
         name: task.name,
@@ -167,7 +166,7 @@ async function initializeTaskExecution(botSocket) {
         ip: task.ip || 'unknown',
         taskFeatures: task.features,
         version: task.version || 1,
-        jsonContent,
+        jsonContent, // Structured JSON output
         downloadLink: `/download/${task.id}`,
         error: result.error,
         requestId,
@@ -196,6 +195,7 @@ async function initializeTaskExecution(botSocket) {
       const taskResult = {
         taskId: task.id,
         content: [{ fileName: `${task.name}_error.zip`, content: zipBuffer.toString('base64') }],
+        finalContent: zipBuffer.toString('base64'), // Primary base64 content
         fileName: `${task.name}_error.zip`,
         type: task.type,
         name: task.name,
@@ -204,6 +204,7 @@ async function initializeTaskExecution(botSocket) {
         taskFeatures: task.features,
         version: task.version || 1,
         jsonContent,
+        downloadLink: `/download/${task.id}`,
         error: `Task processing failed: ${err.message}`,
         requestId,
         leadId,
@@ -226,7 +227,7 @@ async function initializeTaskExecution(botSocket) {
     await error('bot_backend WebSocket disconnected');
   });
 
-  console.log(`[${new Date().toISOString()}] Task execution v2025-04-10-12 initialized with galactic precision`);
+  console.log(`[${new Date().toISOString()}] Task execution v2025-04-11-04 initialized with galactic precision`);
 }
 
 /**
@@ -243,15 +244,28 @@ async function emitTaskResult(botSocket, taskResult) {
   while (attempt < maxRetries) {
     try {
       if (!botSocket.connected) throw new Error('WebSocket not connected');
-      await debug(`Emitting taskResult for ${taskResult.taskId}, attempt ${attempt + 1}`, { taskId: taskResult.taskId, files: taskResult.jsonContent.files });
-      await emit('taskResult', taskResult, (ack) => {
-        if (ack?.status !== 'success') {
-          throw new Error(`Task result ack failed: ${JSON.stringify(ack)}`);
-        }
-      });
+      await debug(`Emitting taskResult for ${taskResult.taskId}, attempt ${attempt + 1}`, { taskId: taskResult.taskId, files: Object.keys(taskResult.jsonContent.files) });
+      const message = {
+        type: 'taskResult',
+        taskId: taskResult.taskId,
+        finalContent: taskResult.finalContent, // Primary base64 content
+        downloadLink: taskResult.downloadLink,
+        frontendId: taskResult.frontendId,
+        user: taskResult.userName || 'Guest',
+        taskName: taskResult.name,
+        taskType: taskResult.type,
+        taskFeatures: taskResult.taskFeatures,
+        fileName: taskResult.fileName,
+        jsonContent: taskResult.jsonContent, // Structured JSON output
+        timestamp: new Date().toISOString(),
+        bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
+        requestId: taskResult.requestId,
+        leadId: taskResult.leadId,
+      };
+      await emit('message', message);
       await log(`Task result emitted successfully for ${taskResult.taskId}`, {
         taskId: taskResult.taskId,
-        fileCount: Object.keys(taskResult.jsonContent.files).length,
+        fileCount: taskResult.content.length,
       });
       return;
     } catch (err) {
@@ -296,6 +310,7 @@ async function sendProgress(botSocket, taskId, percentage, message, frontendId, 
     leadId,
     messageId: `${taskId}-progress-${percentage}-${Date.now()}`,
     bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
+    timestamp: new Date().toISOString(),
   };
 
   const maxRetries = 3;
@@ -385,7 +400,7 @@ export async function startBuildTask(botSocket, task, userName, tone, frontendId
   } catch (err) {
     await error(`startBuildTask failed for ${taskId}: ${err.message}`, { taskId, taskName: name, taskType: type, stack: err.stack });
     await sendProgress(botSocket, taskId, 50, `Cosmic snag: ${err.message}—falling back...`, frontendId, ip, name, type, features, requestId, leadId);
-    
+
     const fallbackContent = `CrackerBot hit a cosmic snag, ${userName}! Error: ${err.message}. Features: ${features}. Retry or tweak it! 🌠`;
     const files = { 'error.txt': Buffer.from(fallbackContent) };
     const zipBuffer = await zipFilesWithReadme(files, task);
@@ -397,7 +412,7 @@ export async function startBuildTask(botSocket, task, userName, tone, frontendId
       userName,
       files: { 'error.txt': { content: fallbackContent, encoding: 'utf8' } },
     };
-    
+
     await sendProgress(botSocket, taskId, 100, 'Fallback generated—ready for retry! 🌌', frontendId, ip, name, type, features, requestId, leadId);
     return {
       error: `Failed to build task: ${err.message}`,
@@ -433,7 +448,7 @@ export async function startEditTask(botSocket, task, userName, tone, frontendId,
       editTaskBuilder(task, userName, tone, requestId, leadId),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Edit timeout')), 60000)),
     ]);
-    if (!result || !result.content) throw new Error('Edit task returned no content');
+    if (!result || !result.content || !result.jsonContent) throw new Error('Edit task returned no content');
 
     await sendProgress(botSocket, task.id, 100, 'Edit locked in—ready to rock! 🎸', frontendId, ip, name, type, features, requestId, leadId);
     await log(`Edit content generated for ${name}, files: ${result.content.length}`, { taskId: task.id });
@@ -447,13 +462,13 @@ export async function startEditTask(botSocket, task, userName, tone, frontendId,
 // Async initialization with robust connection wait
 (async () => {
   console.log(`[${new Date().toISOString()}] Starting taskExecution.js initialization`);
-  await debug('🌌 taskExecution.js v2025-04-10-12 initialization starting...');
+  await debug('🌌 taskExecution.js v2025-04-11-04 initialization starting...');
   const maxRetries = 5;
   let attempt = 0;
 
   while (attempt < maxRetries) {
     try {
-      await log(`🌌 taskExecution.js v2025-04-10-12 supernova-igniting—attempt ${attempt + 1}/${maxRetries}...`);
+      await log(`🌌 taskExecution.js v2025-04-11-04 supernova-igniting—attempt ${attempt + 1}/${maxRetries}...`);
       const botSocket = await botSocketPromise;
 
       let connectAttempt = 0;

@@ -1,6 +1,8 @@
 // ai_coders/bot_backend/src/logger.js
-// Version: v2025-04-10-16
-/* CrackerBot’s cosmic log forge—capturing the galaxy’s pulse with supernova precision! 🌌 */
+// Version: v2025-04-11-08
+/* CrackerBot’s cosmic log forge—capturing the galaxy’s pulse with supernova precision! 🌌
+ * Enhanced by xAI for JSON content logging, cosmic swagger, and interstellar robustness.
+ */
 
 import fs from 'fs/promises';
 import path from 'path';
@@ -24,7 +26,7 @@ const flushInterval = 5000; // Flush every 5s
 const maxBufferSize = 200; // Flush when buffer hits 200 entries
 
 /**
- * Rotates log file if size exceeds limit.
+ * Rotates log file if size exceeds limit with supernova precision.
  * @returns {Promise<void>}
  */
 async function rotateLog() {
@@ -36,16 +38,16 @@ async function rotateLog() {
       await fs.rename(logFile, archiveFile);
       logStream = createWriteStream(logFile, { flags: 'a' });
       logSize = 0;
-      console.log(`🌌 Log rotated to ${archiveFile}`); // Direct stdout for Docker
-      await log(`🌌 Log rotated to ${archiveFile}`, 'INFO');
+      console.log(`🌌 Log supernova-rotated to ${archiveFile}`); // Direct stdout for Docker
+      await log(`🌌 Log supernova-rotated to ${archiveFile}`, 'INFO');
     }
   } catch (err) {
-    console.error(`💥 Critical error rotating log: ${err.message}`);
+    console.error(`💥 Critical supernova error rotating log: ${err.message}`);
   }
 }
 
 /**
- * Flushes log buffer to file and stdout.
+ * Flushes log buffer to file and stdout with cosmic efficiency.
  * @returns {Promise<void>}
  */
 async function flushBuffer() {
@@ -58,7 +60,7 @@ async function flushBuffer() {
     process.stdout.write(messages); // Ensure Docker captures logs
     logSize += Buffer.byteLength(messages);
   } catch (err) {
-    console.error(`💥 Critical error flushing log buffer: ${err.message}`);
+    console.error(`💥 Critical supernova error flushing log buffer: ${err.message}`);
   }
 }
 
@@ -77,6 +79,7 @@ setInterval(flushBuffer, flushInterval);
  * @param {number} [options.progress] - Progress percentage (0-100)
  * @param {number} [options.fileCount] - Number of files generated
  * @param {number} [options.contentSize] - Total size of content in bytes
+ * @param {Object} [options.jsonContent] - Structured JSON content
  * @param {boolean} [options.emitProgress=true] - Whether to emit progress to frontend
  * @returns {Promise<void>}
  */
@@ -90,6 +93,7 @@ export async function log(message, level = 'INFO', options = {}) {
     progress,
     fileCount,
     contentSize,
+    jsonContent,
     emitProgress = true,
   } = options;
   const flair = {
@@ -105,6 +109,7 @@ export async function log(message, level = 'INFO', options = {}) {
     progress !== undefined ? ` [Progress: ${progress}%]` : '',
     fileCount !== undefined ? ` [Files: ${fileCount}]` : '',
     contentSize !== undefined ? ` [Size: ${contentSize} bytes]` : '',
+    jsonContent ? ` [JSON: ${Object.keys(jsonContent.files || {}).length} files]` : '',
   ].join('');
   const logMessage = `[${new Date().toISOString()}] ${level} ${flair}: ${message}${metadata}\n`;
 
@@ -123,7 +128,7 @@ export async function log(message, level = 'INFO', options = {}) {
     await sendProgress(taskId, progress, message, frontendId, ip, taskName, taskType);
   }
 
-  if (logBuffer.length > maxBufferSize) await flushBuffer();
+  if (logBuffer.length >= maxBufferSize) await flushBuffer();
 }
 
 /**
@@ -134,9 +139,7 @@ export async function log(message, level = 'INFO', options = {}) {
  */
 export async function error(message, options = {}) {
   const err = new Error(message);
-  const stackMessage = `${message}\n${err
-
-.stack}`;
+  const stackMessage = `${message}\n${err.stack}`;
   await log(stackMessage, 'ERROR', options);
 }
 
@@ -161,7 +164,7 @@ export async function debug(message, options = {}) {
 }
 
 /**
- * Sends progress update via WebSocket using socket.js emit function.
+ * Sends progress update via WebSocket using socket.js emit function with cosmic swagger.
  * @param {string} taskId - Task ID
  * @param {number|null} percentage - Progress (0-100) or null
  * @param {string} message - Progress message
@@ -177,7 +180,7 @@ async function sendProgress(taskId, percentage, message, frontendId, ip, taskNam
     type: 'progressUpdate',
     taskId,
     progress: percentage !== null && percentage !== undefined ? percentage : undefined,
-    text: `🌌 CrackerBot’s cosmic log: ${message}`,
+    text: `🌌 CrackerBot’s supernova log: ${message}`,
     from: 'CrackerBot Prime',
     target: 'bot_frontend',
     frontendId,
@@ -190,12 +193,12 @@ async function sendProgress(taskId, percentage, message, frontendId, ip, taskNam
   try {
     await emit('message', progressMessage, (ack) => {
       if (ack?.status !== 'success') {
-        console.warn(`Progress ack failed for task ${taskId}: ${JSON.stringify(ack)}`);
+        console.warn(`Progress ack supernova-failed for task ${taskId}: ${JSON.stringify(ack)}`);
       }
     });
-    await debug(`Progress beamed for task ${taskId}: ${message}`, { taskId, frontendId, ip, taskName, taskType, progress: percentage });
+    await debug(`Progress supernova-beamed for task ${taskId}: ${message}`, { taskId, frontendId, ip, taskName, taskType, progress: percentage });
   } catch (err) {
-    await error(`Progress send failed for task ${taskId}: ${err.message}`, { taskId, frontendId, ip, taskName, taskType });
+    await error(`Progress supernova-send failed for task ${taskId}: ${err.message}`, { taskId, frontendId, ip, taskName, taskType });
   }
 }
 

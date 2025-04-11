@@ -4,13 +4,13 @@
  * and handling multi-step tasks with interstellar flair. Enhanced by xAI for seamless
  * frontend-backend sync, robust Redis caching, and duplicate message prevention.
  *
- * @version 2025-04-10-03
+ * @version 2025-04-11-04
  * @author CrackerBot Team, enhanced by xAI
  * @module taskHandlers
  */
 
 import { log, error } from './logger.js';
-import { get, set, hGet, hSet, hDel, storeMessage, del } from './redisClient.js';
+import { get, set, hGet, hSet, hDel, storeMessage, del, keys } from './redisClient.js';
 import { emitCosmicMessage, delegateTask, updateTaskStatus } from './stateManager.js';
 import { generateResponse } from './aiHelper.js';
 import { DEFAULT_TONE, extensionMap } from './constants.js';
@@ -385,6 +385,49 @@ export async function handleTaskResponse({ text, user, ip, frontendId, type, tas
         await error(`Cache purge failed for ${persistedUserName}: ${err.message}`);
         const errorMsg = await generateResponse(
           `🌠 Cosmic cleanse stalled, ${persistedUserName}: ${err.message}. Retry, star duster?`,
+          persistedUserName,
+          DEFAULT_TONE
+        );
+        await sendMessage(botSocket, {
+          text: errorMsg,
+          type: 'error',
+          ip,
+          user: persistedUserName,
+          frontendId,
+          bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
+        });
+      }
+      return;
+    } else if (cmd === 'reset_all') {
+      try {
+        // Clear username and completed tasks from Redis
+        const projectKeys = await redisClient.keys(`project:${persistedUserName}:*`);
+        if (projectKeys.length > 0) await redisClient.del(projectKeys);
+        await del(`user:${frontendId}`);
+        await del(`welcomeSent:${frontendId}`);
+        taskState = { step: 'name', taskId: `initial:${frontendId}` };
+        await set(stateKey, JSON.stringify(taskState));
+        await setUserName('Guest', frontendId);
+
+        // Send welcome message prompting for new name
+        const welcomeText = `🌌 Cosmic channels realigned—welcome back, Guest! Carve your legacy in the stars!`;
+        const welcomeMsg = await generateResponse(welcomeText, 'Guest', DEFAULT_TONE);
+        await sendMessage(botSocket, {
+          text: welcomeMsg,
+          type: 'question',
+          taskId: taskState.taskId,
+          ip,
+          user: 'Guest',
+          frontendId,
+          options: ['Type your name below!'],
+          bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #00ccff)', color: '#000' },
+          messageId: `${taskState.taskId}-welcome-name`,
+        });
+        await log(`🌠 Full reset for ${persistedUserName} (frontendId: ${frontendId})—username and projects purged, warped to name step`);
+      } catch (err) {
+        await error(`Reset all failed for ${persistedUserName}: ${err.message}`);
+        const errorMsg = await generateResponse(
+          `🌌 Cosmic reset stalled, ${persistedUserName}: ${err.message}. Retry, star voyager?`,
           persistedUserName,
           DEFAULT_TONE
         );

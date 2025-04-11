@@ -1,10 +1,10 @@
-// ai_coders/bot_lead/src/redisClient.js (ESM, v2025-04-02-02)
+// ai_coders/bot_lead/src/redisClient.js (ESM, v2025-04-11-03)
 /**
  * CrackerBot’s Cosmic Redis Wrapper
  * Stores data with interstellar precision and supernova resilience!
- * Enhanced by xAI for robust error handling and JSON consistency.
+ * Enhanced by xAI for robust error handling, JSON consistency, and key pattern matching.
  *
- * @version 2025-04-02-02
+ * @version 2025-04-11-03
  * @author CrackerBot Team, enhanced by xAI
  * @module redisClient
  */
@@ -86,15 +86,16 @@ async function connectWithRetry() {
  * @async
  * @function storeMessage
  * @param {string} user - User identifier
- * @param {string} text - Message content
+ * @param {Object} message - Message object to store
  * @returns {Promise<void>}
  */
-export async function storeMessage(user, text) {
+export async function storeMessage(user, message) {
   const key = `messages:${user || 'anonymous'}`;
   try {
-    await redisClient.lPush(key, text);
+    const jsonMessage = JSON.stringify(message); // Store full message object as JSON
+    await redisClient.lPush(key, jsonMessage);
     await redisClient.lTrim(key, 0, 9);
-    await log(`Stored message for ${user}: ${text.substring(0, 50)}...`);
+    await log(`Stored message for ${user}: ${message.text.substring(0, 50)}...`);
   } catch (err) {
     await error(`Failed to store message for ${user}: ${err.message}`);
   }
@@ -229,14 +230,20 @@ export async function getPendingTasks(frontendId) {
  * @function set
  * @param {string} key - Redis key
  * @param {any} value - Value to store (stringified as JSON)
+ * @param {number} [ttl] - Time-to-live in seconds (optional)
  * @returns {Promise<void>}
  * @throws {Error} If operation fails
  */
-export async function set(key, value) {
+export async function set(key, value, ttl) {
   try {
     const jsonValue = JSON.stringify(value); // Always store as JSON
-    await redisClient.set(key, jsonValue);
-    await log(`Set key ${key}`);
+    if (ttl) {
+      await redisClient.setEx(key, ttl, jsonValue);
+      await log(`Set key ${key} with TTL ${ttl}s`);
+    } else {
+      await redisClient.set(key, jsonValue);
+      await log(`Set key ${key}`);
+    }
   } catch (err) {
     await error(`Failed to set ${key}: ${err.message}`);
     throw err;
@@ -257,6 +264,24 @@ export async function get(key) {
   } catch (err) {
     await error(`Failed to get ${key}: ${err.message}`);
     return null;
+  }
+}
+
+/**
+ * Retrieves all keys matching a pattern from Redis.
+ * @async
+ * @function keys
+ * @param {string} pattern - Key pattern (e.g., 'project:user:*')
+ * @returns {Promise<string[]>} Array of matching keys
+ */
+export async function keys(pattern) {
+  try {
+    const matchingKeys = await redisClient.keys(pattern);
+    await log(`Fetched ${matchingKeys.length} keys matching pattern ${pattern}`);
+    return matchingKeys;
+  } catch (err) {
+    await error(`Failed to fetch keys for pattern ${pattern}: ${err.message}`);
+    return [];
   }
 }
 
@@ -338,16 +363,16 @@ export async function hGet(hashKey, field) {
  * Deletes a key from Redis.
  * @async
  * @function del
- * @param {string} key - Redis key
+ * @param {string|string[]} key - Redis key or array of keys
  * @returns {Promise<void>}
  * @throws {Error} If operation fails
  */
 export async function del(key) {
   try {
     await redisClient.del(key);
-    await log(`Deleted key ${key}`);
+    await log(`Deleted key(s) ${Array.isArray(key) ? key.join(', ') : key}`);
   } catch (err) {
-    await error(`Failed to delete ${key}: ${err.message}`);
+    await error(`Failed to delete ${Array.isArray(key) ? key.join(', ') : key}: ${err.message}`);
     throw err;
   }
 }

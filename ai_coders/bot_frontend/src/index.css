@@ -119,6 +119,19 @@ code {
   100% { text-shadow: 0 0 5px #00ff9f; }
 }
 
+/* New cosmic flair animations for progress bar */
+@keyframes cosmicWave {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes starPulse {
+  0% { box-shadow: 0 0 5px #ff00cc, 0 0 10px #ff00cc80; }
+  50% { box-shadow: 0 0 15px #00ff9f, 0 0 25px #00ff9f80; }
+  100% { box-shadow: 0 0 5px #ff00cc, 0 0 10px #ff00cc80; }
+}
+
 /* Animation utility classes */
 .animate-pulse {
   animation: pulse 1.5s infinite;
@@ -138,6 +151,14 @@ code {
 
 .animate-text-glow {
   animation: text-glow 2s infinite ease-in-out;
+}
+
+.animate-cosmic-wave {
+  animation: cosmicWave 3s ease-in-out infinite;
+}
+
+.animate-star-pulse {
+  animation: starPulse 2s infinite;
 }
 
 /* Chat message base styles */
@@ -302,25 +323,33 @@ code {
   box-shadow: 0 0 10px #00ff85, 0 0 20px #00ff85;
 }
 
-/* Progress bar styles with radiant glow */
+/* Chatroom container styles */
+.chatroom-container {
+  @apply w-full max-w-[calc(72rem+400px)] h-[80vh] max-h-[80vh] mx-4 flex flex-col;
+}
+
+/* Progress bar styles with AI cosmic flair */
 .task-progress-container {
-  @apply mt-2 w-full max-w-lg mx-auto;
+  @apply mt-2 w-full max-w-lg mx-auto relative;
 }
 
 .task-progress-bar {
-  @apply h-3 rounded-full bg-gray-800 border border-[#ffcc00] relative overflow-hidden;
-  animation: radiantGlow 2s infinite;
+  @apply h-4 rounded-full bg-gray-800 border-2 border-[#ffcc00] relative overflow-hidden;
+  animation: radiantGlow 2s infinite, starPulse 1.5s infinite;
 }
 
 .task-progress-fill {
   @apply h-full rounded-full;
-  background: linear-gradient(to right, #ff0066, #ffcc00); /* Pink to yellow */
+  background: linear-gradient(90deg, #ff0066, #ffcc00, #00ff9f, #ff00cc, #ff0066);
+  background-size: 200% 100%;
+  animation: cosmicWave 3s ease-in-out infinite;
   transition: width 0.5s ease-in-out;
 }
 
 .task-progress-text {
-  @apply absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-sm font-bold;
-  text-shadow: 0 0 5px #000, 0 0 10px #000; /* Readable contrast */
+  @apply absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-sm font-bold z-10;
+  text-shadow: 0 0 5px #000, 0 0 10px #ff00cc, 0 0 15px #00ff9f;
+  animation: text-glow 2s infinite ease-in-out;
 }
 
 /* Theme-specific progress bar enhancements */

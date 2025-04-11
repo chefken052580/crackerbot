@@ -1,6 +1,8 @@
 // ai_coders/bot_backend/src/taskBuilder.js
-// Version: v2025-04-10-14
-/* CrackerBot’s cosmic build forge—crafting interstellar projects with supernova flair! 🌌 */
+// Version: v2025-04-11-06
+/* CrackerBot’s cosmic build forge—crafting interstellar projects with supernova flair! 🌌
+ * Enhanced by xAI for robust file generation, cosmic swagger, and JSON consistency.
+ */
 
 import fs from "fs/promises";
 import path from "path";
@@ -48,8 +50,7 @@ class TaskBuilder {
             userName,
             tone
           );
-          if (!htmlContent || !htmlContent.includes('<html')) {
-            htmlContent = `<!DOCTYPE html>
+expect(!htmlContent || !htmlContent.includes('<html')) && (htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -71,9 +72,8 @@ class TaskBuilder {
   </footer>
   <script src="script.js"></script>
 </body>
-</html>`;
-            await log(`🌟 Fallback HTML ignited for ${taskId}`, { taskId });
-          }
+</html>`);
+          await log(`🌟 Fallback HTML supernova’d for ${taskId}`, { taskId });
           files["index.html"] = htmlContent;
 
           await debug(`Generating CSS for ${taskId}`, { taskId });
@@ -190,8 +190,13 @@ document.styleSheets[0].insertRule('@keyframes cometStreak { 0% { left: -30px; }
 
           await debug(`Generating image for ${taskId}`, { taskId });
           imgPath = path.join(this.tempDir, `${taskId}-image.png`);
-          await generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath);
-          files["image.png"] = (await fs.readFile(imgPath)).toString('base64');
+          try {
+            await generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath);
+            files["image.png"] = (await fs.readFile(imgPath)).toString('base64');
+          } catch (imgErr) {
+            await error(`❌ Image generation failed for ${taskId}: ${imgErr.message}`, { taskId });
+            files["image.png"] = Buffer.from('Cosmic image generation failed—retry with more stardust!').toString('base64');
+          }
           break;
 
         case "full stack":
@@ -202,8 +207,7 @@ document.styleSheets[0].insertRule('@keyframes cometStreak { 0% { left: -30px; }
           await debug(`Generating ${effectiveType} stack for ${taskId}`, { taskId });
           const stackPrompt = `${promptBase} Create a ${effectiveType} project with server-side logic (e.g., Express for Node.js, PHP for LAMP), a client-side interface (e.g., React, Angular, or static HTML), and a stylesheet with cosmic animations. Include a package.json or equivalent setup file if applicable.`;
           let stackContent = await generateResponse(stackPrompt, userName, tone);
-          if (!stackContent || !stackContent.includes('function') || !stackContent.includes('{')) {
-            // Fallback to a basic MERN-like structure as a generic stack
+          if (!stackContent || (!stackContent.includes('function') && !stackContent.includes('{'))) {
             files["server.js"] = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
 const express = require('express');
 const app = express();
@@ -224,9 +228,8 @@ h1 { text-shadow: 0 0 10px #ff00ff; }`;
               scripts: { start: "node server.js" },
               dependencies: { express: "^4.18.2" }
             }, null, 2);
-            await log(`🌟 Fallback ${effectiveType} stack generated for ${taskId}`, { taskId });
+            await log(`🌟 Fallback ${effectiveType} stack supernova’d for ${taskId}`, { taskId });
           } else {
-            // Parse stackContent if AI returns a structured response (future enhancement)
             files[`${name}.${fileExt}`] = stackContent;
           }
           break;
@@ -240,11 +243,16 @@ h1 { text-shadow: 0 0 10px #ff00ff; }`;
             tone
           );
           if (!pdfContent || !pdfContent.includes('---PAGE BREAK---')) {
-            pdfContent = `CrackerBot’s Cosmic PDF for ${userName}\n\nGreetings, ${userName}! Welcome to ${name}, a cosmic journey crafted with ${features}. Imagine a universe where neon stars pulse—over 500 words of interstellar lore await! Picture yourself navigating a galaxy of code, with CrackerBot as your guide. [Continue with 500+ words...]\n---PAGE BREAK---\nCosmic Chapter Two\n\nAnother 500+ words: The adventure deepens as ${userName} tweaks ${features} into a supernova spectacle. [More narrative...]\n---PAGE BREAK---\nFinal Frontier\n\nFinal 500+ words: ${name} stands as ${userName}’s masterpiece, forged in CrackerBot’s cosmic fires. [Conclusion...]`;
-            await log(`📜 Fallback PDF content generated for ${taskId}`, { taskId });
+            pdfContent = `CrackerBot’s Cosmic PDF for ${userName}\n\nGreetings, ${userName}! Welcome to ${name}, a cosmic journey crafted with ${features}. Imagine a universe where neon stars pulse—over 500 words of interstellar lore await! Picture yourself navigating a galaxy of code, with CrackerBot as your guide. The void sparkles with possibility, each line a supernova igniting the dark. [Continue with 500+ words of cosmic narrative...]\n---PAGE BREAK---\nCosmic Chapter Two\n\nAnother 500+ words: The adventure deepens as ${userName} tweaks ${features} into a supernova spectacle. Galaxies collide, code orbits, and neon flares light the way. [More cosmic storytelling...]\n---PAGE BREAK---\nFinal Frontier\n\nFinal 500+ words: ${name} stands as ${userName}’s masterpiece, forged in CrackerBot’s cosmic fires. The universe bends to your will—stardust and swagger in every byte. [Epic conclusion...]`;
+            await log(`📜 Fallback PDF content supernova’d for ${taskId}`, { taskId });
           }
-          await generatePdf(pdfContent, pdfPath);
-          files[`${name}.pdf`] = (await fs.readFile(pdfPath)).toString('base64');
+          try {
+            await generatePdf(pdfContent, pdfPath);
+            files[`${name}.pdf`] = (await fs.readFile(pdfPath)).toString('base64');
+          } catch (pdfErr) {
+            await error(`❌ PDF generation failed for ${taskId}: ${pdfErr.message}`, { taskId });
+            files[`${name}.pdf`] = Buffer.from(`Cosmic PDF creation failed—${pdfErr.message}. Retry with more galactic juice!`).toString('base64');
+          }
           break;
 
         case "image":
@@ -255,8 +263,13 @@ h1 { text-shadow: 0 0 10px #ff00ff; }`;
           await debug(`Generating ${effectiveType} image for ${taskId}`, { taskId });
           const imgExt = effectiveType === "image" ? "png" : fileExt;
           imgPath = path.join(this.tempDir, `${taskId}-${name}.${imgExt}`);
-          await generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath, imgExt);
-          files[`${name}.${imgExt}`] = (await fs.readFile(imgPath)).toString('base64');
+          try {
+            await generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath, imgExt);
+            files[`${name}.${imgExt}`] = (await fs.readFile(imgPath)).toString('base64');
+          } catch (imgErr) {
+            await error(`❌ Image generation failed for ${taskId}: ${imgErr.message}`, { taskId });
+            files[`${name}.${imgExt}`] = Buffer.from(`Cosmic ${imgExt} generation failed—${imgErr.message}. Retry with supernova power!`).toString('base64');
+          }
           break;
 
         case "javascript":
@@ -296,22 +309,23 @@ h1 { text-shadow: 0 0 10px #ff00ff; }`;
             userName,
             tone
           );
-          if (!scriptContent || !scriptContent.includes('function') && !scriptContent.includes('class') && !scriptContent.includes('{')) {
-            scriptContent = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-${effectiveType === 'javascript' || effectiveType === 'react' ? `
+          if (!scriptContent || (!scriptContent.includes('function') && !scriptContent.includes('class') && !scriptContent.includes('{'))) {
+            scriptContent = effectiveType === 'javascript' || effectiveType === 'react'
+              ? `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
 function cosmic${name}() {
   console.log('Welcome to ${name}, ${userName}! Features: ${features}');
-  return 'Cosmic vibes activated!';
+  return 'Cosmic vibes supernova-activated!';
 }
-cosmic${name}();
-` : effectiveType === 'python' ? `
+cosmic${name}();`
+              : effectiveType === 'python'
+              ? `# ${userName}’s cosmic masterpiece, forged by CrackerBot!
 def cosmic_${name}():
     print("Welcome to ${name}, ${userName}! Features: ${features}")
-    return "Cosmic vibes activated!"
-cosmic_${name}()
-` : `// Cosmic ${effectiveType} stub for ${userName}
-${name} = "Welcome to ${name}, ${userName}! Features: ${features}";`}`;
-            await log(`🌟 Fallback ${effectiveType} script generated for ${taskId}`, { taskId });
+    return "Cosmic vibes supernova-activated!"
+cosmic_${name}()`
+              : `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
+${name} = "Welcome to ${name}, ${userName}! Features: ${features} — Cosmic vibes supernova-activated!";`;
+            await log(`🌟 Fallback ${effectiveType} script supernova’d for ${taskId}`, { taskId });
           }
           files[`${name}.${fileExt}`] = scriptContent;
           break;
@@ -331,15 +345,23 @@ console.log('Features: ${features}'.magenta);
 let count = 0;
 setInterval(() => console.log(\`Cosmic pulse #\${count++}...\`.cyan), 2000);
 setTimeout(() => console.log('Blast off, ${userName}!'.green), 5000);`;
-            await log(`💾 Fallback executable JS generated for ${taskId}`, { taskId });
+            await log(`💾 Fallback executable JS supernova’d for ${taskId}`, { taskId });
           }
           const jsPath = path.join(this.tempDir, `${taskId}-${name}.js`);
-          await fs.writeFile(jsPath, exeJsContent);
           const exePath = path.join(this.tempDir, `${taskId}-${name}.exe`);
-          await execPromise(`npx pkg ${jsPath} --output ${exePath}`);
-          files[`${name}.exe`] = (await fs.readFile(exePath)).toString('base64');
-          await fs.unlink(jsPath);
-          await fs.unlink(exePath);
+          try {
+            await fs.writeFile(jsPath, exeJsContent);
+            await execPromise(`npx pkg ${jsPath} --output ${exePath}`);
+            files[`${name}.exe`] = (await fs.readFile(exePath)).toString('base64');
+          } catch (exeErr) {
+            await error(`❌ EXE compilation failed for ${taskId}: ${exeErr.message}`, { taskId });
+            files[`${name}.js`] = `${exeJsContent}\n// EXE compilation failed: ${exeErr.message} — Run with Node.js instead!`;
+          } finally {
+            await Promise.all([
+              fs.unlink(jsPath).catch(() => {}),
+              fs.unlink(exePath).catch(() => {}),
+            ]);
+          }
           break;
 
         case "bat":
@@ -363,7 +385,7 @@ TIMEOUT /T 2 >nul
 IF %count% LSS 5 GOTO loop
 ECHO Blast off, ${userName}!
 PAUSE`;
-            await log(`🖥️ Fallback batch script generated for ${taskId}`, { taskId });
+            await log(`🖥️ Fallback batch script supernova’d for ${taskId}`, { taskId });
           }
           files[`${name}.bat`] = batContent;
           break;
@@ -377,8 +399,8 @@ PAUSE`;
           );
           if (!genericContent) {
             genericContent = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-${effectiveType} content for ${name} with features: ${features}. Cosmic vibes incoming! 🌌`;
-            await log(`🌠 Fallback ${effectiveType} content generated for ${taskId}`, { taskId });
+${effectiveType} content for ${name} with features: ${features}. Cosmic vibes supernova-activated! 🌌`;
+            await log(`🌠 Fallback ${effectiveType} content supernova’d for ${taskId}`, { taskId });
           }
           files[`${name}.${fileExt}`] = genericContent;
           break;
@@ -395,12 +417,15 @@ ${effectiveType} content for ${name} with features: ${features}. Cosmic vibes in
   async cleanupTempFiles(taskId) {
     try {
       const files = await fs.readdir(this.tempDir);
-      for (const file of files) {
-        if (file.includes(taskId)) {
-          await fs.unlink(path.join(this.tempDir, file));
-          await log(`🧹 Vaporized temp file: ${file}`, { taskId });
-        }
-      }
+      await Promise.all(
+        files
+          .filter((f) => f.includes(taskId))
+          .map((file) =>
+            fs.unlink(path.join(this.tempDir, file)).then(() =>
+              log(`🧹 Vaporized temp file: ${file}`, { taskId })
+            )
+          )
+      );
       await log(`🧹 Cosmic cleanup complete for ${taskId}`, { taskId });
     } catch (err) {
       await error(`❌ Cleanup failed for ${taskId}: ${err.message}`, { taskId });
@@ -428,7 +453,7 @@ async function generateEnhancedReadme(task, userName, tone) {
     return readmeContent;
   } catch (err) {
     await error(`❌ README generation failed for ${taskId}: ${err.message}`, { taskId });
-    return `Welcome to ${name}, ${userName}’s cosmic odyssey!\n\nThis ${type} project, forged by CrackerBot, brings "${features}" to life with neon-drenched flair. Unzip the archive, run 'npm start' (if applicable), or open index.html to surf the galaxy. Expect pulsating highlights like supernova buttons and cosmic animations. Remix with /refine_project to amplify the vibes!\n\nOver 300 words of cosmic glory await—blast off!`;
+    return `Welcome to ${name}, ${userName}’s cosmic odyssey!\n\nThis ${type} project, forged by CrackerBot, ignites "${features}" with supernova flair! Picture a neon-drenched universe where code pulses like stars—over 300 words of cosmic glory await! Unzip this galactic archive, spark it with 'npm start' (if applicable), or launch index.html to surf the galaxy. Expect pulsating highlights: supernova buttons, orbiting animations, and gradients that stretch across the void. Remix with /refine_project to amplify the vibes or blast off anew with CrackerBot’s cosmic forge!\n\nCrafted with stardust and swagger, ${name} is your ticket to the stars—${userName}, you’re the pilot now!`;
   }
 }
 
@@ -448,18 +473,21 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
       features,
       userName,
       files: Object.fromEntries(
-        Object.entries(files).map(([fileName, content]) => [fileName, {
-          content: typeof content === 'string' ? content : content.toString('base64'),
-          encoding: typeof content === 'string' ? 'utf8' : 'base64'
-        }])
-      )
+        Object.entries(files).map(([fileName, content]) => [
+          fileName,
+          {
+            content: typeof content === 'string' ? content : content.toString('base64'),
+            encoding: typeof content === 'string' ? 'utf8' : 'base64',
+          },
+        ])
+      ),
     };
-    await log(`📦 JSON content structured for ${taskId}`, { taskId, fileCount: Object.keys(files).length });
+    await log(`📦 JSON content supernova-structured for ${taskId}`, { taskId, fileCount: Object.keys(files).length });
 
     const zipBuffer = await zipFilesWithReadme(files, task);
     const zipFileName = `${name}${version ? `-v${version}` : ""}.zip`;
 
-    await log(`🌌 Build completed for ${taskId}`, {
+    await log(`🌌 Build supernova-completed for ${taskId}`, {
       taskId,
       fileCount: Object.keys(files).length,
       contentSize: zipBuffer.length,
@@ -471,11 +499,11 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
       ip,
       requestId,
       leadId,
-      taskFeatures: features
+      taskFeatures: features,
     };
   } catch (err) {
-    await error(`❌ Build crashed for ${taskId}: ${err.message}`, { taskId });
-    const fallbackContent = `CrackerBot hit a snag building ${name} for ${userName}! Error: ${err.message}. Retry with a cosmic tweak! 🌠`;
+    await error(`❌ Build supernova-crashed for ${taskId}: ${err.message}`, { taskId });
+    const fallbackContent = `CrackerBot hit a cosmic snag forging ${name} for ${userName}! Error: ${err.message}. Retry with a supernova tweak! 🌠\n\nFear not, ${userName}—the galaxy bends to your will. Adjust "${features}" or blast off again!`;
     const files = { "error.txt": Buffer.from(fallbackContent) };
     const zipBuffer = await zipFilesWithReadme(files, task);
     const zipFileName = `${name}_error.zip`;
@@ -485,7 +513,7 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
       type,
       features,
       userName,
-      files: { "error.txt": { content: fallbackContent, encoding: 'utf8' } }
+      files: { "error.txt": { content: fallbackContent, encoding: 'utf8' } },
     };
     return {
       content: [{ fileName: zipFileName, content: zipBuffer.toString("base64") }],
@@ -494,7 +522,7 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
       ip,
       requestId,
       leadId,
-      error: `Build failed: ${err.message}`
+      error: `Build failed: ${err.message}`,
     };
   } finally {
     await builder.cleanupTempFiles(taskId);
@@ -502,8 +530,8 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
 }
 
 export async function editTask(task, userName, tone, requestId, leadId) {
-  await log(`✨ Editing task ${task.taskId || task.id} for ${userName}`, { taskId: task.taskId || task.id });
+  await log(`✨ Remixing task ${task.taskId || task.id} for ${userName}`, { taskId: task.taskId || task.id });
   return buildTask(task, userName, tone, requestId, leadId);
 }
 
-console.log(`[${new Date().toISOString()}] taskBuilder.js v2025-04-10-14 loaded with supernova swagger!`);
+console.log(`[${new Date().toISOString()}] taskBuilder.js v2025-04-11-06 supernova-loaded with interstellar swagger!`);

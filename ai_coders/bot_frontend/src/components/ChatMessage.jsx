@@ -1,12 +1,17 @@
 /* CrackerBot’s cosmic messenger—delivering supernova chats with flair and precision! 🌌
- * Enhanced by xAI for static AI responses, robust user name handling, and cosmic interactivity.
- * Version: v2025-04-10-14
+ * Enhanced by xAI for static AI responses, robust user name handling, cosmic interactivity, and a stellar progress bar.
+ * Version: v2025-04-11-02
  */
 
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import PreviewPopup from './PreviewPopup';
 
+/**
+ * ChatMessage component for rendering individual messages with cosmic flair.
+ * @class ChatMessage
+ * @extends {Component}
+ */
 class ChatMessage extends Component {
   state = {
     showPreview: false,
@@ -15,28 +20,46 @@ class ChatMessage extends Component {
     errorMessage: '',
   };
 
+  /**
+   * Updates state when an error occurs during rendering.
+   * @param {Error} error - The error object
+   * @returns {Object} New state with error details
+   */
   static getDerivedStateFromError(error) {
     console.error(`[${new Date().toISOString()}] ⚠️ ChatMessage caught error: ${error.message}`);
     return { hasError: true, errorMessage: error.message };
   }
 
+  /**
+   * Logs detailed error information when caught.
+   * @param {Error} error - The error object
+   * @param {Object} info - Additional error info
+   */
   componentDidCatch(error, info) {
     console.error(`[${new Date().toISOString()}] ⚠️ ChatMessage error boundary triggered: ${error.message}, Info: ${JSON.stringify(info)}`);
   }
 
+  /**
+   * Initializes progress state on mount.
+   */
   componentDidMount() {
     const { message, progress } = this.props;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     console.log(`[${new Date().toISOString()}] 🌠 ChatMessage mounted: ${JSON.stringify(msg)}`);
     if (msg.type === 'progressUpdate' || msg.type === 'building') {
-      this.setState({ taskProgress: progress !== undefined ? progress : msg.progress || 0 });
-      console.log(`[${new Date().toISOString()}] 🌟 Initial progress set for task ${msg.taskId}: ${this.state.taskProgress}%`);
+      const initialProgress = progress !== undefined ? progress : msg.progress || 0;
+      this.setState({ taskProgress: initialProgress });
+      console.log(`[${new Date().toISOString()}] 🌟 Initial progress set for task ${msg.taskId}: ${initialProgress}%`);
     }
   }
 
+  /**
+   * Updates progress state when props change.
+   * @param {Object} prevProps - Previous props
+   */
   componentDidUpdate(prevProps) {
     const { message, progress } = this.props;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     if (prevProps.progress !== progress || prevProps.message.progress !== msg.progress) {
       if (msg.type === 'progressUpdate' || msg.type === 'building') {
         const newProgress = progress !== undefined ? progress : msg.progress || 0;
@@ -46,9 +69,21 @@ class ChatMessage extends Component {
     }
   }
 
+  /**
+   * Normalizes message input to ensure consistent structure.
+   * @param {string|Object} message - Raw message input
+   * @returns {Object} Normalized message object
+   */
+  normalizeMessage = (message) => {
+    return typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+  };
+
+  /**
+   * Handles preview button click to show task content.
+   */
   handlePreviewClick = () => {
     const { message, taskResult, setMessages } = this.props;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     const content = msg.finalContent || (taskResult && taskResult.finalContent);
     if (content) {
       this.setState({ showPreview: true });
@@ -70,10 +105,14 @@ class ChatMessage extends Component {
     }
   };
 
+  /**
+   * Renders a cosmic progress bar with AI flair.
+   * @returns {JSX.Element|null} Progress bar JSX or null
+   */
   renderProgressBar = () => {
     const { message } = this.props;
     const { taskProgress } = this.state;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     const hasProgress = taskProgress !== null && (msg.type === 'building' || msg.type === 'progressUpdate');
 
     if (!hasProgress) {
@@ -83,35 +122,29 @@ class ChatMessage extends Component {
 
     const clampedProgress = Math.min(Math.max(taskProgress, 0), 100);
     const isComplete = clampedProgress === 100;
-    const gradient = isComplete
-      ? 'linear-gradient(to right, #00ff9f, #ff00ff, #00ffff)'
-      : `linear-gradient(to right, #ff0066 0%, #ffcc00 ${clampedProgress}%, #333333 ${clampedProgress}% 100%)`;
 
     return (
-      <div className="progress-bar-container mt-2 w-full max-w-lg">
-        <div
-          className="progress-bar h-3 rounded-full bg-gray-900 overflow-hidden relative border border-[#ff00ff]"
-          style={{ transition: 'all 0.5s ease-in-out' }}
-        >
+      <div className="task-progress-container mt-2">
+        <div className={`task-progress-bar ${isComplete ? 'animate-supernova' : 'animate-star-pulse'}`}>
           <div
-            className={`progress-fill h-full absolute top-0 left-0 ${isComplete ? 'animate-glow' : 'animate-pulse'}`}
-            style={{
-              width: `${clampedProgress}%`,
-              background: gradient,
-              boxShadow: '0 0 15px rgba(255, 0, 102, 0.9)',
-            }}
+            className={`task-progress-fill ${isComplete ? 'animate-fade-in' : 'animate-cosmic-wave'}`}
+            style={{ width: `${clampedProgress}%` }}
           />
+          <span className="task-progress-text">
+            {`${clampedProgress}%${isComplete ? ' - Cosmic Triumph! 🌌✨' : ' - Forging the Galaxy! 🚀'}`}
+          </span>
         </div>
-        <span className="text-sm mt-1 block text-center font-mono text-[#ffcc00]">
-          {clampedProgress}% - {isComplete ? 'Supernova Complete! 🌟' : 'Forging Cosmic Brilliance! 🚀'}
-        </span>
       </div>
     );
   };
 
+  /**
+   * Renders task result with download and preview options.
+   * @returns {JSX.Element|null} Task result JSX or null
+   */
   renderTaskResult = () => {
     const { message, taskResult, colorScheme } = this.props;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     const hasContent = msg.finalContent || (taskResult && taskResult.finalContent);
     const downloadLink = msg.downloadLink || (taskResult && taskResult.downloadLink);
     const fileName = msg.fileName || (taskResult && taskResult.fileName) || `${msg.taskName || 'cosmic_download'}.zip`;
@@ -131,7 +164,7 @@ class ChatMessage extends Component {
           <a
             href={downloadLink}
             download={fileName}
-            className={`${colorScheme.accent || 'text-[#00ff9f]'} px-6 py-2 rounded-full bg-gradient-to-r from-[#ff0066] to-[#ffcc00] hover:from-[#ff3399] hover:to-[#ffdd33] text-white font-semibold tracking-wider border-2 border-[#00ff9f] shadow-[0_0_15px_#ffcc00] hover:shadow-[0_0_25px_#ffcc00] transition-all duration-300`}
+            className={`${colorScheme.accent || 'text-[#00ff9f]'} px-6 py-2 rounded-full bg-gradient-to-r from-[#ff0066] to-[#ffcc00] hover:from-[#ff3399] hover:to-[#ffdd33] text-white font-semibold tracking-wider border-2 border-[#00ff9f] shadow-[0_0_15px_#ffcc00] hover:shadow-[0_0_25px_#ffcc00] transition-all duration-300 animate-supernova`}
           >
             Snag Cosmic Loot 🌠
           </a>
@@ -139,7 +172,7 @@ class ChatMessage extends Component {
         {hasContent && (
           <button
             onClick={this.handlePreviewClick}
-            className={`${colorScheme.button || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} ${colorScheme.buttonText || 'text-white'} px-6 py-2 rounded-full hover:scale-105 hover:shadow-[0_0_20px_#00ff9f] transition-all duration-300 border-2 border-[#ff00ff] shadow-[0_0_15px_#ff00ff]`}
+            className={`${colorScheme.button || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} ${colorScheme.buttonText || 'text-white'} px-6 py-2 rounded-full hover:scale-105 hover:shadow-[0_0_20px_#00ff9f] transition-all duration-300 border-2 border-[#ff00ff] shadow-[0_0_15px_#ff00ff] animate-supernova`}
           >
             Warp Preview 🚀
           </button>
@@ -148,9 +181,13 @@ class ChatMessage extends Component {
     );
   };
 
+  /**
+   * Renders message options as interactive buttons.
+   * @returns {JSX.Element|null} Options JSX or null
+   */
   renderOptions = () => {
     const { message, onOptionClick, colorScheme } = this.props;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     if (!msg.options || !Array.isArray(msg.options) || msg.options.length === 0 || msg.type === 'taskResult') {
       console.log(`[${new Date().toISOString()}] No cosmic options for message: ${msg.text}`);
       return null;
@@ -161,18 +198,12 @@ class ChatMessage extends Component {
         <div className="options-container flex flex-wrap gap-3 mt-4">
           {msg.options.map((option, idx) => {
             const text = typeof option === 'string' ? option : option.text || 'Unknown';
-            const key = `${msg.messageId || 'msg'}-${idx}-${text}`; // Unique key
+            const key = `${msg.messageId || 'msg'}-${idx}-${text}`;
             return (
               <button
                 key={key}
-                onClick={() => {
-                  if (typeof onOptionClick === 'function') {
-                    onOptionClick(text);
-                  } else {
-                    console.warn(`[${new Date().toISOString()}] onOptionClick is not defined for option: ${text}`);
-                  }
-                }}
-                className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-lg hover:scale-105 hover:shadow-[0_0_15px_#ffcc00] transition-all duration-300 border-2 border-[#ffcc00]`}
+                onClick={() => onOptionClick(text)}
+                className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-lg hover:scale-105 hover:shadow-[0_0_15px_#ffcc00] transition-all duration-300 border-2 border-[#ffcc00] animate-fade-in`}
               >
                 {text}
               </button>
@@ -186,9 +217,13 @@ class ChatMessage extends Component {
     }
   };
 
+  /**
+   * Renders project list with options.
+   * @returns {JSX.Element|null} Projects JSX or null
+   */
   renderProjects = () => {
     const { message, onOptionClick, colorScheme } = this.props;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     if (!msg.projects || msg.projects.length === 0) return null;
     console.log(`[${new Date().toISOString()}] 🌟 Rendering cosmic project list: ${JSON.stringify(msg.projects)}`);
     return (
@@ -196,7 +231,7 @@ class ChatMessage extends Component {
         {msg.projects.map((project, idx) => (
           <div
             key={idx}
-            className="project-item flex items-center justify-between bg-gray-900 p-3 rounded-lg shadow-md border border-[#ff00ff]"
+            className="project-item flex items-center justify-between bg-gray-900 p-3 rounded-lg shadow-md border border-[#ff00ff] animate-fade-in"
           >
             <span className="font-medium text-[#00ff9f] flex-1">
               {project.text} {project.status === 'completed' ? '✅' : project.status === 'failed' ? '❌' : '⏳'}
@@ -206,7 +241,7 @@ class ChatMessage extends Component {
                 <button
                   key={optIdx}
                   onClick={() => onOptionClick(opt, { projectData: project })}
-                  className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-md hover:scale-105 hover:shadow-[0_0_15px_#ff00ff] transition-all duration-300 border-2 border-[#ff00ff]`}
+                  className={`${colorScheme.bubble || 'bg-gradient-to-r from-[#ff00cc] to-[#3333ff]'} px-4 py-2 text-base rounded-full shadow-md hover:scale-105 hover:shadow-[0_0_15px_#ff00ff] transition-all duration-300 border-2 border-[#ff00ff] animate-fade-in`}
                 >
                   {opt}
                 </button>
@@ -221,7 +256,7 @@ class ChatMessage extends Component {
   render() {
     const { message, taskResult, colorScheme, setMessages, socket } = this.props;
     const { showPreview, hasError, errorMessage } = this.state;
-    const msg = typeof message === 'string' ? { text: message, user: 'Guest' } : { ...message, user: message.user || 'Guest' };
+    const msg = this.normalizeMessage(message);
     const displayText = msg.type === 'task_response' ? `${msg.user}: ${msg.text}` : msg.text;
 
     if (hasError) {
@@ -251,7 +286,7 @@ class ChatMessage extends Component {
 
     const messageClass = `${
       msg.type === 'task_response'
-        ? `${colorScheme.user || 'text-[#00ffcc]'} no-animation`
+        ? `${colorScheme.user || 'text-[#00ffcc]'} user-message no-animation`
         : msg.type === 'system'
         ? colorScheme.system || 'text-[#ffcc00]'
         : msg.type === 'progressUpdate'
@@ -261,13 +296,13 @@ class ChatMessage extends Component {
         : msg.type === 'taskResult' || msg.type === 'question'
         ? `${colorScheme.bot || 'text-[#00ff99]'} cosmic-result`
         : colorScheme.bot || 'text-[#ff00cc]'
-    }`;
+    } chat-message animate-fade-in`;
 
     console.log(`[${new Date().toISOString()}] 🌌 Rendering ChatMessage UI for "${msg.text}"`);
 
     return (
       <div
-        className={`chat-message ${messageClass} p-4 rounded-lg shadow-lg`}
+        className={messageClass}
         style={{
           background: bubbleStyle.background,
           color: bubbleStyle.color,
@@ -302,16 +337,37 @@ class ChatMessage extends Component {
 }
 
 ChatMessage.propTypes = {
+  /**
+   * The message content, either a string or object with details.
+   */
   message: PropTypes.oneOfType([PropTypes.string, PropTypes.object]).isRequired,
+  /**
+   * Task result data for completed builds.
+   */
   taskResult: PropTypes.shape({
     downloadLink: PropTypes.string,
     finalContent: PropTypes.string,
     fileName: PropTypes.string,
   }),
+  /**
+   * Callback for option button clicks.
+   */
   onOptionClick: PropTypes.func.isRequired,
+  /**
+   * Theme-specific color scheme.
+   */
   colorScheme: PropTypes.object,
+  /**
+   * Progress percentage for building tasks.
+   */
   progress: PropTypes.number,
+  /**
+   * Function to update message list.
+   */
   setMessages: PropTypes.func,
+  /**
+   * WebSocket instance for communication.
+   */
   socket: PropTypes.object,
 };
 

@@ -3,7 +3,7 @@
  * Manages tasks and messages with interstellar precision and supernova swagger!
  * Enhanced by xAI for robust sync, flair, galactic connectivity, and error resilience.
  *
- * @version 2025-04-10-04
+ * @version 2025-04-11-05
  * @author CrackerBot Team, enhanced by xAI
  * @module stateManager
  */
@@ -88,7 +88,7 @@ export async function updateTaskStatus(taskId, status) {
  * @async
  * @param {Object} message - Message payload
  * @param {string} message.text - Message content
- * @param {string} [message.type] - Message type (e.g., 'question', 'success', 'progressUpdate')
+ * @param {string} [message.type] - Message type (e.g., 'question', 'success', 'progressUpdate', 'taskResult')
  * @param {string} [message.taskId] - Task identifier
  * @param {string} [message.from='CrackerBot Prime'] - Sender name
  * @param {string} [message.target='bot_frontend'] - Target bot
@@ -103,6 +103,7 @@ export async function updateTaskStatus(taskId, status) {
  * @param {string} [message.finalContent] - Final task content (base64)
  * @param {string} [message.fileName] - File name
  * @param {string} [message.downloadLink] - Download URL
+ * @param {Object} [message.jsonContent] - Structured JSON content
  * @param {string} [message.messageId] - Unique message identifier (optional)
  * @param {Object} [message.bubbleStyle] - Custom bubble styling
  * @param {number} [message.progress] - Progress percentage (0-100)
@@ -111,7 +112,7 @@ export async function updateTaskStatus(taskId, status) {
  */
 export async function emitCosmicMessage(msgData, socket = botSocket) {
   try {
-    const { frontendId, target = 'bot_frontend', messageId, text, options, taskId, progress } = msgData;
+    const { frontendId, target = 'bot_frontend', messageId, text, options, taskId, progress, jsonContent } = msgData;
     const effectiveMessageId = messageId || `${taskId || Date.now()}-${target}-${text.slice(0, 50)}`;
     const messageKey = `message:${effectiveMessageId}`;
     const isSent = await get(messageKey);
@@ -128,9 +129,15 @@ export async function emitCosmicMessage(msgData, socket = botSocket) {
     if (!isSent) {
       const taskState = await get(`taskState:${frontendId}`);
       await log(`🌌 TaskState for ${frontendId}: ${taskState || 'none'}`, { taskId });
-      await socket.emit('message', { ...msgData, frontendId, messageId: effectiveMessageId });
+      const message = {
+        ...msgData,
+        frontendId,
+        messageId: effectiveMessageId,
+        jsonContent: jsonContent || (msgData.type === 'taskResult' ? { files: {} } : undefined), // Ensure jsonContent for taskResult
+      };
+      await socket.emit('message', message);
       await set(messageKey, JSON.stringify({ sent: true, timestamp: Date.now() }), 86400); // 24-hour TTL
-      await log(`✨ Message ${effectiveMessageId} supernova-beamed to ${target} for frontendId ${frontendId || 'none'}: "${text}" with options: ${JSON.stringify(options || [])} ${progress !== undefined ? `progress: ${progress}%` : ''}`, { taskId });
+      await log(`✨ Message ${effectiveMessageId} supernova-beamed to ${target} for frontendId ${frontendId || 'none'}: "${text}" with options: ${JSON.stringify(options || [])} ${progress !== undefined ? `progress: ${progress}%` : ''} ${jsonContent ? 'with JSON content' : ''}`, { taskId });
     } else {
       await log(`✨ Message ${effectiveMessageId} already supernova-beamed to ${target}—cosmic deduplication prevails!`, { taskId });
     }
@@ -298,6 +305,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
     const {
       taskId = null,
       content = null, // Array of { fileName, content }
+      finalContent = null, // Primary base64 content
       fileName = null,
       type = 'html',
       name = 'unknown',
@@ -315,7 +323,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
 
     await log(`🌟 Decoding taskResult for ${taskId || 'unknown'}—content: ${content ? 'stellar payload acquired!' : 'no payload detected'}`, { taskId });
 
-    if (taskError || !taskId || !content || !jsonContent) {
+    if (taskError || !taskId || (!content && !finalContent) || !jsonContent) {
       const errorMsg = await generateResponse(
         `🌠 Yo ${userName}, "${name}" hit a cosmic rift: ${taskError || 'Missing task data'}. Retry or refine, star voyager?`,
         userName,
@@ -329,9 +337,10 @@ async function processTaskResult(data, args, socket, resolve, reject) {
         user: userName,
         frontendId,
         options: ['Retry', 'Adjust Features'],
-        finalContent: content ? content[0]?.content : null,
+        finalContent: finalContent || (content && content[0]?.content) || null,
         fileName: fileName || `${name}_error.zip`,
-        downloadLink: content ? downloadLink || `data:application/zip;base64,${content[0]?.content}` : null,
+        downloadLink: downloadLink || (content ? `data:application/zip;base64,${content[0]?.content}` : null),
+        jsonContent: jsonContent || { files: { 'error.txt': { content: errorMsg, encoding: 'utf8' } } },
         messageId: `${requestId}-${taskId}-error`,
         bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
       }, socket);
@@ -362,12 +371,12 @@ async function processTaskResult(data, args, socket, resolve, reject) {
       name,
       type,
       fileName: fileName || `${name}_v${version}.zip`,
-      content: content[0].content, // Base64 string
+      content: finalContent || (content && content[0].content), // Ensure base64 content
       user: userName,
       features: taskFeatures,
       version,
-      jsonContent, // Structured file details from taskExecution.js
-      downloadLink: downloadLink || `data:application/zip;base64,${content[0].content}`,
+      jsonContent, // Structured JSON from taskExecution.js
+      downloadLink: downloadLink || `data:application/zip;base64,${finalContent || content[0].content}`,
       completedAt: new Date().toISOString(),
     };
     const cachedProject = await cacheCompletedTask(projectData);
@@ -383,7 +392,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
       text: taskResultMsg,
       type: 'taskResult',
       taskId,
-      finalContent: content[0].content,
+      finalContent: finalContent || content[0].content,
       fileName: projectData.fileName,
       downloadLink: projectData.downloadLink,
       ip,
@@ -392,6 +401,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
       taskName: name,
       taskType: type,
       taskFeatures,
+      jsonContent, // Forward structured JSON
       options: ['Restart', 'Refine Project', 'Done'],
       messageId: `${requestId}-${taskId}-result`,
       bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
@@ -412,7 +422,7 @@ async function processTaskResult(data, args, socket, resolve, reject) {
       const stateKey = `taskState:${frontendId}`;
       const taskState = JSON.parse(await get(stateKey)) || {};
       taskState.step = 'review';
-      taskState.finalContent = content[0].content;
+      taskState.finalContent = finalContent || content[0].content;
       taskState.fileName = projectData.fileName;
       taskState.downloadLink = projectData.downloadLink;
       await set(stateKey, JSON.stringify(taskState));
@@ -469,9 +479,10 @@ async function processTaskResult(data, args, socket, resolve, reject) {
       user: args.userName || 'Guest',
       frontendId,
       options: ['Retry', 'Adjust Features'],
-      finalContent: data?.content ? data.content[0]?.content : null,
+      finalContent: data?.finalContent || (data?.content && data.content[0]?.content) || null,
       fileName: data?.fileName || `${data?.name || 'unknown'}_error.zip`,
-      downloadLink: data?.content ? data.downloadLink || `data:application/zip;base64,${data.content[0]?.content}` : null,
+      downloadLink: data?.downloadLink || (data?.content ? `data:application/zip;base64,${data.content[0]?.content}` : null),
+      jsonContent: data?.jsonContent || { files: { 'error.txt': { content: errorMsg, encoding: 'utf8' } } },
       messageId: `${data?.requestId}-${data?.taskId || 'unknown'}-error`,
       bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
     }, socket);
@@ -499,10 +510,10 @@ export function initializeStateManager() {
         }
       }
     }
-    for (const [messageId, { taskData, resolve, reject }] of pendingTaskResults) {
+    for (const [requestId, { taskData, resolve, reject }] of pendingTaskResults) {
       if (botSocket.connected) {
         await delegateTask(botSocket, taskData.target, taskData.command, taskData.args);
-        pendingTaskResults.delete(messageId);
+        pendingTaskResults.delete(requestId);
       }
     }
   });
@@ -572,7 +583,7 @@ export function initializeStateManager() {
     }
 
     if (data.commandFlag && data.text === 'store_project' && data.taskId) {
-      const { taskId, user, frontendId, ip, taskName, taskType, taskFeatures, finalContent } = data;
+      const { taskId, user, frontendId, ip, taskName, taskType, taskFeatures, finalContent, jsonContent } = data;
       const projectData = {
         taskId,
         frontendId,
@@ -584,7 +595,7 @@ export function initializeStateManager() {
         user,
         features: taskFeatures,
         version: 1,
-        jsonContent: data.jsonContent || { files: { 'readme.txt': { content: 'Manual store_project', encoding: 'utf8' } } },
+        jsonContent: jsonContent || { files: { 'readme.txt': { content: 'Manual store_project', encoding: 'utf8' } } },
         downloadLink: `data:application/zip;base64,${finalContent}`,
         completedAt: new Date().toISOString(),
       };
@@ -640,7 +651,7 @@ export function initializeStateManager() {
 // Ignition sequence with cosmic flair
 (async () => {
   try {
-    await log('🌌 stateManager.js v2025-04-10-04 supernova-ignited with interstellar precision!');
+    await log('🌌 stateManager.js v2025-04-11-05 supernova-ignited with interstellar precision!');
     const stored = await getLastGeneratedTask();
     if (stored) {
       await log(`🌟 Loaded last task ${stored.taskId} from cosmic vault—sync supernova-restored!`, { taskId: stored.taskId });
