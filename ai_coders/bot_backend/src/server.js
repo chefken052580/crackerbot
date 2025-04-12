@@ -1,36 +1,49 @@
-// ai_coders/bot_backend/src/server.js
-// Version: v2025-04-10-08
-import express from 'express';
-import cors from 'cors';
-import { createServer } from 'http';
-import { botSocket as botSocketPromise, emit } from './socket.js';
-import { log, error } from './logger.js';
-import { generatePdf, generateImage } from './fileGenerator.js';
-import path from 'path';
-import rateLimit from 'express-rate-limit';
-import './taskExecution.js'; // Import taskExecution.js to handle buildTask commands
+// bot_backend/src/server.js
+// Version: v2025-04-12-13
+/* CrackerBot’s cosmic backend hub—powering task builds with supernova swagger! 🌌
+ * Enhanced by xAI for robust file generation, WebSocket integration, and cosmic flair.
+ */
 
-const BOT_NAME = 'bot_backend';
+import express from "express";
+import cors from "cors";
+import { createServer } from "http";
+import { botSocket as botSocketPromise, emit } from "./socket.js";
+import { log, error } from "./logger.js";
+import * as fileGenerator from "./fileGenerator.js"; // Safe import to handle export issues
+import path from "path";
+import rateLimit from "express-rate-limit";
+import fs from "fs/promises";
+import "./taskExecution.js"; // Initialize taskExecution.js for buildTask commands
+
+const BOT_NAME = "bot_backend";
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 5000;
 
-// Log startup with flair
-console.log(`[${new Date().toISOString()}] ${BOT_NAME} server.js v2025-04-10-08 igniting...`);
-await log(`🌌 ${BOT_NAME} server.js powering up with cosmic energy!`, 'INFO');
+// Log startup with cosmic flair
+console.log(`[${new Date().toISOString()}] ${BOT_NAME} server.js v2025-04-12-13 igniting...`);
+await log(`🌌 ${BOT_NAME} server.js powering up with cosmic energy!`, "INFO");
 
-const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['https://visually-sterling-spider.ngrok-free.app'];
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      const msg = `CORS rejected origin: ${origin}`;
-      error(msg);
-      callback(new Error(msg));
-    }
-  },
-}));
+// Diagnostic: Log fileGenerator exports
+const fileGeneratorExports = Object.keys(fileGenerator);
+await log(`fileGenerator exports: ${JSON.stringify(fileGeneratorExports)}`, "INFO");
+
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",")
+  : ["https://visually-sterling-spider.ngrok-free.app"];
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        const msg = `CORS rejected origin: ${origin}`;
+        error(msg);
+        callback(new Error(msg));
+      }
+    },
+  })
+);
 app.use(express.json());
 
 // Rate limiting for API endpoints
@@ -38,56 +51,100 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
 });
-app.use('/api', limiter);
+app.use("/api", limiter);
 
-app.get('/health', async (req, res) => {
-  await log('🌡️ Healthcheck pinged—cosmic systems nominal!', 'INFO');
+/**
+ * Health check endpoint for server status.
+ * @route GET /health
+ */
+app.get("/health", async (req, res) => {
+  await log("🌡️ Healthcheck pinged—cosmic systems nominal!", "INFO");
   res.status(200).send(`${BOT_NAME} is pulsing with cosmic vitality!`);
 });
 
-app.post('/api/generate-file', async (req, res) => {
+/**
+ * Generates PDF or image files for specific task types.
+ * @route POST /api/generate-file
+ */
+app.post("/api/generate-file", async (req, res) => {
   const taskId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  const frontendId = req.headers['x-frontend-id'] || 'unknown';
+  const frontendId = req.headers["x-frontend-id"] || "unknown";
   const ip = req.ip;
-  const botSocket = await botSocketPromise;
+  let botSocket;
+  try {
+    botSocket = await botSocketPromise;
+  } catch (err) {
+    await error(`WebSocket connection failed for task "${taskId}": ${err.message}`, "ERROR", { taskId });
+    return res.status(500).json({ error: "WebSocket unavailable", taskId });
+  }
 
   try {
     const { command, args } = req.body;
-    if (!command) throw new Error('Missing command in request body');
+    if (!command) throw new Error("Missing command in request body");
 
-    const text = typeof args === 'string' ? args : args?.text;
-    if (!text) throw new Error('Missing text in args');
-    const outputFile = args?.outputFile || path.join('/tmp', `${taskId}-${command}.file`);
+    const text = typeof args === "string" ? args : args?.text;
+    if (!text) throw new Error("Missing text in args");
+    const outputFile = args?.outputFile || path.join("/tmp", `${taskId}-${command}.file`);
 
-    await sendProgress(botSocket, taskId, 10, 'Igniting file generation...', frontendId, ip);
+    await log(`Initiating ${command} generation for task "${taskId}"`, "INFO", { taskId, command });
+    await sendProgress(botSocket, taskId, 10, "Igniting file generation...", frontendId, ip);
 
     let filePath;
     switch (command.toLowerCase()) {
-      case 'pdf':
-        filePath = await generatePdf(text, outputFile, { taskId, frontendId, ip });
+      case "pdf":
+        if (typeof fileGenerator.generatePdf !== "function") {
+          await error(`PDF generation unavailable for task "${taskId}"`, "ERROR", { taskId });
+          throw new Error("PDF generation not available in this cosmic quadrant");
+        }
+        filePath = await fileGenerator.generatePdf(text, outputFile, {
+          taskId,
+          frontendId,
+          ip,
+          userName: args?.userName || "Guest",
+          taskName: args?.taskName || "Cosmic PDF",
+          taskType: "pdf",
+          requestId: taskId,
+          leadId: args?.leadId || "bot_lead",
+        });
         break;
-      case 'image':
-        filePath = await generateImage(text, outputFile, 'png', { taskId, frontendId, ip });
+      case "image":
+        if (typeof fileGenerator.generateImage !== "function") {
+          await error(`Image generation unavailable for task "${taskId}"`, "ERROR", { taskId });
+          throw new Error("Image generation not available in this cosmic quadrant");
+        }
+        filePath = await fileGenerator.generateImage(text, outputFile, "png", {
+          taskId,
+          frontendId,
+          ip,
+          userName: args?.userName || "Guest",
+          taskName: args?.taskName || "Cosmic Image",
+          taskType: "image",
+          requestId: taskId,
+          leadId: args?.leadId || "bot_lead",
+        });
         break;
       default:
         throw new Error(`Unsupported command: ${command}. Use 'pdf' or 'image'`);
     }
 
     await sendProgress(botSocket, taskId, 90, `File ${command} forged at ${filePath}!`, frontendId, ip);
-    await log(`🌠 Generated ${command} file at ${filePath}`, 'INFO');
+    await log(`🌠 Generated ${command} file at ${filePath}`, "INFO", { taskId });
     res.json({ filePath, taskId });
   } catch (err) {
-    await error(`File generation failed for task "${taskId}": ${err.message}`);
-    res.status(500).json({ error: err.message, taskId });
+    await error(`File generation failed for task "${taskId}": ${err.message}`, "ERROR", { taskId });
+    // Fallback: Return a text file to ensure response
+    const fallbackPath = path.join("/tmp", `${taskId}-error.txt`);
+    await fs.writeFile(fallbackPath, `Cosmic snag: ${err.message}`);
+    res.status(500).json({ error: err.message, filePath: fallbackPath, taskId });
   }
 });
 
-// Heartbeat check
+// Heartbeat check for WebSocket connection
 setInterval(async () => {
   try {
     const botSocket = await botSocketPromise;
     if (botSocket.connected) {
-      await log(`${BOT_NAME} WebSocket heartbeat: radiating cosmic energy!`, 'INFO');
+      await log(`${BOT_NAME} WebSocket heartbeat: radiating cosmic energy!`, "INFO");
     } else {
       await error(`${BOT_NAME} WebSocket heartbeat: lost in the void`);
     }
@@ -98,13 +155,16 @@ setInterval(async () => {
 
 server.listen(PORT, async () => {
   console.log(`[${new Date().toISOString()}] ${BOT_NAME} server orbiting on port ${PORT}`);
-  await log(`🌍 ${BOT_NAME} server orbiting at port ${PORT}—cosmic hub online!`, 'INFO');
+  await log(`🌍 ${BOT_NAME} server orbiting at port ${PORT}—cosmic hub online!`, "INFO");
 });
 
-// Graceful shutdown
+/**
+ * Handles graceful server shutdown.
+ * @async
+ */
 async function shutdown() {
   console.log(`[${new Date().toISOString()}] ${BOT_NAME} initiating cosmic shutdown...`);
-  await log(`🌠 ${BOT_NAME} powering down—cleaning up cosmic debris`, 'INFO');
+  await log(`🌠 ${BOT_NAME} powering down—cleaning up cosmic debris`, "INFO");
   server.close();
   try {
     const botSocket = await botSocketPromise;
@@ -115,16 +175,16 @@ async function shutdown() {
   process.exit(0);
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
-process.on('uncaughtException', async (err) => {
+process.on("uncaughtException", async (err) => {
   console.error(`[${new Date().toISOString()}] ${BOT_NAME} Cosmic anomaly detected: ${err.message}`);
   await error(`Uncaught exception: ${err.message}`);
   await shutdown();
 });
 
-process.on('unhandledRejection', async (reason, promise) => {
+process.on("unhandledRejection", async (reason, promise) => {
   console.error(`[${new Date().toISOString()}] ${BOT_NAME} Cosmic rift at ${promise}: ${reason}`);
   await error(`Unhandled rejection at ${promise}: ${reason}`);
   await shutdown();
@@ -132,6 +192,7 @@ process.on('unhandledRejection', async (reason, promise) => {
 
 /**
  * Sends progress update via WebSocket.
+ * @async
  * @param {Object} botSocket - The connected Socket.IO client instance
  * @param {string} taskId - Task ID
  * @param {number} percentage - Progress (0-100)
@@ -142,19 +203,19 @@ process.on('unhandledRejection', async (reason, promise) => {
  */
 async function sendProgress(botSocket, taskId, percentage, message, frontendId, ip) {
   const progressMessage = {
-    type: 'progressUpdate',
+    type: "progressUpdate",
     taskId,
     progress: percentage,
     text: `CrackerBot’s cosmic pulse: ${message}`,
-    from: 'CrackerBot Prime',
-    target: 'bot_frontend',
+    from: "CrackerBot Prime",
+    target: "bot_frontend",
     frontendId,
     ip,
     messageId: `${taskId}-progress-${percentage}`,
   };
   try {
-    await emit('message', progressMessage);
-    await log(`Progress ${percentage}% for "${taskId}": ${message}`, 'INFO', { taskId, frontendId, ip });
+    await emit("message", progressMessage);
+    await log(`Progress ${percentage}% for "${taskId}": ${message}`, "INFO", { taskId, frontendId, ip });
   } catch (err) {
     await error(`Progress send failed for "${taskId}": ${err.message}`);
   }

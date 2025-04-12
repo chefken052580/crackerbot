@@ -1,16 +1,16 @@
-// ai_coders/bot_backend/src/taskBuilder.js
-// Version: v2025-04-11-06
+// bot_backend/src/taskBuilder.js
+// Version: v2025-04-12-08
 /* CrackerBot’s cosmic build forge—crafting interstellar projects with supernova flair! 🌌
- * Enhanced by xAI for robust file generation, cosmic swagger, and JSON consistency.
+ * Enhanced by xAI for fully AI-driven file generation, cosmic swagger, and robust error handling.
  */
 
 import fs from "fs/promises";
 import path from "path";
 import { log, error, debug } from "./logger.js";
 import { zipFilesWithReadme } from "./contentUtils.js";
-import { generatePdf, generateImage } from "./fileGenerator.js";
+import * as fileGenerator from "./fileGenerator.js"; // Import all to handle export issues
 import { generateResponse } from "./aiHelper.js";
-import { extensionMap } from "./taskExecution.js"; // Import for consistency
+import { extensionMap } from "./taskExecution.js";
 
 /**
  * Class to manage task building with cosmic flair and JSON structuring.
@@ -21,6 +21,11 @@ class TaskBuilder {
     this.ensureTempDir();
   }
 
+  /**
+   * Ensures the temporary directory exists for cosmic file creation.
+   * @async
+   * @returns {Promise<void>}
+   */
   async ensureTempDir() {
     try {
       await fs.mkdir(this.tempDir, { recursive: true });
@@ -30,390 +35,205 @@ class TaskBuilder {
     }
   }
 
+  /**
+   * Generates files dynamically based on user features with AI-driven flair.
+   * @async
+   * @param {Object} task - Task metadata
+   * @param {string} userName - User name for personalization
+   * @param {string} tone - Tone for AI generation
+   * @returns {Promise<Object>} Map of file names to contents
+   */
   async generateFiles(task, userName, tone) {
     const { taskId, name, type, features } = task;
     const files = {};
     let imgPath;
 
     const effectiveType = type.toLowerCase();
-    const fileExt = extensionMap[effectiveType] || 'txt';
-    const promptBase = `Generate content for a ${effectiveType} project named "${name}" with features: "${features}". Use a ${tone} tone and MAXIMUM cosmic flair—neon-drenched visuals, pulsating animations, rich details, and wild twists (e.g., supernova buttons, orbiting cursors, galaxy-spanning gradients). Include flair-filled comments like "// ${userName}’s cosmic masterpiece, forged by CrackerBot!" where applicable. Make it vibrant, robust, and unforgettable!`;
+    const fileExt = extensionMap[effectiveType] || "txt";
+    const promptBase = `Generate content for a ${effectiveType} project named "${name}" with user-specified features: "${features}". Use a ${tone} tone and MAXIMUM cosmic flair—neon-drenched visuals (#ff00ff, #00ffcc, #0a0a23), pulsating animations (e.g., supernova buttons, orbiting cursors), rich comments (e.g., "// ${userName}’s interstellar masterpiece!"), and vivid details (e.g., galaxy-spanning gradients, comet trails). Create robust, unforgettable outputs tailored to the features. Ensure validity (e.g., HTML includes <html>, JS has functions, Python has def). For stacks, include all components (e.g., server, client, styles).`;
 
-    await log(`🛠️ Building files for ${taskId}: "${features}" with cosmic swagger`, { taskId, taskName: name, taskType: effectiveType });
+    await log(`🛠️ Building files for ${taskId}: "${features}" with supernova swagger`, { taskId, taskName: name, taskType: effectiveType });
 
     try {
       switch (effectiveType) {
-        case "html":
-          await debug(`Generating HTML for ${taskId}`, { taskId });
-          let htmlContent = await generateResponse(
-            `${promptBase} Craft an HTML file with a futuristic nav bar (neon hover effects), a starry main section (animated text orbits), and a footer with a pulsar surprise. Link to 'style.css' and 'script.js'.`,
-            userName,
-            tone
-          );
-expect(!htmlContent || !htmlContent.includes('<html')) && (htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${name} - Cosmic Hub</title>
-  <link rel="stylesheet" href="style.css">
-  <style>body { background: linear-gradient(135deg, #0a0a23, #2a2a4a); margin: 0; overflow-x: hidden; }</style>
-</head>
-<body>
-  <nav style="background: #ff007a; padding: 15px; box-shadow: 0 0 15px #ff00ff; position: sticky; top: 0; z-index: 100;">
-    <h1 style="color: #00ffcc; text-shadow: 0 0 10px #00ffcc; margin: 0;">${name} Nebula</h1>
-  </nav>
-  <main style="color: #00ffcc; text-align: center; padding: 50px; animation: orbitText 5s infinite;">
-    <h2>Welcome to ${name}, ${userName}!</h2>
-    <p>Features: ${features}</p>
-    <button>Cosmic Jump!</button>
-  </main>
-  <footer style="position: fixed; bottom: 0; width: 100%; text-align: center; padding: 10px; color: #ff007a;">
-    Hover for a surprise! <span style="display: none;" onmouseover="this.style.display='inline'; this.style.animation='pulsar 1s infinite';">🌠</span>
-  </footer>
-  <script src="script.js"></script>
-</body>
-</html>`);
-          await log(`🌟 Fallback HTML supernova’d for ${taskId}`, { taskId });
+        case "html": {
+          await debug(`Generating HTML project for ${taskId}`, { taskId });
+
+          // HTML
+          const htmlPrompt = `${promptBase} Craft an HTML file with a futuristic nav bar (neon hover effects), a main section implementing "${features}" (e.g., animated elements, interactive widgets), and a footer with a cosmic surprise. Link to 'style.css' and 'script.js'.`;
+          let htmlContent = await this.retryGenerateResponse(htmlPrompt, userName, tone, (content) => content.includes("<html"), 3);
           files["index.html"] = htmlContent;
 
-          await debug(`Generating CSS for ${taskId}`, { taskId });
-          let cssContent = await generateResponse(
-            `${promptBase} Forge a CSS file with neon gradients, supernova button animations, orbiting transitions, and a sparkling cursor. Use colors like #ff00ff, #00ffcc, #1a1a1a.`,
-            userName,
-            tone
-          );
-          if (!cssContent || !cssContent.includes('{')) {
-            cssContent = `/* ${userName}’s cosmic masterpiece, forged by CrackerBot! */
-body {
-  font-family: 'Courier New', monospace;
-  color: #00ffcc;
-  cursor: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#ff007a" stroke="#00ffcc" stroke-width="2"/></svg>'), auto;
-}
-main {
-  animation: orbitText 5s infinite;
-}
-@keyframes orbitText {
-  0% { transform: translateY(0); opacity: 0.8; }
-  50% { transform: translateY(-20px); opacity: 1; }
-  100% { transform: translateY(0); opacity: 0.8; }
-}
-button {
-  background: linear-gradient(45deg, #ff00ff, #00ffcc);
-  border: none;
-  padding: 15px 30px;
-  margin: 10px;
-  border-radius: 25px;
-  cursor: pointer;
-  transition: all 0.5s ease-in-out;
-  box-shadow: 0 0 15px #ff00ff;
-}
-button:hover {
-  transform: scale(1.2) rotate(5deg);
-  box-shadow: 0 0 30px #00ffcc, 0 0 50px #ff00ff;
-  animation: supernova 0.5s infinite;
-}
-@keyframes supernova {
-  0% { box-shadow: 0 0 15px #ff00ff; }
-  50% { box-shadow: 0 0 40px #00ffcc; }
-  100% { box-shadow: 0 0 15px #ff00ff; }
-}
-footer span {
-  animation: pulsar 1s infinite;
-}
-@keyframes pulsar {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.5); }
-  100% { transform: scale(1); }
-}`;
-            await log(`🌠 Fallback CSS supernova’d for ${taskId}`, { taskId });
-          }
+          // CSS
+          const cssPrompt = `${promptBase} Forge a CSS file styling "${features}" with neon gradients, supernova animations (e.g., buttons pulse, elements orbit), and a sparkling cursor. Use colors like #ff00ff, #00ffcc, #1a1a1a.`;
+          let cssContent = await this.retryGenerateResponse(cssPrompt, userName, tone, (content) => content.includes("{"), 3);
           files["style.css"] = cssContent;
 
-          await debug(`Generating JS for ${taskId}`, { taskId });
-          let jsContent = await generateResponse(
-            `${promptBase} Build a JS file with a galaxy of stars (canvas), cosmic button alerts ("${userName}, welcome to the void!"), and a comet streaking across the screen.`,
-            userName,
-            tone
-          );
-          if (!jsContent || !jsContent.includes('function')) {
-            jsContent = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('${name} blasting off with cosmic vibes!');
-  const canvas = document.createElement('canvas');
-  canvas.style.position = 'fixed';
-  canvas.style.top = '0';
-  canvas.style.left = '0';
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  document.body.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
-  for (let i = 0; i < 150; i++) {
-    const x = Math.random() * canvas.width;
-    const y = Math.random() * canvas.height;
-    ctx.fillStyle = '#00ffcc';
-    ctx.beginPath();
-    ctx.arc(x, y, Math.random() * 2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  document.querySelector('button').onclick = () => {
-    alert('${userName}, welcome to the void of ${name}!');
-    const supernova = document.createElement('div');
-    supernova.style.position = 'absolute';
-    supernova.style.width = '100px';
-    supernova.style.height = '100px';
-    supernova.style.background = 'radial-gradient(circle, #ff00ff, transparent)';
-    supernova.style.left = '50%';
-    supernova.style.top = '50%';
-    supernova.style.transform = 'translate(-50%, -50%)';
-    supernova.style.animation = 'explode 1s forwards';
-    document.body.appendChild(supernova);
-    setTimeout(() => supernova.remove(), 1000);
-  };
-  setTimeout(() => {
-    const comet = document.createElement('div');
-    comet.style.position = 'absolute';
-    comet.style.width = '30px';
-    comet.style.height = '3px';
-    comet.style.background = 'linear-gradient(to right, #ff007a, transparent)';
-    comet.style.left = '-30px';
-    comet.style.top = '100px';
-    comet.style.animation = 'cometStreak 1.5s linear';
-    document.body.appendChild(comet);
-    setTimeout(() => comet.remove(), 1500);
-  }, 3000);
-});
-document.styleSheets[0].insertRule('@keyframes explode { 0% { opacity: 1; transform: translate(-50%, -50%) scale(0); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(3); } }', 0);
-document.styleSheets[0].insertRule('@keyframes cometStreak { 0% { left: -30px; } 100% { left: 100%; } }', 0);`;
-            await log(`🚀 Fallback JS comet launched for ${taskId}`, { taskId });
-          }
+          // JS
+          const jsPrompt = `${promptBase} Build a JS file implementing "${features}" (e.g., dynamic widgets, canvas effects) with a starry background, cosmic alerts for ${userName}, and comet animations.`;
+          let jsContent = await this.retryGenerateResponse(jsPrompt, userName, tone, (content) => content.includes("function") || content.includes("=>"), 3);
           files["script.js"] = jsContent;
 
+          // Image
           await debug(`Generating image for ${taskId}`, { taskId });
           imgPath = path.join(this.tempDir, `${taskId}-image.png`);
           try {
-            await generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath);
-            files["image.png"] = (await fs.readFile(imgPath)).toString('base64');
+            if (typeof fileGenerator.generateImage !== "function") {
+              throw new Error("generateImage not exported from fileGenerator.js");
+            }
+            await fileGenerator.generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath, "png", { taskId, userName, taskName: name, taskType: effectiveType });
+            files["image.png"] = (await fs.readFile(imgPath)).toString("base64");
           } catch (imgErr) {
             await error(`❌ Image generation failed for ${taskId}: ${imgErr.message}`, { taskId });
-            files["image.png"] = Buffer.from('Cosmic image generation failed—retry with more stardust!').toString('base64');
+            files["image.txt"] = `Cosmic image generation failed—${imgErr.message}. Retry with more stardust!`;
           }
           break;
+        }
 
         case "full stack":
         case "mean":
         case "mern":
         case "lamp":
-        case "jamstack":
+        case "jamstack": {
           await debug(`Generating ${effectiveType} stack for ${taskId}`, { taskId });
-          const stackPrompt = `${promptBase} Create a ${effectiveType} project with server-side logic (e.g., Express for Node.js, PHP for LAMP), a client-side interface (e.g., React, Angular, or static HTML), and a stylesheet with cosmic animations. Include a package.json or equivalent setup file if applicable.`;
-          let stackContent = await generateResponse(stackPrompt, userName, tone);
-          if (!stackContent || (!stackContent.includes('function') && !stackContent.includes('{'))) {
-            files["server.js"] = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-const express = require('express');
-const app = express();
-app.use(express.json());
-app.get('/', (req, res) => res.send('Welcome to ${name}, ${userName}! A cosmic ${effectiveType} adventure awaits! 🌌'));
-app.listen(3000, () => console.log('Server pulsing at 3000 with neon vibes!'));`;
-            files["client/index.html"] = `<!DOCTYPE html><html><head><title>${name}</title><link rel="stylesheet" href="style.css"></head><body><div id="root"></div><script src="app.js"></script></body></html>`;
-            files["client/app.js"] = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-console.log('${name} blasting off!');
-document.getElementById('root').innerHTML = '<h1>${name} Nebula</h1><p>${features}</p>';`;
-            files["client/style.css"] = `/* ${userName}’s cosmic masterpiece, forged by CrackerBot! */
-body { background: linear-gradient(135deg, #0a0a23, #ff007a); color: #00ffcc; text-align: center; }
-h1 { text-shadow: 0 0 10px #ff00ff; }`;
-            files["package.json"] = JSON.stringify({
-              name,
-              version: "1.0.0",
-              main: "server.js",
-              scripts: { start: "node server.js" },
-              dependencies: { express: "^4.18.2" }
-            }, null, 2);
-            await log(`🌟 Fallback ${effectiveType} stack supernova’d for ${taskId}`, { taskId });
-          } else {
-            files[`${name}.${fileExt}`] = stackContent;
-          }
+          const stackPrompt = `${promptBase} Create a ${effectiveType} project implementing "${features}". Include:
+            - Server-side logic (e.g., Express for Node.js, PHP for LAMP) with API endpoints.
+            - Client-side interface (e.g., React for MERN, static HTML for LAMP) with dynamic "${features}".
+            - Stylesheet with cosmic animations (e.g., neon hover, pulsating backgrounds).
+            - Setup file (e.g., package.json, composer.json) for ${effectiveType}. Return as JSON with keys as file names.`;
+          let stackContent = await this.retryGenerateResponse(stackPrompt, userName, tone, (content) => {
+            try {
+              JSON.parse(content);
+              return true;
+            } catch {
+              return false;
+            }
+          }, 3);
+          const fileMap = await this.parseStackContent(stackContent, effectiveType, name, userName);
+          Object.assign(files, fileMap);
           break;
+        }
 
-        case "pdf":
+        case "pdf": {
           await debug(`Generating PDF for ${taskId}`, { taskId });
           const pdfPath = path.join(this.tempDir, `${taskId}-${name}.pdf`);
-          let pdfContent = await generateResponse(
-            `${promptBase} Create text content for a PDF with at least 3 pages, 500+ words each, separated by "---PAGE BREAK---". Add vivid storytelling or cosmic lore as flair.`,
-            userName,
-            tone
-          );
-          if (!pdfContent || !pdfContent.includes('---PAGE BREAK---')) {
-            pdfContent = `CrackerBot’s Cosmic PDF for ${userName}\n\nGreetings, ${userName}! Welcome to ${name}, a cosmic journey crafted with ${features}. Imagine a universe where neon stars pulse—over 500 words of interstellar lore await! Picture yourself navigating a galaxy of code, with CrackerBot as your guide. The void sparkles with possibility, each line a supernova igniting the dark. [Continue with 500+ words of cosmic narrative...]\n---PAGE BREAK---\nCosmic Chapter Two\n\nAnother 500+ words: The adventure deepens as ${userName} tweaks ${features} into a supernova spectacle. Galaxies collide, code orbits, and neon flares light the way. [More cosmic storytelling...]\n---PAGE BREAK---\nFinal Frontier\n\nFinal 500+ words: ${name} stands as ${userName}’s masterpiece, forged in CrackerBot’s cosmic fires. The universe bends to your will—stardust and swagger in every byte. [Epic conclusion...]`;
-            await log(`📜 Fallback PDF content supernova’d for ${taskId}`, { taskId });
-          }
+          const pdfPrompt = `${promptBase} Create text content for a PDF with at least 3 pages, 500+ words each, separated by "---PAGE BREAK---". Implement "${features}" as vivid storytelling or cosmic lore.`;
+          let pdfContent = await this.retryGenerateResponse(pdfPrompt, userName, tone, (content) => content.includes("---PAGE BREAK---"), 3);
           try {
-            await generatePdf(pdfContent, pdfPath);
-            files[`${name}.pdf`] = (await fs.readFile(pdfPath)).toString('base64');
+            if (typeof fileGenerator.generatePdf !== "function") {
+              throw new Error("generatePdf not exported from fileGenerator.js");
+            }
+            await fileGenerator.generatePdf(pdfContent, pdfPath, { taskId, userName, taskName: name, taskType: effectiveType });
+            files[`${name}.pdf`] = (await fs.readFile(pdfPath)).toString("base64");
           } catch (pdfErr) {
             await error(`❌ PDF generation failed for ${taskId}: ${pdfErr.message}`, { taskId });
-            files[`${name}.pdf`] = Buffer.from(`Cosmic PDF creation failed—${pdfErr.message}. Retry with more galactic juice!`).toString('base64');
+            files[`${name}.txt`] = `Cosmic PDF creation failed—${pdfErr.message}. Retry with more galactic juice!`;
           }
           break;
+        }
 
         case "image":
         case "jpeg":
         case "gif":
         case "svg":
-        case "webp":
+        case "webp": {
           await debug(`Generating ${effectiveType} image for ${taskId}`, { taskId });
           const imgExt = effectiveType === "image" ? "png" : fileExt;
           imgPath = path.join(this.tempDir, `${taskId}-${name}.${imgExt}`);
           try {
-            await generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath, imgExt);
-            files[`${name}.${imgExt}`] = (await fs.readFile(imgPath)).toString('base64');
+            if (typeof fileGenerator.generateImage !== "function") {
+              throw new Error("generateImage not exported from fileGenerator.js");
+            }
+            await fileGenerator.generateImage(`${features} with cosmic flair, neon glows, and vibrant details`, imgPath, imgExt, { taskId, userName, taskName: name, taskType: effectiveType });
+            files[`${name}.${imgExt}`] = (await fs.readFile(imgPath)).toString("base64");
           } catch (imgErr) {
             await error(`❌ Image generation failed for ${taskId}: ${imgErr.message}`, { taskId });
-            files[`${name}.${imgExt}`] = Buffer.from(`Cosmic ${imgExt} generation failed—${imgErr.message}. Retry with supernova power!`).toString('base64');
+            files[`${name}.txt`] = `Cosmic ${imgExt} generation failed—${imgErr.message}. Retry with supernova power!`;
           }
           break;
+        }
 
-        case "javascript":
-        case "python":
-        case "php":
-        case "ruby":
-        case "java":
-        case "c++":
-        case "typescript":
-        case "go":
-        case "rust":
-        case "kotlin":
-        case "swift":
-        case "csharp":
-        case "r":
-        case "scala":
-        case "dart":
-        case "perl":
-        case "lua":
-        case "bash":
-        case "powershell":
-        case "sql":
-        case "yaml":
-        case "xml":
-        case "markdown":
-        case "toml":
-        case "react":
-        case "vue":
-        case "angular":
-        case "docker":
-        case "doc":
-        case "csv":
-        case "json":
+        default: {
           await debug(`Generating ${effectiveType} script for ${taskId}`, { taskId });
-          let scriptContent = await generateResponse(
-            `${promptBase} Create a ${effectiveType} file with at least one function or class implementing "${features}", infused with cosmic comments and dynamic logic.`,
-            userName,
-            tone
-          );
-          if (!scriptContent || (!scriptContent.includes('function') && !scriptContent.includes('class') && !scriptContent.includes('{'))) {
-            scriptContent = effectiveType === 'javascript' || effectiveType === 'react'
-              ? `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-function cosmic${name}() {
-  console.log('Welcome to ${name}, ${userName}! Features: ${features}');
-  return 'Cosmic vibes supernova-activated!';
-}
-cosmic${name}();`
-              : effectiveType === 'python'
-              ? `# ${userName}’s cosmic masterpiece, forged by CrackerBot!
-def cosmic_${name}():
-    print("Welcome to ${name}, ${userName}! Features: ${features}")
-    return "Cosmic vibes supernova-activated!"
-cosmic_${name}()`
-              : `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-${name} = "Welcome to ${name}, ${userName}! Features: ${features} — Cosmic vibes supernova-activated!";`;
-            await log(`🌟 Fallback ${effectiveType} script supernova’d for ${taskId}`, { taskId });
-          }
+          const scriptPrompt = `${promptBase} Create a ${effectiveType} file implementing "${features}" with at least one function or class, infused with cosmic comments (e.g., "// ${userName}’s supernova code!").`;
+          let scriptContent = await this.retryGenerateResponse(scriptPrompt, userName, tone, (content) => content.includes("function") || content.includes("class") || content.includes("def") || content.includes("{"), 3);
           files[`${name}.${fileExt}`] = scriptContent;
           break;
-
-        case "exe":
-          await debug(`Generating executable JS for ${taskId}`, { taskId });
-          let exeJsContent = await generateResponse(
-            `${promptBase} Create a Node.js script compilable to .exe with pkg, featuring interactive console output (e.g., cosmic counters) and "${features}".`,
-            userName,
-            tone
-          );
-          if (!exeJsContent || !exeJsContent.includes('console')) {
-            exeJsContent = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-const colors = require('colors');
-console.log('Welcome to ${name}, ${userName}!'.rainbow);
-console.log('Features: ${features}'.magenta);
-let count = 0;
-setInterval(() => console.log(\`Cosmic pulse #\${count++}...\`.cyan), 2000);
-setTimeout(() => console.log('Blast off, ${userName}!'.green), 5000);`;
-            await log(`💾 Fallback executable JS supernova’d for ${taskId}`, { taskId });
-          }
-          const jsPath = path.join(this.tempDir, `${taskId}-${name}.js`);
-          const exePath = path.join(this.tempDir, `${taskId}-${name}.exe`);
-          try {
-            await fs.writeFile(jsPath, exeJsContent);
-            await execPromise(`npx pkg ${jsPath} --output ${exePath}`);
-            files[`${name}.exe`] = (await fs.readFile(exePath)).toString('base64');
-          } catch (exeErr) {
-            await error(`❌ EXE compilation failed for ${taskId}: ${exeErr.message}`, { taskId });
-            files[`${name}.js`] = `${exeJsContent}\n// EXE compilation failed: ${exeErr.message} — Run with Node.js instead!`;
-          } finally {
-            await Promise.all([
-              fs.unlink(jsPath).catch(() => {}),
-              fs.unlink(exePath).catch(() => {}),
-            ]);
-          }
-          break;
-
-        case "bat":
-          await debug(`Generating batch script for ${taskId}`, { taskId });
-          let batContent = await generateResponse(
-            `${promptBase} Create a Windows batch script (.bat) with functional commands (e.g., ECHO, variables) implementing "${features}".`,
-            userName,
-            tone
-          );
-          if (!batContent || !batContent.includes('ECHO')) {
-            batContent = `REM ${userName}’s cosmic masterpiece, forged by CrackerBot!
-ECHO off
-COLOR 0A
-ECHO Welcome to ${name}, ${userName}!
-ECHO Features: ${features}
-SET "count=0"
-:loop
-SET /A count+=1
-ECHO Cosmic pulse #%count%...
-TIMEOUT /T 2 >nul
-IF %count% LSS 5 GOTO loop
-ECHO Blast off, ${userName}!
-PAUSE`;
-            await log(`🖥️ Fallback batch script supernova’d for ${taskId}`, { taskId });
-          }
-          files[`${name}.bat`] = batContent;
-          break;
-
-        default:
-          await debug(`Generating generic ${effectiveType} file for ${taskId}`, { taskId });
-          let genericContent = await generateResponse(
-            `${promptBase} Create a ${effectiveType} file implementing "${features}" with cosmic flair.`,
-            userName,
-            tone
-          );
-          if (!genericContent) {
-            genericContent = `// ${userName}’s cosmic masterpiece, forged by CrackerBot!
-${effectiveType} content for ${name} with features: ${features}. Cosmic vibes supernova-activated! 🌌`;
-            await log(`🌠 Fallback ${effectiveType} content supernova’d for ${taskId}`, { taskId });
-          }
-          files[`${name}.${fileExt}`] = genericContent;
-          break;
+        }
       }
-      await log(`🌠 ${Object.keys(files).length} cosmic files forged for ${taskId}: ${Object.keys(files).join(', ')}`, { taskId });
+      await log(`🌠 ${Object.keys(files).length} cosmic files forged for ${taskId}: ${Object.keys(files).join(", ")}`, { taskId });
     } catch (err) {
       await error(`❌ File generation crashed for ${taskId}: ${err.message}`, { taskId });
-      throw err;
+      files["error.txt"] = `CrackerBot hit a cosmic snag forging ${name}! Error: ${err.message}. Features: "${features}". Retry with a supernova tweak! 🌠`;
     }
 
     return files;
   }
 
+  /**
+   * Retries AI generation until valid content is produced.
+   * @async
+   * @param {string} prompt - AI prompt
+   * @param {string} userName - User name
+   * @param {string} tone - Tone for generation
+   * @param {Function} validator - Function to validate content
+   * @param {number} maxRetries - Maximum retries
+   * @returns {Promise<string>} Valid content
+   */
+  async retryGenerateResponse(prompt, userName, tone, validator, maxRetries) {
+    let attempt = 0;
+    while (attempt < maxRetries) {
+      try {
+        const content = await generateResponse(prompt, userName, tone);
+        if (validator(content)) return content;
+        await debug(`Invalid AI response on attempt ${attempt + 1}`, {});
+      } catch (err) {
+        await error(`AI generation failed on attempt ${attempt + 1}: ${err.message}`, {});
+      }
+      attempt++;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+    throw new Error(`Failed to generate valid content after ${maxRetries} attempts`);
+  }
+
+  /**
+   * Parses AI-generated stack content into files.
+   * @async
+   * @param {string} content - AI response
+   * @param {string} stackType - Stack type (e.g., mern)
+   * @param {string} name - Project name
+   * @param {string} userName - User name
+   * @returns {Promise<Object>} File map
+   */
+  async parseStackContent(content, stackType, name, userName) {
+    const files = {};
+    try {
+      const parsed = JSON.parse(content);
+      Object.entries(parsed).forEach(([fileName, fileContent]) => {
+        files[fileName] = fileContent;
+      });
+    } catch (err) {
+      await debug(`JSON parsing failed for stack content, generating fallback`, {});
+      const scriptPrompt = `Create a minimal ${stackType} project named "${name}" for ${userName}, implementing basic functionality for "${task.features}". Include server logic, client interface, and styles. Return as JSON with file names as keys.`;
+      const fallbackContent = await this.retryGenerateResponse(scriptPrompt, userName, "cosmic", (c) => {
+        try {
+          JSON.parse(c);
+          return true;
+        } catch {
+          return false;
+        }
+      }, 3);
+      return this.parseStackContent(fallbackContent, stackType, name, userName);
+    }
+    return files;
+  }
+
+  /**
+   * Cleans up temporary files with cosmic precision.
+   * @async
+   * @param {string} taskId - Task ID
+   * @returns {Promise<void>}
+   */
   async cleanupTempFiles(taskId) {
     try {
       const files = await fs.readdir(this.tempDir);
@@ -435,34 +255,51 @@ ${effectiveType} content for ${name} with features: ${features}. Cosmic vibes su
 
 const builder = new TaskBuilder();
 
+/**
+ * Generates an enhanced README with cosmic flair.
+ * @async
+ * @param {Object} task - Task metadata
+ * @param {string} userName - User name
+ * @param {string} tone - Tone for generation
+ * @returns {Promise<string>} README content
+ */
 async function generateEnhancedReadme(task, userName, tone) {
   const { taskId, name, type, features } = task;
   try {
     await debug(`Generating README for ${taskId}`, { taskId });
-    const readmeContent = await generateResponse(
-      `Craft a cosmic README for a ${type} project "${name}" with features: "${features}". Use a ${tone} tone. Include:
+    const readmePrompt = `Craft a cosmic README for a ${type} project "${name}" with features: "${features}". Use a ${tone} tone. Include:
       - Intro: "Welcome to ${name}, ${userName}’s cosmic odyssey!"
       - Overview: Neon-drenched details of ${features}.
-      - Launch: "Unzip, ignite with 'npm start' or open index.html, and surf the galaxy!"
-      - Features: Pulsating highlights (e.g., "Buttons that supernova on click!").
+      - Launch: Instructions to run (e.g., "Unzip, run 'npm start', or open index.html").
+      - Features: Pulsating highlights of "${features}" (e.g., "Interactive widgets supernova on click!").
       - Tips: "Remix with /refine_project to amplify the cosmic vibes!"
-      300+ words, vivid and unforgettable!`,
-      userName,
-      tone
-    );
-    return readmeContent;
+      300+ words, vivid, and tailored to the features!`;
+    return await generateResponse(readmePrompt, userName, tone);
   } catch (err) {
     await error(`❌ README generation failed for ${taskId}: ${err.message}`, { taskId });
-    return `Welcome to ${name}, ${userName}’s cosmic odyssey!\n\nThis ${type} project, forged by CrackerBot, ignites "${features}" with supernova flair! Picture a neon-drenched universe where code pulses like stars—over 300 words of cosmic glory await! Unzip this galactic archive, spark it with 'npm start' (if applicable), or launch index.html to surf the galaxy. Expect pulsating highlights: supernova buttons, orbiting animations, and gradients that stretch across the void. Remix with /refine_project to amplify the vibes or blast off anew with CrackerBot’s cosmic forge!\n\nCrafted with stardust and swagger, ${name} is your ticket to the stars—${userName}, you’re the pilot now!`;
+    return `Welcome to ${name}, ${userName}’s cosmic odyssey!\n\nThis ${type} project pulses with "${features}". Unzip and run to explore the cosmic chaos! Remix with /refine_project for more flair.`;
   }
 }
 
+/**
+ * Builds a task with AI-driven files and cosmic flair.
+ * @async
+ * @param {Object} task - Task metadata
+ * @param {string} userName - User name
+ * @param {string} tone - Tone for generation
+ * @param {string} requestId - Request ID
+ * @param {string} leadId - Lead ID
+ * @returns {Promise<Object>} Build result with jsonContent
+ */
 export async function buildTask(task, userName, tone, requestId, leadId) {
   const { taskId = task.id, name, type, features, frontendId, ip, version = 1 } = task;
   await log(`🚀 Igniting build for ${name} (${type}) with features: "${features}" for ${userName}`, { taskId, taskName: name, taskType: type });
 
   try {
     const files = await builder.generateFiles(task, userName, tone);
+    if (Object.keys(files).length === 0) {
+      throw new Error("No files generated for task");
+    }
     const readmeContent = await generateEnhancedReadme(task, userName, tone);
     files["README.md"] = readmeContent;
 
@@ -476,8 +313,8 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
         Object.entries(files).map(([fileName, content]) => [
           fileName,
           {
-            content: typeof content === 'string' ? content : content.toString('base64'),
-            encoding: typeof content === 'string' ? 'utf8' : 'base64',
+            content: typeof content === "string" ? content : content.toString("base64"),
+            encoding: typeof content === "string" ? "utf8" : "base64",
           },
         ])
       ),
@@ -503,8 +340,8 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
     };
   } catch (err) {
     await error(`❌ Build supernova-crashed for ${taskId}: ${err.message}`, { taskId });
-    const fallbackContent = `CrackerBot hit a cosmic snag forging ${name} for ${userName}! Error: ${err.message}. Retry with a supernova tweak! 🌠\n\nFear not, ${userName}—the galaxy bends to your will. Adjust "${features}" or blast off again!`;
-    const files = { "error.txt": Buffer.from(fallbackContent) };
+    const errorContent = `CrackerBot hit a cosmic snag forging ${name} for ${userName}! Error: ${err.message}. Features: "${features}". Retry with a supernova tweak! 🌠`;
+    const files = { "error.txt": errorContent };
     const zipBuffer = await zipFilesWithReadme(files, task);
     const zipFileName = `${name}_error.zip`;
     const jsonContent = {
@@ -513,7 +350,7 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
       type,
       features,
       userName,
-      files: { "error.txt": { content: fallbackContent, encoding: 'utf8' } },
+      files: { "error.txt": { content: errorContent, encoding: "utf8" } },
     };
     return {
       content: [{ fileName: zipFileName, content: zipBuffer.toString("base64") }],
@@ -529,9 +366,19 @@ export async function buildTask(task, userName, tone, requestId, leadId) {
   }
 }
 
+/**
+ * Edits a task with AI-driven updates.
+ * @async
+ * @param {Object} task - Task metadata
+ * @param {string} userName - User name
+ * @param {string} tone - Tone for generation
+ * @param {string} requestId - Request ID
+ * @param {string} leadId - Lead ID
+ * @returns {Promise<Object>} Edit result
+ */
 export async function editTask(task, userName, tone, requestId, leadId) {
   await log(`✨ Remixing task ${task.taskId || task.id} for ${userName}`, { taskId: task.taskId || task.id });
   return buildTask(task, userName, tone, requestId, leadId);
 }
 
-console.log(`[${new Date().toISOString()}] taskBuilder.js v2025-04-11-06 supernova-loaded with interstellar swagger!`);
+console.log(`[${new Date().toISOString()}] taskBuilder.js v2025-04-12-08 supernova-loaded with interstellar swagger!`);

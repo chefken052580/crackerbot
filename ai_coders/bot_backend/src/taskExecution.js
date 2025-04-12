@@ -1,5 +1,5 @@
 // bot_backend/src/taskExecution.js
-// Version: v2025-04-11-04
+// Version: v2025-04-12-02
 /* CrackerBot’s cosmic task engine—forging interstellar masterpieces with supernova swagger! 🌌
  * Enhanced by xAI for reliable task completion, JSON-structured output, and cosmic precision.
  */
@@ -68,6 +68,63 @@ export const extensionMap = {
 };
 
 /**
+ * Sends progress update to frontend with retry logic and cosmic logging.
+ * @async
+ * @param {Object|null} botSocket - Socket.IO client instance (null for external use)
+ * @param {string} taskId - Task ID
+ * @param {number} percentage - Progress (0-100)
+ * @param {string} message - Progress message
+ * @param {string} frontendId - Frontend ID
+ * @param {string} ip - IP address
+ * @param {string} name - Project name
+ * @param {string} type - Project type
+ * @param {string} [features] - Task features (optional)
+ * @param {string} requestId - Request ID
+ * @param {string} leadId - Lead ID
+ * @returns {Promise<void>}
+ */
+export async function sendProgress(botSocket, taskId, percentage, message, frontendId, ip, name, type, features, requestId, leadId) {
+  const socket = botSocket || (await botSocketPromise); // Default to global botSocket
+  const progressMessage = {
+    type: 'progressUpdate',
+    taskId,
+    progress: percentage,
+    text: `🌌 CrackerBot’s cosmic pulse: ${message}`,
+    from: 'CrackerBot Prime',
+    target: 'bot_frontend',
+    frontendId,
+    ip,
+    taskName: name,
+    taskType: type,
+    taskFeatures: features || 'none',
+    requestId,
+    leadId,
+    messageId: `${taskId}-progress-${percentage}-${Date.now()}`,
+    bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
+    timestamp: new Date().toISOString(),
+  };
+
+  const maxRetries = 3;
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      if (!socket.connected) throw new Error('WebSocket not connected');
+      await debug(`Sending progress ${percentage}% for ${taskId}: ${message}, attempt ${attempt + 1}`, { taskId, taskName: name, taskType: type, progress: percentage });
+      await emit('message', progressMessage);
+      await log(`Progress ${percentage}% beamed for ${taskId}: ${message}`, { taskId, taskName: name, taskType: type, frontendId, progress: percentage });
+      break;
+    } catch (err) {
+      attempt++;
+      await error(`Progress send failed for ${taskId} at ${percentage}%: ${err.message}, attempt ${attempt}`, { taskId, taskName: name, taskType: type, progress: percentage });
+      if (attempt === maxRetries) throw new Error(`Progress send failed after ${maxRetries} attempts: ${err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+}
+
+/**
  * Initializes WebSocket listeners for task execution with cosmic precision and robust retry logic.
  * @async
  * @param {Object} botSocket - The connected Socket.IO client instance
@@ -75,7 +132,7 @@ export const extensionMap = {
  */
 async function initializeTaskExecution(botSocket) {
   console.log(`[${new Date().toISOString()}] Backend bot connected to WebSocket server`);
-  await log('taskExecution.js v2025-04-11-04: AI-driven builds with SUPERNOVA cosmic flair!');
+  await log('taskExecution.js v2025-04-12-02: AI-driven builds with SUPERNOVA cosmic flair!');
   await debug('Initializing WebSocket listeners', { taskId: 'init' });
 
   botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
@@ -227,7 +284,7 @@ async function initializeTaskExecution(botSocket) {
     await error('bot_backend WebSocket disconnected');
   });
 
-  console.log(`[${new Date().toISOString()}] Task execution v2025-04-11-04 initialized with galactic precision`);
+  console.log(`[${new Date().toISOString()}] Task execution v2025-04-12-02 initialized with galactic precision`);
 }
 
 /**
@@ -275,62 +332,6 @@ async function emitTaskResult(botSocket, taskResult) {
       await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
     }
   }
-}
-
-/**
- * Sends progress update to frontend with retry logic and detailed logging.
- * @async
- * @param {Object} botSocket - The connected Socket.IO client instance
- * @param {string} taskId - Task ID
- * @param {number} percentage - Progress (0-100)
- * @param {string} message - Progress message
- * @param {string} frontendId - Frontend ID
- * @param {string} ip - IP address
- * @param {string} name - Project name
- * @param {string} type - Project type
- * @param {string} features - Task features
- * @param {string} requestId - Request ID
- * @param {string} leadId - Lead ID
- * @returns {Promise<void>}
- */
-async function sendProgress(botSocket, taskId, percentage, message, frontendId, ip, name, type, features, requestId, leadId) {
-  const progressMessage = {
-    type: 'progressUpdate',
-    taskId,
-    progress: percentage,
-    text: `🌌 CrackerBot’s cosmic pulse: ${message}`,
-    from: 'CrackerBot Prime',
-    target: 'bot_frontend',
-    frontendId,
-    ip,
-    taskName: name,
-    taskType: type,
-    taskFeatures: features,
-    requestId,
-    leadId,
-    messageId: `${taskId}-progress-${percentage}-${Date.now()}`,
-    bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
-    timestamp: new Date().toISOString(),
-  };
-
-  const maxRetries = 3;
-  let attempt = 0;
-
-  while (attempt < maxRetries) {
-    try {
-      if (!botSocket.connected) throw new Error('WebSocket not connected');
-      await debug(`Sending progress ${percentage}% for ${taskId}: ${message}, attempt ${attempt + 1}`, { taskId, taskName: name, taskType: type, progress: percentage });
-      await emit('message', progressMessage);
-      await log(`Progress ${percentage}% beamed for ${taskId}: ${message}`, { taskId, taskName: name, taskType: type, frontendId, progress: percentage });
-      break;
-    } catch (err) {
-      attempt++;
-      await error(`Progress send failed for ${taskId} at ${percentage}%: ${err.message}, attempt ${attempt}`, { taskId, taskName: name, taskType: type, progress: percentage });
-      if (attempt === maxRetries) throw new Error(`Progress send failed after ${maxRetries} attempts: ${err.message}`);
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
-    }
-  }
-  await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
 /**
@@ -462,13 +463,13 @@ export async function startEditTask(botSocket, task, userName, tone, frontendId,
 // Async initialization with robust connection wait
 (async () => {
   console.log(`[${new Date().toISOString()}] Starting taskExecution.js initialization`);
-  await debug('🌌 taskExecution.js v2025-04-11-04 initialization starting...');
+  await debug('🌌 taskExecution.js v2025-04-12-02 initialization starting...');
   const maxRetries = 5;
   let attempt = 0;
 
   while (attempt < maxRetries) {
     try {
-      await log(`🌌 taskExecution.js v2025-04-11-04 supernova-igniting—attempt ${attempt + 1}/${maxRetries}...`);
+      await log(`🌌 taskExecution.js v2025-04-12-02 supernova-igniting—attempt ${attempt + 1}/${maxRetries}...`);
       const botSocket = await botSocketPromise;
 
       let connectAttempt = 0;
