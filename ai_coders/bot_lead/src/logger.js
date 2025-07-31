@@ -1,86 +1,102 @@
-// ai_coders/bot_lead/src/logger.js
-// Version: v2025-04-09-01
-import fs from 'fs/promises';
-import path from 'path';
-import { mkdirSync, existsSync } from 'fs';
+// bot_lead/src/logger.js
+// Version: v2025-07-21-03
+/**
+ * Logger Module
+ * Provides cosmic logging for CrackerBot with flair and precision.
+ * Enhanced by xAI for robust error handling and Redis integration.
+ *
+ * @version 2025-07-21-03
+ * @author CrackerBot Team, enhanced by xAI
+ * @module logger
+ */
 
-const logDir = process.env.LOG_DIR || './logs';
-const logFile = path.join(logDir, 'bot_lead.log');
+import { createClient } from 'redis';
 
-if (!existsSync(logDir)) {
-  mkdirSync(logDir, { recursive: true });
+// Initialize log buffer
+const logBuffer = [];
+
+// Redis client for logging
+const redisLogClient = createClient({
+  url: process.env.REDIS_URL || 'redis://redis:6379',
+  password: process.env.REDIS_PASSWORD || 'new_secure_password',
+});
+
+// Redis error handling
+redisLogClient.on('error', (err) => {
+  console.error(`Redis log client error: ${err.message}`);
+});
+
+// Connect to Redis
+async function connectRedis() {
+  try {
+    await redisLogClient.connect();
+    console.log('Redis logging connection established');
+  } catch (err) {
+    console.error(`Redis logging connection failed: ${err.message}`);
+  }
 }
-
-let logBuffer = [];
-const flushInterval = 1000; // Flush every 1s
+connectRedis();
 
 /**
- * Flushes log buffer to file.
+ * Logs a message with cosmic style.
  * @async
+ * @param {string} message - The log message
+ * @param {Object} [context={}] - Additional context
  * @returns {Promise<void>}
  */
-async function flushBuffer() {
-  if (logBuffer.length === 0) return;
-  const messages = logBuffer.join('');
-  logBuffer = [];
+export async function log(message, context = {}) {
   try {
-    await fs.appendFile(logFile, messages);
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      level: 'INFO',
+      timestamp,
+      message,
+      context: { ...context, bot: 'bot_lead' },
+    };
+    logBuffer.push(logEntry);
+    console.log(`🌟 [${timestamp}] INFO 🌟: ${message}`, context);
+
+    if (redisLogClient.isOpen) {
+      await redisLogClient.lPush('logs:bot_lead', JSON.stringify(logEntry));
+      await redisLogClient.lTrim('logs:bot_lead', 0, 999);
+    }
+
+    if (logBuffer.length > 1000) {
+      logBuffer.splice(0, logBuffer.length - 500);
+    }
   } catch (err) {
-    console.error('Critical error writing to log:', err);
+    console.error(`Failed to log: ${err.message}`);
   }
 }
 
-setInterval(flushBuffer, flushInterval);
-
 /**
- * Logs a message with timestamp and optional metadata.
+ * Logs an error with cosmic urgency.
  * @async
- * @param {string} message - Message to log
- * @param {Object} [options] - Optional metadata
- * @param {string} [options.taskId] - Task ID
+ * @param {string} message - The error message
+ * @param {Object} [context={}] - Additional context
  * @returns {Promise<void>}
  */
-export async function log(message, options = {}) {
-  const { taskId } = options;
-  const logMessage = `[${new Date().toISOString()}] INFO: ${message}${taskId ? ` [Task: ${taskId}]` : ''}\n`;
-  logBuffer.push(logMessage);
-  console.log(logMessage.trim());
-  if (logBuffer.length > 100) await flushBuffer();
-}
+export async function error(message, context = {}) {
+  try {
+    const timestamp = new Date().toISOString();
+    const errorEntry = {
+      level: 'ERROR',
+      timestamp,
+      message,
+      context: { ...context, bot: 'bot_lead' },
+    };
+    logBuffer.push(errorEntry);
+    console.error(`💥 [${timestamp}] ERROR 💥: ${message}`, context);
 
-/**
- * Logs an error message with timestamp and optional metadata.
- * @async
- * @param {string} message - Error message
- * @param {Object} [options] - Optional metadata
- * @param {string} [options.taskId] - Task ID
- * @returns {Promise<void>}
- */
-export async function error(message, options = {}) {
-  const { taskId } = options;
-  const logMessage = `[${new Date().toISOString()}] ERROR: ${message}${taskId ? ` [Task: ${taskId}]` : ''}\n`;
-  logBuffer.push(logMessage);
-  console.error(logMessage.trim());
-  if (logBuffer.length > 100) await flushBuffer();
-}
+    if (redisLogClient.isOpen) {
+      await redisLogClient.lPush('logs:bot_lead', JSON.stringify(errorEntry));
+      await redisLogClient.lTrim('logs:bot_lead', 0, 999);
+    }
 
-/**
- * Logs a warning message with timestamp and optional metadata.
- * @async
- * @param {string} message - Warning message
- * @param {Object} [options] - Optional metadata
- * @param {string} [options.taskId] - Task ID
- * @returns {Promise<void>}
- */
-export async function warn(message, options = {}) {
-  const { taskId } = options;
-  const logMessage = `[${new Date().toISOString()}] WARN: ${message}${taskId ? ` [Task: ${taskId}]` : ''}\n`;
-  logBuffer.push(logMessage);
-  console.warn(logMessage.trim());
-  if (logBuffer.length > 100) await flushBuffer();
+    if (logBuffer.length > 1000) {
+      logBuffer.splice(0, logBuffer.length - 500);
+    }
+  } catch (err) {
+    console.error(`Failed to log error: ${err.message}`);
+  }
 }
-
-// Cleanup on exit
-process.on('beforeExit', async () => {
-  await flushBuffer();
-});

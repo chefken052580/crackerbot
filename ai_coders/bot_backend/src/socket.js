@@ -1,155 +1,151 @@
-// ai_coders/bot_backend/src/socket.js
-// Version: v2025-04-10-10
-/* CrackerBot’s cosmic relay hub—linking backend to the galactic network with supernova precision! 🌌 */
+// bot_backend/src/socket.js
+// Version: v2025-07-26-01
+/**
+ * WebSocket Client Module
+ * Establishes CrackerBot’s cosmic connection to the WebSocket server with retry logic and galactic reliability.
+ * Enhanced by xAI for robust reconnection, error handling, and immediate progress emission on task receipt.
+ *
+ * @version 2025-07-26-01
+ * @author CrackerBot Team, enhanced by xAI
+ * @module socket
+ */
 
-import io from 'socket.io-client';
+import { io } from 'socket.io-client';
 import { log, error, debug } from './logger.js';
+import { executeTask } from './taskExecution.js';
 
-const BOT_NAME = 'bot_backend';
-export const WEBSOCKET_SERVER_URL = process.env.WEBSOCKET_SERVER_URL || 'wss://websocket-visually-sterling-spider.ngrok-free.app';
-const MAX_RETRIES = 5;
-const INITIAL_RETRY_DELAY = 3000; // 3s base delay for retries
-const CONNECTION_TIMEOUT = 10000; // 10s timeout per Socket.IO attempt
+/**
+ * Socket.IO client instance
+ * @type {Object|null}
+ */
+export let botSocket = null;
 
-await log(`🌌 ${BOT_NAME} socket.js v2025-04-10-10 igniting...`, 'INFO');
-
-// Message queue for reliability during disconnects
-let messageQueue = [];
-let isRegistered = false;
-
-// Promise to resolve or reject based on connection success or ultimate failure
-export const botSocket = new Promise((resolve, reject) => {
-  const socket = io(WEBSOCKET_SERVER_URL, {
-    reconnection: false, // Managed manually below
-    transports: ['websocket'],
-    path: '/socket.io',
-    timeout: CONNECTION_TIMEOUT,
-  });
-
+/**
+ * Emits an event with retry logic and cosmic logging.
+ * @async
+ * @param {string} event - Event name
+ * @param {Object} data - Event data
+ * @returns {Promise<void>}
+ */
+export async function emit(event, data) {
+  const maxRetries = 5;
   let attempt = 0;
 
-  const connectWithRetry = async () => {
-    if (attempt >= MAX_RETRIES) {
-      const errMsg = `${BOT_NAME} failed to connect after ${MAX_RETRIES} attempts`;
-      console.error(`[${new Date().toISOString()}] ${errMsg}`);
-      await error(errMsg);
-      reject(new Error(errMsg));
+  while (attempt < maxRetries) {
+    try {
+      if (!botSocket.connected) throw new Error('WebSocket not connected');
+      await debug(`Emitting ${event} with data: ${JSON.stringify(data).slice(0, 100)}...`, { event });
+      botSocket.emit(event, data);
+      await log(`Emitted ${event} successfully`, { event });
       return;
+    } catch (err) {
+      attempt++;
+      await error(`Failed to emit ${event}, attempt ${attempt}/${maxRetries}: ${err.message}`);
+      if (attempt === maxRetries) throw new Error(`Failed to emit ${event} after ${maxRetries} attempts: ${err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, 2000 * Math.pow(2, attempt)));
     }
+  }
+}
 
-    attempt++;
-    await log(`${BOT_NAME} attempting connection #${attempt}/${MAX_RETRIES} to ${WEBSOCKET_SERVER_URL}`, 'INFO');
-    await debug(`Starting connection attempt #${attempt}`, { attempt, url: WEBSOCKET_SERVER_URL });
-    socket.connect();
+/**
+ * Initializes WebSocket connection with exponential backoff.
+ * @returns {Promise<Object>} Connected Socket.IO client
+ */
+export const botSocketPromise = new Promise((resolve, reject) => {
+  const maxRetries = 10;
+  let attempt = 0;
 
-    socket.on('connect', async () => {
-      console.log(`[${new Date().toISOString()}] ${BOT_NAME} connected to cosmic relay at ${WEBSOCKET_SERVER_URL}`);
-      await log(`${BOT_NAME} linked to galactic hub with ID: ${socket.id}`, 'INFO');
+  const connect = async () => {
+    try {
+      const WEBSOCKET_URL = process.env.WEBSOCKET_URL || 'ws://websocket_server:5002';
+      await log(`bot_backend attempting connection #${attempt + 1}/${maxRetries} to ${WEBSOCKET_URL}`);
+      await debug(`Starting connection attempt #${attempt + 1}`);
 
-      if (!isRegistered) {
-        socket.emit('register', { name: BOT_NAME, role: 'backend' }, async (ack) => {
-          if (ack?.status === 'success') {
-            isRegistered = true;
-            console.log(`[${new Date().toISOString()}] ${BOT_NAME} registered with cosmic overseer`);
-            await log(`${BOT_NAME} synced to cosmic network`, 'INFO');
-            resolve(socket);
-            await flushQueue();
-          } else {
-            await error(`${BOT_NAME} registration failed: ${JSON.stringify(ack)}`);
-            socket.disconnect();
-            setTimeout(connectWithRetry, INITIAL_RETRY_DELAY * attempt); // Exponential backoff
+      botSocket = io(WEBSOCKET_URL, {
+        transports: ['websocket'],
+        reconnection: false, // Use manual retries
+        timeout: 60000,
+        path: '/socket.io',
+      });
+
+      botSocket.on('connect', async () => {
+        await log(`bot_backend linked to galactic hub with ID: ${botSocket.id}`);
+        botSocket.emit('register', { name: 'bot_backend', role: 'backend' });
+        resolve(botSocket);
+      });
+
+      botSocket.on('message', async (data) => {
+        try {
+          const { text, type, frontendId, ip, user, sessionId, taskId, taskName, taskType, taskFeatures } = data;
+          await log(`Received message: ${JSON.stringify({ text, type, frontendId, ip, user, sessionId, taskId })}`);
+          if (type === 'task_execution') {
+            // Send immediate 0% progress to prevent stuck builds
+            const socket = await botSocketPromise;
+            await socket.emit('message', {
+              type: 'progressUpdate',
+              taskId,
+              progress: 0,
+              text: `CrackerBot’s cosmic pulse: Igniting build for ${taskName}...`,
+              from: 'CrackerBot Prime',
+              target: 'bot_frontend',
+              frontendId,
+              ip,
+              taskName,
+              taskType,
+              taskFeatures,
+              messageId: `${taskId}-progress-0`,
+              bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
+              timestamp: new Date().toISOString(),
+            });
+            await executeTask(botSocket, { taskId, taskName, taskType, taskFeatures, frontendId, ip, user, sessionId });
           }
-        });
-      } else {
-        resolve(socket);
-        await flushQueue();
-      }
-    });
+        } catch (err) {
+          await error(`Failed to handle message: ${err.message}`);
+        }
+      });
 
-    socket.on('connect_error', async (err) => {
-      console.error(`[${new Date().toISOString()}] ${BOT_NAME} cosmic link error on attempt #${attempt}: ${err.message}`);
-      await error(`${BOT_NAME} connection failed: ${err.message}`);
-      socket.disconnect();
-      setTimeout(connectWithRetry, INITIAL_RETRY_DELAY * attempt); // Exponential backoff
-    });
+      botSocket.on('connect_error', async (err) => {
+        await error(`bot_backend connection failed: ${err.message}`);
+        if (attempt < maxRetries - 1) {
+          attempt++;
+          const delay = 1000 * Math.pow(2, attempt);
+          await debug(`Retrying connection in ${delay}ms, attempt ${attempt + 1}/${maxRetries}`);
+          setTimeout(connect, delay);
+        } else {
+          reject(new Error(`bot_backend failed to connect after ${maxRetries} attempts: ${err.message}`));
+        }
+      });
+
+      botSocket.on('error', async (err) => {
+        await error(`WebSocket error: ${err.message}`);
+      });
+
+      botSocket.on('heartbeat', async () => {
+        await log(`bot_backend WebSocket heartbeat: radiating cosmic energy!`);
+      });
+    } catch (err) {
+      await error(`Connection setup failed: ${err.message}`);
+      if (attempt < maxRetries - 1) {
+        attempt++;
+        const delay = 1000 * Math.pow(2, attempt);
+        await debug(`Retrying connection in ${delay}ms, attempt ${attempt + 1}/${maxRetries}`);
+        setTimeout(connect, delay);
+      } else {
+        reject(new Error(`Connection setup failed after ${maxRetries} attempts: ${err.message}`));
+      }
+    }
   };
 
-  connectWithRetry();
+  connect();
 });
 
-// Socket event handlers (post-resolution)
-botSocket.then((socket) => {
-  socket.on('connect', async () => {
-    await log(`${BOT_NAME} WebSocket reconnected—cosmic channels live!`, 'INFO');
-    await flushQueue();
-  });
-
-  socket.on('connect_error', async (err) => {
-    console.error(`[${new Date().toISOString()}] ${BOT_NAME} cosmic link severed: ${err.message}`);
-    await error(`${BOT_NAME} connection error: ${err.message}`);
-  });
-
-  socket.on('disconnect', async (reason) => {
-    console.log(`[${new Date().toISOString()}] ${BOT_NAME} drifted from cosmic relay. Reason: ${reason}`);
-    await error(`${BOT_NAME} disconnected: ${reason}`);
-    isRegistered = false;
-  });
-}).catch((err) => {
-  console.error(`[${new Date().toISOString()}] ${BOT_NAME} socket promise rejected: ${err.message}`);
-});
-
-/**
- * Emits a message with queuing during disconnects.
- * @param {string} event - Event name
- * @param {any} data - Event data (e.g., taskResult with jsonContent)
- * @param {Function} [callback] - Optional callback for acknowledgment
- * @returns {Promise<void>}
- */
-export async function emit(event, data, callback) {
+(async () => {
   try {
-    const socket = await botSocket;
-    if (socket.connected) {
-      socket.emit(event, data, callback);
-      await debug(`Emitted ${event} successfully`, { event, data: JSON.stringify(data).slice(0, 100) });
-    } else {
-      messageQueue.push({ event, data, callback });
-      await log(`🌠 Queued ${event} message due to disconnect`, 'INFO');
-    }
+    await log('🌌 bot_backend socket.js v2025-07-26-01 igniting...');
+    await botSocketPromise;
+    await log('🌌 bot_backend socket.js forged—ready to traverse the cosmic web!');
   } catch (err) {
-    messageQueue.push({ event, data, callback });
-    await error(`Emit failed for ${event}: ${err.message}`);
+    await error(`bot_backend socket.js supernova-failed: ${err.message}`);
+    process.exit(1);
   }
-}
-
-/**
- * Flushes queued messages when reconnected.
- * @returns {Promise<void>}
- */
-async function flushQueue() {
-  try {
-    const socket = await botSocket;
-    while (messageQueue.length > 0 && socket.connected) {
-      const { event, data, callback } = messageQueue.shift();
-      socket.emit(event, data, callback);
-      await log(`🚀 Flushed queued ${event} message`, 'INFO');
-      await debug(`Flushed message details`, { event, data: JSON.stringify(data).slice(0, 100) });
-    }
-  } catch (err) {
-    await error(`Failed to flush queue: ${err.message}`);
-  }
-}
-
-// Heartbeat for stability
-setInterval(async () => {
-  try {
-    const socket = await botSocket;
-    if (socket.connected) {
-      socket.emit('heartbeat', { bot: BOT_NAME });
-      await log(`${BOT_NAME} WebSocket heartbeat: pulsing with cosmic energy!`, 'INFO');
-    }
-  } catch (err) {
-    await error(`Heartbeat failed: ${err.message}`);
-  }
-}, 30000);
-
-await log(`🌌 ${BOT_NAME} socket.js forged—ready to traverse the cosmic web!`, 'INFO');
+})();

@@ -1,17 +1,21 @@
-# Build stage
-FROM node:22.12.0-alpine AS build-stage
+# bot_frontend/Dockerfile
+# Version: v2025-07-30-02
+FROM node:20-alpine AS build-stage
+
 WORKDIR /usr/src/app
 COPY package*.json ./
-RUN npm ci
-COPY . /usr/src/app/  
-RUN ls -la /usr/src/app/  # Debug: Verify copied files
-RUN npm run build  # Outputs to /usr/src/app/build per vite.config.js
+RUN npm config set cache /usr/src/app/.npm-cache --global && \
+    npm install && \
+    npm cache clean --force
+COPY . .
+RUN npm run build
 RUN ls -la /usr/src/app/build  # Debug: Verify build output
 
-# Production stage
-FROM nginx:stable-alpine AS production-stage
-COPY --from=build-stage /usr/src/app/build /usr/share/nginx/html/  
+FROM nginx:1.28.0-alpine
+COPY --from=build-stage /usr/src/app/build /usr/share/nginx/html/
+# Remove existing default.conf to avoid file/directory conflict
+RUN rm -f /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 RUN echo "bot_frontend is healthy" > /usr/share/nginx/html/health
-RUN nginx -t
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

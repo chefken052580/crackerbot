@@ -1,5 +1,15 @@
-// ai_coders/bot_backend/src/aiHelper.js
-// Version: v2025-03-28-11
+// bot_backend/src/aiHelper.js
+// Version: v2025-07-26-01
+/**
+ * AI Helper Module
+ * Generates cosmic responses with supernova flair and AI-driven detail.
+ * Enhanced by xAI for robust generation, progress updates, and high-quality outputs.
+ *
+ * @version 2025-07-26-01
+ * @author CrackerBot Team, enhanced by xAI
+ * @module aiHelper
+ */
+
 import OpenAI from 'openai';
 import { log, error } from './logger.js';
 import { botSocket } from './socket.js'; // For progress updates

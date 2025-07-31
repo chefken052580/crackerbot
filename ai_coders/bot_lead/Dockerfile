@@ -1,8 +1,18 @@
-FROM node:20-slim
-WORKDIR /bot_lead
+# bot_lead/Dockerfile
+# Version: v2025-07-23-01
+FROM node:20-bullseye-slim AS base
 
-# Install system dependencies for canvas
-RUN apt-get update && apt-get install -y \
+WORKDIR /bot_lead
+COPY package*.json ./
+
+# Install production dependencies
+RUN npm ci --only=production
+
+# Install system dependencies in a builder stage
+FROM base AS builder
+RUN echo "deb http://deb.debian.org/debian bullseye main" > /etc/apt/sources.list && \
+    echo "deb http://security.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libcairo2-dev \
     libpango1.0-dev \
@@ -10,13 +20,18 @@ RUN apt-get update && apt-get install -y \
     libgif-dev \
     librsvg2-dev \
     libpixman-1-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get upgrade -y && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    npm rebuild canvas --update-binary
 
-COPY package*.json ./
-RUN npm install
-RUN npm install -g pm2
-RUN npm rebuild canvas --update-binary
-
+# Final stage
+FROM base
+COPY --from=builder /usr/lib /usr/lib
+COPY --from=builder /usr/include /usr/include
+RUN echo "deb http://deb.debian.org/debian bullseye main" > /etc/apt/sources.list && \
+    echo "deb http://security.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list && \
+    apt-get update && apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
 COPY src/ ./src/
 EXPOSE 5001
-CMD ["pm2-runtime", "start", "src/server.js"]
+CMD ["node", "src/server.js"]

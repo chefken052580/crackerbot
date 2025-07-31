@@ -1,8 +1,8 @@
-// bot_lead/src/redisClient.js
+// bot_backend/src/redisClient.js
 // Version: v2025-07-26-01
 /**
  * Redis Client Module
- * Establishes CrackerBot’s cosmic connection to Redis with retry logic and authentication.
+ * Establishes CrackerBot’s cosmic connection to Redis with retry logic and authentication for bot_backend.
  * Enhanced by xAI for robust connection handling, error resilience, and progress caching.
  *
  * @version 2025-07-26-01
@@ -31,7 +31,7 @@ const redisClientPromise = (async () => {
     try {
       await log(`Connecting to Redis, attempt ${attempt + 1}/${maxRetries}`, { taskId: 'redis' });
       await redisClient.connect();
-      await log('Redis connection established—cosmic cache online!', { taskId: 'redis' });
+      await log('Redis connection established—cosmic cache online for bot_backend!', { taskId: 'redis' });
       return redisClient;
     } catch (err) {
       attempt++;
@@ -49,7 +49,7 @@ redisClient.on('error', async (err) => {
 });
 
 redisClient.on('connect', async () => {
-  await log('Redis logging connection established—galactic persistence ready!', { taskId: 'redis' });
+  await log('Redis logging connection established—galactic persistence ready for bot_backend!', { taskId: 'redis' });
 });
 
 /**
@@ -251,23 +251,4 @@ async function sMembers(setKey) {
   }
 }
 
-/**
- * Stores a message in Redis with a capped list for cosmic efficiency.
- * @async
- * @param {string} user - User identifier
- * @param {Object} message - Message object to store
- * @returns {Promise<void>}
- */
-async function storeMessage(user, message) {
-  const key = `messages:${user || 'anonymous'}`;
-  try {
-    const jsonMessage = JSON.stringify(message);
-    await redisClient.lPush(key, jsonMessage);
-    await redisClient.lTrim(key, 0, 9);
-    await log(`Stored message for ${user}: ${message.text.substring(0, 50)}...`, { taskId: 'redis' });
-  } catch (err) {
-    await error(`Failed to store message for ${user}: ${err.message}`, { taskId: 'redis' });
-  }
-}
-
-export { redisClient, redisClientPromise, isValidJSON, set, get, keys, del, hSet, hGet, hGetAll, hDel, sAdd, sMembers, storeMessage };
+export { redisClient, redisClientPromise, isValidJSON, set, get, keys, del, hSet, hGet, hGetAll, hDel, sAdd, sMembers };

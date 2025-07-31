@@ -1,14 +1,20 @@
-// ai_coders/bot_backend/src/logger.js
-// Version: v2025-04-11-08
-/* CrackerBot’s cosmic log forge—capturing the galaxy’s pulse with supernova precision! 🌌
- * Enhanced by xAI for JSON content logging, cosmic swagger, and interstellar robustness.
+// bot_backend/src/logger.js
+// Version: v2025-07-26-01
+/**
+ * CrackerBot’s Cosmic Log Forge
+ * Captures the galaxy’s pulse with supernova precision, JSON content logging, and cosmic swagger.
+ * Enhanced by xAI for detailed metadata, Redis storage, and progress emission.
+ *
+ * @version 2025-07-26-01
+ * @author CrackerBot Team, enhanced by xAI
+ * @module logger
  */
 
 import fs from 'fs/promises';
 import path from 'path';
 import { mkdirSync, existsSync } from 'fs';
 import { createWriteStream } from 'fs';
-import { botSocket, emit } from './socket.js';
+import { createClient } from 'redis';
 
 const logDir = process.env.LOG_DIR || './logs';
 const dateStr = new Date().toISOString().split('T')[0];
@@ -24,6 +30,25 @@ let logSize = 0;
 let logBuffer = [];
 const flushInterval = 5000; // Flush every 5s
 const maxBufferSize = 200; // Flush when buffer hits 200 entries
+
+// Redis client for logging-related operations
+const redisClient = createClient({
+  url: process.env.REDIS_URL || 'redis://redis:6379',
+  password: process.env.REDIS_PASSWORD || 'crackerbot',
+});
+
+redisClient.on('error', async (err) => {
+  console.error(`Redis logging error: ${err.message}`);
+});
+
+(async () => {
+  try {
+    await redisClient.connect();
+    console.log('Redis logging connection established');
+  } catch (err) {
+    console.error(`Redis logging connection failed: ${err.message}`);
+  }
+})();
 
 /**
  * Rotates log file if size exceeds limit with supernova precision.
@@ -124,6 +149,14 @@ export async function log(message, level = 'INFO', options = {}) {
     console.log(consoleMessage);
   }
 
+  // Store log in Redis
+  try {
+    await redisClient.lPush(`logs:${taskId || 'general'}`, logMessage);
+    await redisClient.lTrim(`logs:${taskId || 'general'}`, 0, 99);
+  } catch (err) {
+    console.error(`Failed to store log in Redis: ${err.message}`);
+  }
+
   if (emitProgress && taskId && frontendId && (level === 'INFO' || level === 'DEBUG')) {
     await sendProgress(taskId, progress, message, frontendId, ip, taskName, taskType);
   }
@@ -164,9 +197,9 @@ export async function debug(message, options = {}) {
 }
 
 /**
- * Sends progress update via WebSocket using socket.js emit function with cosmic swagger.
+ * Sends progress update via WebSocket with cosmic swagger.
  * @param {string} taskId - Task ID
- * @param {number|null} percentage - Progress (0-100) or null
+ * @param {number} percentage - Progress (0-100)
  * @param {string} message - Progress message
  * @param {string} frontendId - Frontend ID
  * @param {string} ip - IP address
@@ -176,33 +209,42 @@ export async function debug(message, options = {}) {
  */
 async function sendProgress(taskId, percentage, message, frontendId, ip, taskName, taskType) {
   if (!taskId || !frontendId) return;
-  const progressMessage = {
-    type: 'progressUpdate',
-    taskId,
-    progress: percentage !== null && percentage !== undefined ? percentage : undefined,
-    text: `🌌 CrackerBot’s supernova log: ${message}`,
-    from: 'CrackerBot Prime',
-    target: 'bot_frontend',
-    frontendId,
-    ip: ip || 'unknown',
-    taskName,
-    taskType,
-    messageId: `${taskId}-log-${Date.now()}`,
-    bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' }, // Match taskExecution.js
-  };
-  try {
-    await emit('message', progressMessage, (ack) => {
-      if (ack?.status !== 'success') {
-        console.warn(`Progress ack supernova-failed for task ${taskId}: ${JSON.stringify(ack)}`);
-      }
-    });
-    await debug(`Progress supernova-beamed for task ${taskId}: ${message}`, { taskId, frontendId, ip, taskName, taskType, progress: percentage });
-  } catch (err) {
-    await error(`Progress supernova-send failed for task ${taskId}: ${err.message}`, { taskId, frontendId, ip, taskName, taskType });
+  const maxRetries = 3;
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      const socket = await botSocketPromise;
+      if (!socket.connected) throw new Error('WebSocket not connected');
+      const progressMessage = {
+        type: 'progressUpdate',
+        taskId,
+        progress: percentage,
+        text: `CrackerBot’s cosmic pulse: ${message}`,
+        from: 'CrackerBot Prime',
+        target: 'bot_frontend',
+        frontendId,
+        ip: ip || 'unknown',
+        taskName,
+        taskType,
+        messageId: `${taskId}-log-${Date.now()}`,
+        bubbleStyle: { background: 'linear-gradient(135deg, #ff0066, #ffcc00)', color: '#fff' },
+        timestamp: new Date().toISOString(),
+      };
+      await socket.emit('message', progressMessage);
+      await debug(`Progress supernova-beamed for task ${taskId}: ${message}`, { taskId, frontendId, ip, taskName, taskType, progress: percentage });
+      return;
+    } catch (err) {
+      attempt++;
+      await error(`Progress supernova-send failed for task ${taskId}, attempt ${attempt}/${maxRetries}: ${err.message}`, { taskId, frontendId, ip, taskName, taskType });
+      if (attempt === maxRetries) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
   }
 }
 
 process.on('beforeExit', async () => {
   await flushBuffer();
   logStream.end();
+  await redisClient.quit();
 });

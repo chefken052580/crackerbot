@@ -1,162 +1,127 @@
-// ai_coders/bot_lead/src/taskCache.js (ESM, v2025-04-11-07)
+// ai_coders/bot_lead/src/taskCache.js
+// Version: v2025-07-26-01
 /**
- * CrackerBot’s Cosmic Vault Module
- * Caches completed tasks and manages user data with interstellar precision and galactic flair!
- * Enhanced by xAI for JSON consistency with redisClient, jsonContent support, and supernova robustness.
+ * Task Cache Module
+ * Persists completed tasks and user data in Redis with cosmic durability and JSON consistency.
+ * Enhanced by xAI for robust caching, project retrieval, and error resilience.
  *
- * @version 2025-04-11-07
+ * @version 2025-07-26-01
  * @author CrackerBot Team, enhanced by xAI
+ * @module taskCache
  */
 
 import { log, error } from './logger.js';
-import { set, get, del } from './redisClient.js';
-import { redisClient } from './redisClient.js';
+import { set, get, sAdd, sMembers, del } from './redisClient.js';
 
 /**
- * Caches a completed task in Redis with supernova brilliance, including jsonContent.
- * @param {Object} task - Task data to cache
- * @param {string} task.taskId - Unique task identifier
- * @param {string} task.frontendId - Frontend identifier
- * @param {string} task.ip - Client IP
- * @param {string} task.name - Project name
- * @param {string} task.type - Project type
- * @param {string} task.fileName - File name
- * @param {string} task.content - Task content (base64)
- * @param {string} task.user - User name
- * @param {string} [task.features] - Project features
- * @param {number} [task.version] - Version number
- * @param {string|null} [task.network] - Network (optional)
- * @param {Object} [task.jsonContent] - Structured JSON content from taskExecution
- * @returns {Promise<Object|null>} Cached task data or null on failure
+ * Validates JSON string.
+ * @param {string} str - String to validate
+ * @returns {boolean} True if valid JSON
  */
-export async function cacheCompletedTask(task) {
+function isValidJSON(str) {
   try {
-    const { taskId, frontendId, ip, name, type, fileName, content, user, features, version, network, jsonContent } = task;
-    if (!taskId || !user) {
-      throw new Error('Missing taskId or user—cosmic coordinates scrambled!');
-    }
-
-    const cacheKey = `project:${user}:${taskId}`;
-    const taskData = {
-      taskId,
-      frontendId: frontendId || 'unknown',
-      ip: ip || 'unknown',
-      name: name || 'unnamed_project',
-      type: type || 'unknown',
-      fileName: fileName || `${name || 'project'}_v${version || 1}.zip`,
-      content: content || null,
-      user,
-      features: features || 'basic functionality',
-      version: version || 1,
-      network: network || null,
-      status: 'completed',
-      timestamp: new Date().toISOString(),
-      jsonContent: jsonContent || { files: { 'readme.txt': { content: 'Cosmic essence captured!', encoding: 'utf8' } } }, // Default if missing
-    };
-    await set(cacheKey, taskData); // Store as object, JSON handled by redisClient
-    await log(`Task ${taskId} for ${user} supernova-sealed in the cosmic vault—ready for galactic retrieval! 🌌 Content: ${!!content ? 'Stellar payload included!' : 'No payload, pure essence!'} JSON: ${Object.keys(taskData.jsonContent.files).length} files`, { taskId });
-    return taskData;
-  } catch (err) {
-    await error(`Caching task ${task?.taskId || 'unknown'} for ${task?.user || 'unknown'} supernova-imploded: ${err.message} 🔥`);
-    return null;
-  }
-}
-
-/**
- * Retrieves all completed projects for a user from Redis with cosmic sorting.
- * @param {string} user - User identifier
- * @returns {Promise<Array>} List of completed projects formatted for UI
- */
-export async function getCompletedProjects(user) {
-  try {
-    const projectKeys = await redisClient.keys(`project:${user}:*`);
-    const projects = await Promise.all(
-      projectKeys.map(async (key) => {
-        const project = await get(key);
-        return project; // Already parsed by redisClient
-      })
-    );
-    const validProjects = projects
-      .filter(p => p !== null && p.status === 'completed')
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    await log(`Fetched ${validProjects.length} supernova-charged projects for ${user}—cosmic archives unleashed! 🎸`);
-    return validProjects.map(project => ({
-      text: `${project.name} (v${project.version}, ${project.type}) - "${project.features}"`,
-      options: ["Refine Project", "Download", "Delete"],
-      taskId: project.taskId,
-      content: project.content,
-      fileName: project.fileName,
-      projectData: project, // Include full project data for UI rendering
-    }));
-  } catch (err) {
-    await error(`Fetching projects for ${user} hit a cosmic black hole: ${err.message} ⚠️`);
-    return [];
-  }
-}
-
-/**
- * Deletes a project from Redis with cosmic precision.
- * @param {string} user - User identifier
- * @param {string} taskId - Task ID
- * @returns {Promise<boolean>} Success status
- */
-export async function deleteProject(user, taskId) {
-  try {
-    const cacheKey = `project:${user}:${taskId}`;
-    await del(cacheKey);
-    await log(`Project ${taskId} for ${user} supernova-vaporized from the vault—cosmic dust remains! 💥`);
+    JSON.parse(str);
     return true;
-  } catch (err) {
-    await error(`Deleting project ${taskId} for ${user} supernova-fizzled: ${err.message} 🔥`);
+  } catch {
     return false;
   }
 }
 
 /**
- * Retrieves the latest completed project for a user with galactic flair.
- * @param {string} user - User identifier
- * @returns {Promise<Object|null>} Latest project or null if none exist
+ * Caches a completed task in Redis with cosmic permanence.
+ * @async
+ * @param {Object} projectData - Project data to cache
+ * @param {string} projectData.taskId - Task ID
+ * @param {string} projectData.frontendId - Frontend ID
+ * @param {string} projectData.ip - Client IP
+ * @param {string} projectData.name - Project name
+ * @param {string} projectData.type - Project type
+ * @param {string} projectData.fileName - File name
+ * @param {string} projectData.content - Task content (base64)
+ * @param {string} projectData.user - User name
+ * @param {string} projectData.features - Project features
+ * @param {number} projectData.version - Project version
+ * @param {Object} projectData.jsonContent - Structured JSON content
+ * @param {string} projectData.downloadLink - Download URL
+ * @param {string} projectData.completedAt - Completion timestamp
+ * @returns {Promise<Object|null>} Cached project or null on failure
  */
-export async function getLatestProject(user) {
+export async function cacheCompletedTask(projectData) {
   try {
-    const projects = await getCompletedProjects(user);
-    const latest = projects.length > 0 ? projects[0] : null;
-    if (latest) {
-      await log(`Snagged the freshest supernova gem "${latest.text}" for ${user}—hot from the starforge! 🌟`);
-    } else {
-      await log(`No projects yet for ${user}—the galaxy awaits your first cosmic masterpiece! 🎤`);
-    }
-    return latest;
+    const {
+      taskId,
+      frontendId,
+      ip,
+      name,
+      type,
+      fileName,
+      content,
+      user,
+      features,
+      version,
+      jsonContent,
+      downloadLink,
+      completedAt,
+    } = projectData;
+
+    const projectKey = `project:${user}:${taskId}`;
+    const project = {
+      taskId,
+      frontendId,
+      ip,
+      name,
+      type,
+      fileName,
+      content,
+      user,
+      features,
+      version,
+      jsonContent,
+      downloadLink,
+      timestamp: completedAt || new Date().toISOString(),
+    };
+
+    await set(projectKey, JSON.stringify(project));
+    await sAdd(`completedProjects:${user}`, taskId);
+    await log(`🌟 Project ${taskId} supernova-cached for ${user}: ${name} (type: ${type}, version: ${version})`, { taskId });
+    return project;
   } catch (err) {
-    await error(`Fetching latest project for ${user} warped out: ${err.message} ⚠️`);
+    await error(`Failed to cache project ${projectData.taskId} for ${projectData.user}: ${err.message}`, { taskId: projectData.taskId });
     return null;
   }
 }
 
 /**
- * Retrieves the cached user name for a frontend ID.
- * @param {string} frontendId - Frontend identifier
- * @returns {Promise<string|null>} User name or null if not found
+ * Retrieves all completed project IDs for a user from Redis.
+ * @async
+ * @param {string} user - User name
+ * @returns {Promise<string[]>} List of task IDs
  */
-export async function getUserName(frontendId) {
+export async function getCompletedProjects(user) {
   try {
-    const userKey = `user:${frontendId}`;
-    const userData = await get(userKey);
-    const userName = userData?.name || null;
-    if (userName) {
-      await log(`Retrieved supernova-charged identity "${userName}" for frontend ${frontendId}—star traveler confirmed! 🌌`);
-      return userName;
+    const projectIds = await sMembers(`completedProjects:${user}`);
+    const projects = [];
+    for (const taskId of projectIds) {
+      const projectKey = `project:${user}:${taskId}`;
+      const projectData = await get(projectKey);
+      if (projectData && isValidJSON(projectData)) {
+        projects.push(taskId);
+      } else if (projectData) {
+        await del(projectKey);
+        await log(`Cleared corrupted project data for ${projectKey}`);
+      }
     }
-    await log(`No name found for frontend ${frontendId}—a mysterious cosmic voyager emerges! 👤`);
-    return null;
+    await log(`Fetched ${projects.length} supernova-charged projects for ${user}—cosmic archives unleashed! 🎸`, { user });
+    return projects;
   } catch (err) {
-    await error(`Fetching user name for frontend ${frontendId} supernova-crashed: ${err.message} ⚠️`);
-    return null;
+    await error(`Failed to fetch projects for ${user}: ${err.message}`, { user });
+    return [];
   }
 }
 
 /**
  * Sets the user name in Redis with stellar permanence and JSON consistency.
+ * @async
  * @param {string} name - User name to cache
  * @param {string} frontendId - Frontend identifier
  * @returns {Promise<boolean>} Success status
@@ -164,8 +129,7 @@ export async function getUserName(frontendId) {
 export async function setUserName(name, frontendId) {
   try {
     const userKey = `user:${frontendId}`;
-    const userData = { name }; // Object for JSON consistency
-    await set(userKey, userData); // Store as object, JSON handled by redisClient
+    await set(userKey, JSON.stringify({ name }));
     await log(`Supernova identity "${name}" etched for frontend ${frontendId}—galactic records supernova-updated! ✨`);
     return true;
   } catch (err) {
@@ -175,17 +139,26 @@ export async function setUserName(name, frontendId) {
 }
 
 /**
- * Retrieves the count of completed projects for a user.
- * @param {string} user - User identifier
- * @returns {Promise<number>} Number of completed projects
+ * Retrieves the user name from Redis, handling corrupted data.
+ * @async
+ * @param {string} frontendId - Frontend identifier
+ * @returns {Promise<string|null>} User name or null if not found
  */
-export async function getProjectCount(user) {
+export async function getUserName(frontendId) {
   try {
-    const projects = await getCompletedProjects(user);
-    await log(`Counted ${projects.length} supernova creations for ${user}—stellar tally supernova-complete! 🚀`);
-    return projects.length;
+    const userKey = `user:${frontendId}`;
+    const userData = await get(userKey);
+    if (userData && isValidJSON(userData)) {
+      const { name } = JSON.parse(userData);
+      await log(`Retrieved user name "${name}" for frontend ${frontendId}—cosmic identity intact! 🌌`);
+      return name;
+    } else if (userData) {
+      await del(userKey);
+      await log(`Cleared corrupted user data for ${frontendId}`);
+    }
+    return null;
   } catch (err) {
-    await error(`Counting projects for ${user} hit a cosmic snag: ${err.message} ⚠️`);
-    return 0;
+    await error(`Failed to retrieve user name for frontend ${frontendId}: ${err.message}`);
+    return null;
   }
 }

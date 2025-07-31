@@ -1,15 +1,6 @@
-*.pyc
-__pycache__
+.env
+node_modules/
 *.log
-.DS_Store
-.vscode
-node_modules
-.env
-.env
->>>>>>> shmai
-.env
-dist/
-node_modules/
-dist/
-node_modules/
-ai_coders/*/venv/
+bot_lead_logs/
+bot_backend_logs/
+redis-data/

@@ -1,8 +1,15 @@
-/* CrackerBot’s Cosmic Chatroom Component
- * Where interstellar ideas ignite and soar across the galaxy with supernova flair!
- * Enhanced by xAI for distinct user/project names, Redis caching, seamless task flow, robust deduplication, and cosmic UI upgrades.
+// bot_frontend/src/components/ChatRoom.jsx
+// Version: v2025-07-30-06
+/**
+ * ChatRoom Component
+ * The cosmic interface for CrackerBot, handling user interactions and WebSocket messages.
+ * Enhanced by xAI for robust session persistence, error handling, UI resilience, stable WebSocket management,
+ * single frontend_connected emission, prevention of duplicate name prompts, sessionId unlock during /warp_reconnect,
+ * fixed input field disabling issue, added connection status feedback, message queuing during disconnection,
+ * local welcome prompt on initial load, fixed 'cold undefined' error, fixed null wsRef error,
+ * restored Warp Reconnect button with confirmation, fixed typo in onMessage, and added fallback for choice prompt.
  *
- * @version 2025-04-11-03
+ * @version 2025-07-30-06
  * @author CrackerBot Team, enhanced by xAI
  * @module ChatRoom
  */
@@ -12,15 +19,6 @@ import WebSocketManager from '../utils/WebSocketManager.js';
 import ChatMessage from './ChatMessage.jsx';
 import PreviewPopup from './PreviewPopup.jsx';
 import { commands, colorSchemes } from '../config/chatConfig.js';
-
-// Singleton WebSocket instance
-const socketInstance = new WebSocketManager('wss://websocket-visually-sterling-spider.ngrok-free.app', {
-  onConnect: () => {},
-  onMessage: () => {},
-  onTyping: () => {},
-  onConnectError: () => {},
-  onDisconnect: () => {},
-});
 
 /**
  * Error boundary component to catch and display rendering errors in ChatMessage.
@@ -38,14 +36,14 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error("Error in ChatMessage:", error, errorInfo);
+    console.error(`[${new Date().toISOString()}] 💥 Error in ChatMessage:`, error, errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
       return (
         <div className="text-red-500 p-2 border border-red-500 rounded mb-2">
-          <p>⚠️ Something went wrong with this message.</p>
+          <p>⚠️ Cosmic interference in message rendering.</p>
           <p>{this.state.errorMessage}</p>
         </div>
       );
@@ -64,7 +62,7 @@ export function ChatRoom() {
   const [showCommands, setShowCommands] = useState(false);
   const [filteredCommands, setFilteredCommands] = useState(commands);
   const [commandIndex, setCommandIndex] = useState(-1);
-  const [isConnected, setIsConnected] = useState(socketInstance.isConnected());
+  const [isConnected, setIsConnected] = useState(false);
   const [isTyping, setIsTyping] = useState({});
   const [taskPending, setTaskPending] = useState(null);
   const [currentTask, setCurrentTask] = useState(null);
@@ -77,10 +75,17 @@ export function ChatRoom() {
   const [userName, setUserName] = useState(localStorage.getItem('crackerBotUserName') || 'Guest');
   const [messageIds, setMessageIds] = useState(new Set());
   const [persistentMessages, setPersistentMessages] = useState([]);
-  const [frontendId, setFrontendId] = useState(null);
+  const [frontendId] = useState(localStorage.getItem('frontendId') || crypto.randomUUID());
+  const [sessionId, setSessionId] = useState(localStorage.getItem('sessionId') || crypto.randomUUID());
+  const [error, setError] = useState(null);
+  const [welcomeCount, setWelcomeCount] = useState(0);
+  const [lastHeartbeat, setLastHeartbeat] = useState(0);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [connectionLock, setConnectionLock] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('Connecting...');
 
   const chatContainerRef = useRef(null);
-  const socketRef = useRef(socketInstance);
+  const wsRef = useRef(null);
   const inputRef = useRef(null);
   const commandsRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -88,292 +93,426 @@ export function ChatRoom() {
   const initialLoadRef = useRef(true);
 
   /**
-   * Initializes WebSocket event listeners with JSDoc documentation.
-   * @function initializeSocketListeners
+   * Debounces WebSocket events to prevent UI flooding.
    */
-  const initializeSocketListeners = useCallback(() => {
-    /**
-     * Handles WebSocket connection event.
-     * @event onConnect
-     * @param {string} id - Frontend ID assigned by the WebSocket server
-     */
-    socketRef.current.callbacks.onConnect = (id) => {
-      setFrontendId(id);
-      setIsConnected(true);
-      const connectMsg = {
-        id: `connect-${Date.now()}`,
-        from: 'System',
-        user: userName,
-        text: 'CrackerBot’s galactic channels live—warp speed engaged! 🚀',
-        type: 'system',
-        timestamp: new Date().toLocaleTimeString(),
-        bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
-      };
-      setMessages((prev) => {
-        const filteredPrev = prev.filter((msg) => msg.id !== connectMsg.id);
-        const initialMessages = [connectMsg, ...persistentMessages, ...filteredPrev];
-        setMessageIds(new Set(initialMessages.map((msg) => msg.id)));
-        return initialMessages;
-      });
-      socketRef.current.emit('register', { name: 'frontend', role: 'frontend', frontendId: id });
-      socketRef.current.emit('frontend_connected', {
-        ip: window.location.hostname,
-        frontendId: id,
-        userName,
-        sessionId: localStorage.getItem('sessionId') || crypto.randomUUID(),
-      });
+  const debounce = useCallback((fn, delay) => {
+    let timeout;
+    return (...args) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => fn(...args), delay);
     };
+  }, []);
 
-    /**
-     * Handles incoming WebSocket messages.
-     * @event onMessage
-     * @param {Object} data - Message data from the server
-     */
-    socketRef.current.callbacks.onMessage = (data) => {
-      if (data.frontendId && data.frontendId !== frontendId) return;
+  /**
+   * Scrolls to the bottom of the chat container.
+   */
+  const scrollToBottom = useCallback(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, []);
 
-      const messageId = data.messageId || `${data.taskId || Date.now()}-${data.type || 'unknown'}-${data.text?.slice(0, 50) || 'no-text'}`;
-      const isWelcome = data.taskId?.startsWith('initial') && (data.type === 'success' || data.type === 'question') && data.options?.includes('Chat');
-      const dedupeKey = isWelcome ? `${data.taskId}-welcome` : messageId;
+  /**
+   * Initializes WebSocket with stable singleton instance and prevents duplicates.
+   */
+  const initializeWebSocket = useCallback(() => {
+    if (wsRef.current && wsRef.current.isInitialized && wsRef.current.isConnected()) {
+      console.log(`[${new Date().toISOString()}] 🔄 ChatRoom: WebSocket already initialized and connected, skipping`);
+      setConnectionStatus('Connected');
+      return;
+    }
 
-      if (messageIds.has(dedupeKey)) return;
+    if (connectionLock) {
+      console.log(`[${new Date().toISOString()}] 🔒 ChatRoom: Connection locked, skipping initialization`);
+      return;
+    }
 
-      setMessageIds((prevIds) => new Set(prevIds).add(dedupeKey));
+    setConnectionLock(true);
+    setConnectionStatus('Connecting...');
 
-      const safeData = {
-        text: typeof data.text === 'string' ? data.text : 'No cosmic transmission received',
-        type: data.type || 'bot',
-        from: data.from || 'CrackerBot Prime',
-        taskId: data.taskId || null,
-        options: Array.isArray(data.options) ? data.options : [],
-        frontendId: data.frontendId || null,
-        ip: data.ip || 'unknown',
-        finalContent: data.finalContent || data.content || null,
-        downloadLink: data.downloadLink || null,
-        taskName: data.taskName || null,
-        taskType: data.taskType || null,
-        taskFeatures: data.taskFeatures || null,
-        projects: data.projects || null,
-        progress: typeof data.progress === 'number' ? data.progress : undefined,
-        bubbleStyle: data.bubbleStyle || {},
-        user: data.user || userName,
-        timestamp: new Date().toLocaleTimeString(),
-      };
+    try {
+      wsRef.current = new WebSocketManager(process.env.REACT_APP_WEBSOCKET_URL || 'wss://<your-ngrok-websocket-url>.ngrok-free.app', {
+        onConnect: debounce((receivedFrontendId) => {
+          console.log(`[${new Date().toISOString()}] 🌌 ChatRoom: Connected to cosmic relay: frontendId: ${receivedFrontendId}, sessionId: ${sessionId}, userName: ${userName}`);
+          if (receivedFrontendId !== frontendId) {
+            localStorage.setItem('frontendId', receivedFrontendId);
+          }
+          setIsConnected(true);
+          setError(null);
+          setConnectionStatus('Connected');
+          setReconnectAttempts(0);
+          setConnectionLock(false);
+          wsRef.current.emit('frontend_connected', {
+            ip: window.location.hostname,
+            frontendId,
+            userName,
+            sessionId,
+          });
+          scrollToBottom();
+        }, 1000),
+        onMessage: debounce((data) => {
+          try {
+            if (Array.isArray(data)) data = data[0];
+            if (!data || !data.text || (data.frontendId && data.frontendId !== frontendId)) {
+              console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: Invalid or mismatched message received:`, data);
+              return;
+            }
 
-      try {
-        if (safeData.type === 'success' && safeData.taskId?.startsWith('initial') && safeData.user !== 'Guest' && safeData.user !== userName) {
-          setUserName(safeData.user);
-          localStorage.setItem('crackerBotUserName', safeData.user);
-        }
+            const messageId = data.messageId || `${data.taskId || Date.now()}-${data.type || 'unknown'}-${data.text?.slice(0, 50) || 'no-text'}`;
+            const timestamp = data.timestamp || new Date().toISOString();
+            const isWelcome = data.taskId?.startsWith('initial') && data.type === 'question' && data.options?.includes('Type your name below!');
 
-        const newMessage = {
-          id: dedupeKey,
-          from: safeData.from,
-          user: safeData.user,
-          text: safeData.text,
-          type: safeData.type,
-          finalContent: safeData.finalContent,
-          downloadLink: safeData.downloadLink,
-          taskId: safeData.taskId,
-          options: safeData.options,
-          timestamp: safeData.timestamp,
-          frontendId: safeData.frontendId,
-          taskName: safeData.taskName,
-          taskType: safeData.taskType,
-          taskFeatures: safeData.taskFeatures,
-          projects: data.projects || null,
-          progress: safeData.type === 'progressUpdate' ? safeData.progress : taskProgress[safeData.taskId] || 0,
-          isBuilding: safeData.type === 'building' || safeData.type === 'progressUpdate' || (safeData.taskId && (taskProgress[safeData.taskId] || 0) < 100),
-          bubbleStyle: safeData.bubbleStyle,
-        };
+            const dedupeKey = isWelcome ? `welcome-${data.taskId}-${data.user || 'Guest'}-${timestamp}` : messageId;
+            if (messageIds.has(dedupeKey)) {
+              console.log(`[${new Date().toISOString()}] 🔄 ChatRoom: Duplicate message ignored: ${dedupeKey}, text: ${data.text}`);
+              return;
+            }
 
-        setMessages((prev) => {
-          const updatedPrev = isWelcome && safeData.options.includes('Chat') && safeData.options.includes('Build-Something-Epic')
-            ? prev.filter((msg) => !msg.id.includes('welcome-choice'))
-            : prev;
+            setMessageIds((prevIds) => new Set(prevIds).add(dedupeKey));
 
-          if (safeData.type === 'building' || safeData.type === 'progressUpdate') {
-            if (safeData.taskId) {
-              setTaskProgress((prevProgress) => ({
-                ...prevProgress,
-                [safeData.taskId]: safeData.progress !== undefined ? safeData.progress : prevProgress[safeData.taskId] || 0,
-              }));
-              const existingIdx = updatedPrev.findIndex((msg) => msg.taskId === safeData.taskId && (msg.type === 'building' || msg.type === 'progressUpdate'));
-              if (existingIdx >= 0) {
-                const updatedMessages = [...updatedPrev];
-                updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], ...newMessage, progress: taskProgress[safeData.taskId] || safeData.progress || 0 };
-                return updatedMessages;
+            const safeData = {
+              text: typeof data.text === 'string' ? data.text : 'No cosmic transmission received',
+              type: data.type || 'bot',
+              from: data.from || 'CrackerBot Prime',
+              taskId: data.taskId || `initial:${frontendId}`,
+              options: Array.isArray(data.options) ? data.options : [],
+              frontendId: data.frontendId || frontendId,
+              ip: data.ip || 'unknown',
+              finalContent: data.finalContent || data.content || null,
+              downloadLink: data.downloadLink || null,
+              taskName: data.taskName || null,
+              taskType: data.taskType || null,
+              taskFeatures: data.taskFeatures || null,
+              projects: data.projects || null,
+              progress: typeof data.progress === 'number' ? data.progress : undefined,
+              bubbleStyle: data.bubbleStyle || { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
+              user: data.user || userName,
+              timestamp: new Date(timestamp).toLocaleTimeString(),
+            };
+
+            const newMessage = {
+              id: dedupeKey,
+              from: safeData.from,
+              user: safeData.user,
+              text: safeData.text,
+              type: safeData.type,
+              finalContent: safeData.finalContent,
+              downloadLink: safeData.downloadLink,
+              taskId: safeData.taskId,
+              options: safeData.options,
+              timestamp: safeData.timestamp,
+              frontendId: sustainableData.frontendId,
+              taskName: safeData.taskName,
+              taskType: safeData.taskType || null,
+              taskFeatures: safeData.taskFeatures || null,
+              projects: data.projects || null,
+              progress: safeData.type === 'progressUpdate' ? safeData.progress : taskProgress[safeData.taskId] || 0,
+              isBuilding: safeData.type === 'building' || safeData.type === 'progressUpdate' || (safeData.taskId && (taskProgress[safeData.taskId] || 0) < 100),
+              bubbleStyle: safeData.bubbleStyle,
+            };
+
+            setMessages((prev) => {
+              if (isWelcome && safeData.options.includes('Type your name below!')) {
+                if (welcomeCount >= 3) {
+                  console.log(`[${new Date().toISOString()}] ⚠️ ChatRoom: Suppressing welcome message due to excessive welcomes`);
+                  return prev;
+                }
+                setWelcomeCount((prev) => prev + 1);
+                setCurrentTask({ taskId: safeData.taskId, step: 'name', taskStatus: 'pending' });
+                setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
+              }
+              const updatedPrev = isWelcome && safeData.options.includes('Type your name below!')
+                ? prev.filter((msg) => !msg.id.includes('welcome-') || msg.id === dedupeKey)
+                : prev;
+
+              if (safeData.type === 'building' || safeData.type === 'progressUpdate') {
+                if (safeData.taskId) {
+                  setTaskProgress((prevProgress) => ({
+                    ...prevProgress,
+                    [safeData.taskId]: safeData.progress !== undefined ? safeData.progress : prevProgress[safeData.taskId] || 0,
+                  }));
+                  const existingIdx = updatedPrev.findIndex((msg) => msg.taskId === safeData.taskId && (msg.type === 'building' || msg.type === 'progressUpdate'));
+                  if (existingIdx >= 0) {
+                    const updatedMessages = [...updatedPrev];
+                    updatedMessages[existingIdx] = { ...updatedMessages[existingIdx], ...newMessage, progress: taskProgress[safeData.taskId] || safeData.progress || 0 };
+                    return updatedMessages;
+                  }
+                }
+              }
+
+              const updatedMessages = [...updatedPrev, newMessage];
+              if (safeData.type === 'question' || safeData.from === 'You') {
+                setPersistentMessages((prevPersistent) => {
+                  const newPersistent = [...prevPersistent.filter((msg) => msg.id !== dedupeKey), newMessage];
+                  return newPersistent.length > 50 ? newPersistent.slice(-50) : newPersistent;
+                });
+              }
+              return updatedMessages;
+            });
+
+            if (safeData.type === 'success' && safeData.taskId?.startsWith('initial') && safeData.user !== 'Guest' && safeData.user !== userName) {
+              setUserName(safeData.user);
+              localStorage.setItem('crackerBotUserName', safeData.user);
+              if (wsRef.current) {
+                wsRef.current.setUserName(safeData.user);
+              }
+              console.log(`[${new Date().toISOString()}] 🌟 ChatRoom: Updated userName to ${safeData.user}`);
+              setCurrentTask({ taskId: safeData.taskId, step: 'choice', taskStatus: 'pending' });
+              if (!isConnected) {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `choice-${safeData.taskId}-${Date.now()}`,
+                    from: 'System',
+                    user: safeData.user,
+                    text: `🌟 Welcome, ${safeData.user}! Choose your galactic path!`,
+                    type: 'question',
+                    taskId: safeData.taskId,
+                    options: ['Chat', 'Build-Something-Epic'],
+                    timestamp: new Date().toLocaleTimeString(),
+                    bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
+                  },
+                ]);
+                setTaskPending({
+                  taskId: safeData.taskId,
+                  question: `Choose your galactic path!`,
+                  options: ['Chat', 'Build-Something-Epic'],
+                });
               }
             }
-          }
 
-          const updatedMessages = [...updatedPrev, newMessage];
-          if (safeData.type === 'question' || safeData.from === 'You') {
-            setPersistentMessages((prevPersistent) => {
-              const newPersistent = [...prevPersistent.filter((msg) => msg.id !== dedupeKey), newMessage];
-              return newPersistent;
-            });
-          }
-          return updatedMessages;
-        });
+            if (safeData.type === 'taskResult' && safeData.taskId) {
+              setTaskPending(null);
+              setCurrentTask((prev) => prev ? {
+                ...prev,
+                taskStatus: 'completed',
+                name: safeData.taskName || prev.name,
+                type: safeData.taskType || prev.type,
+                features: safeData.taskFeatures || prev.features,
+              } : null);
+              setEditMode(null);
+              setTaskProgress((prev) => ({ ...prev, [safeData.taskId]: 100 }));
+              if (safeData.finalContent && safeData.downloadLink) {
+                setPreviewData({
+                  fileContent: safeData.finalContent,
+                  fileName: `${safeData.taskName || 'cosmic_project'}.zip`,
+                  taskId: safeData.taskId,
+                });
+              }
+            } else if (safeData.type === 'pending' && safeData.taskId) {
+              setCurrentTask((prev) => ({
+                taskId: safeData.taskId,
+                name: safeData.taskName || prev?.name || 'Unnamed Epic',
+                type: safeData.taskType || prev?.type || 'TBD',
+                features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+                step: 'type',
+                taskStatus: 'pending',
+              }));
+            } else if (safeData.type === 'building' && safeData.taskId) {
+              setCurrentTask((prev) => ({
+                taskId: safeData.taskId,
+                name: safeData.taskName || prev?.name || 'Unnamed Epic',
+                type: safeData.taskType || prev?.type || 'TBD',
+                features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+                step: 'building',
+                taskStatus: 'building',
+              }));
+              setTaskPending(null);
+            } else if (safeData.type === 'progressUpdate' && safeData.taskId) {
+              setTaskProgress((prev) => ({
+                ...prev,
+                [safeData.taskId]: safeData.progress,
+              }));
+              setCurrentTask((prev) => prev?.taskId === safeData.taskId ? { ...prev, taskStatus: 'building' } : prev);
+            } else if (safeData.type === 'question') {
+              setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
+              setCurrentTask((prev) => {
+                const step = safeData.options.includes('Type your name below!') ? 'name' :
+                  safeData.options.includes('Chat') && safeData.options.includes('Build-Something-Epic') ? 'choice' :
+                  safeData.options.some(opt => ['mainnet-beta', 'testnet', 'devnet', 'none'].includes(opt)) ? 'network' :
+                  safeData.options.includes('Type your feature details!') ? 'pending_features' :
+                  safeData.options.includes('Name your project!') ? 'project_name' :
+                  safeData.options.some(opt => ['Restart', 'Refine Project', 'Done'].includes(opt)) ? 'review' : 'unknown';
+                return {
+                  taskId: safeData.taskId,
+                  name: safeData.taskName || prev?.name || 'Unnamed Epic',
+                  type: safeData.taskType || prev?.type || 'TBD',
+                  features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
+                  step,
+                  taskStatus: 'pending',
+                };
+              });
+            } else if (safeData.type === 'success') {
+              setTaskPending(null);
+              if (safeData.taskId?.startsWith('initial')) {
+                setCurrentTask((prev) => prev ? { ...prev, step: 'choice' } : { step: 'choice', taskId: safeData.taskId });
+              } else {
+                setCurrentTask(null);
+              }
+              setEditMode(null);
+            } else if (safeData.type === 'error' && safeData.taskId) {
+              setTaskPending(null);
+              setCurrentTask((prev) => prev && prev.taskId === safeData.taskId ? { ...prev, taskStatus: 'error' } : null);
+              setEditMode(null);
+              setTaskProgress((prev) => {
+                const newProgress = { ...prev };
+                delete newProgress[safeData.taskId];
+                return newProgress;
+              });
+            }
 
-        // Enhanced task result handling for download/preview
-        if (safeData.type === 'taskResult' && safeData.taskId) {
-          setTaskPending(null);
-          setCurrentTask((prev) => prev ? {
-            ...prev,
-            taskStatus: 'completed',
-            name: safeData.taskName || prev.name,
-            type: safeData.taskType || prev.type,
-            features: safeData.taskFeatures || prev.features
-          } : null);
-          setEditMode(null);
-          setTaskProgress((prev) => ({ ...prev, [safeData.taskId]: 100 }));
-          if (safeData.finalContent && safeData.downloadLink) {
-            setPreviewData({
-              fileContent: safeData.finalContent,
-              fileName: `${safeData.taskName || 'cosmic_project'}.zip`,
-              taskId: safeData.taskId,
-            });
+            setIsTyping((prev) => ({ ...prev, [safeData.from]: false }));
+            scrollToBottom();
+          } catch (err) {
+            console.error(`[${new Date().toISOString()}] 💥 ChatRoom: Message processing error: ${err.message}`);
+            setError(`Cosmic static detected: ${err.message}. Please try again.`);
           }
-        } else if (safeData.type === 'pending' && safeData.taskId) {
-          setCurrentTask((prev) => ({
-            taskId: safeData.taskId,
-            name: safeData.taskName || prev?.name || 'Unnamed Epic',
-            type: safeData.taskType || prev?.type || 'TBD',
-            features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
-            step: 'type',
-            taskStatus: 'pending',
-          }));
-        } else if (safeData.type === 'building' && safeData.taskId) {
-          setCurrentTask((prev) => ({
-            taskId: safeData.taskId,
-            name: safeData.taskName || prev?.name || 'Unnamed Epic',
-            type: safeData.taskType || prev?.type || 'TBD',
-            features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
-            step: 'building',
-            taskStatus: 'building',
-          }));
-          setTaskPending(null);
-        } else if (safeData.type === 'progressUpdate' && safeData.taskId) {
-          setTaskProgress((prev) => ({
-            ...prev,
-            [safeData.taskId]: safeData.progress,
-          }));
-          setCurrentTask((prev) => prev?.taskId === safeData.taskId ? { ...prev, taskStatus: 'building' } : prev);
-        } else if (safeData.type === 'question') {
-          setTaskPending({ taskId: safeData.taskId, question: safeData.text, options: safeData.options });
-          setCurrentTask((prev) => {
-            const step = safeData.text.toLowerCase().includes('name below') ? 'name' :
-              safeData.text.toLowerCase().includes('chat') || safeData.text.toLowerCase().includes('build') ? 'choice' :
-              safeData.text.toLowerCase().includes('tech') ? 'type' :
-              safeData.text.toLowerCase().includes('features') ? 'pending_features' : 'review';
-            return {
-              taskId: safeData.taskId,
-              name: safeData.taskName || prev?.name || 'Unnamed Epic',
-              type: safeData.taskType || prev?.type || 'TBD',
-              features: safeData.taskFeatures || prev?.features || 'Forging cosmic brilliance...',
-              step,
-              taskStatus: 'pending',
-            };
-          });
-        } else if (safeData.type === 'success' && !safeData.projects) {
-          setTaskPending(null);
-          if (safeData.taskId?.startsWith('initial')) {
-            setCurrentTask((prev) => prev ? { ...prev, step: 'choice' } : { step: 'choice', taskId: safeData.taskId });
-          } else {
-            setCurrentTask(null);
-          }
-          setEditMode(null);
-        } else if (safeData.type === 'error' && safeData.taskId) {
-          setTaskPending(null);
-          setCurrentTask((prev) => prev && prev.taskId === safeData.taskId ? { ...prev, taskStatus: 'error' } : null);
-          setEditMode(null);
-          setTaskProgress((prev) => {
-            const newProgress = { ...prev };
-            delete newProgress[safeData.taskId];
-            return newProgress;
-          });
-        }
+        }, 300),
+        onTyping: (data) => {
+          if (data.frontendId && data.frontendId !== frontendId) return;
+          setIsTyping((prev) => ({ ...prev, 'CrackerBot Prime': true }));
+          setTimeout(() => setIsTyping((prev) => ({ ...prev, 'CrackerBot Prime': false })), 2000);
+        },
+        onConnectError: (err) => {
+          console.error(`[${new Date().toISOString()}] 💥 ChatRoom: Connection error: ${err.message}`);
+          setIsConnected(false);
+          setConnectionStatus(`Connection failed: ${err.message}`);
+          setError(`Galactic link fractured: ${err.message}. Reconnecting...`);
+          setConnectionLock(false);
+        },
+        onDisconnect: (reason) => {
+          console.log(`[${new Date().toISOString()}] ⚡️ ChatRoom: Disconnected: ${reason}`);
+          setIsConnected(false);
+          setConnectionStatus(`Disconnected: ${reason}`);
+          setError(`Ejected from cosmic grid—Reason: ${reason}. Reconnecting...`);
+          setConnectionLock(false);
+        },
+      });
 
-        setIsTyping((prev) => ({ ...prev, [safeData.from]: false }));
-      } catch (err) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-error`,
-            from: 'System',
-            user: userName,
-            text: `Cosmic glitch processing message: ${err.message}`,
-            type: 'error',
-            timestamp: new Date().toLocaleTimeString(),
-            bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-          },
-        ]);
+      wsRef.current.isInitialized = true;
+      if (wsRef.current) {
+        wsRef.current.setUserName(userName);
+        wsRef.current.initializeSocket();
       }
-    };
+      console.log(`[${new Date().toISOString()}] 🌌 ChatRoom: WebSocket initialization attempted with URL: ${process.env.REACT_APP_WEBSOCKET_URL || 'wss://<your-ngrok-websocket-url>.ngrok-free.app'}`);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] 💥 ChatRoom: WebSocket initialization failed: ${err.message}`);
+      setError(`Failed to initialize cosmic relay: ${err.message}. Reconnecting...`);
+      setConnectionStatus(`Initialization failed: ${err.message}`);
+      setConnectionLock(false);
+    }
+  }, [frontendId, userName, sessionId, scrollToBottom, welcomeCount, debounce, connectionLock, isConnected]);
 
-    /**
-     * Handles WebSocket connection errors.
-     * @event onConnectError
-     * @param {Error} error - Connection error object
-     */
-    socketRef.current.callbacks.onConnectError = (error) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}-error`,
-          from: 'System',
-          user: userName,
-          text: `Signal snag: ${error.message}—retrying warp connection! ⚡️`,
-          type: 'error',
-          timestamp: new Date().toLocaleTimeString(),
-          bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-        },
-      ]);
-      setIsConnected(false);
-    };
+  /**
+   * Initializes local welcome prompt if no connection is established.
+   */
+  const initializeLocalWelcome = useCallback(() => {
+    if (messages.length === 0 && !isConnected) {
+      const taskId = `initial:${frontendId}`;
+      const welcomeMsg = {
+        id: `welcome-${taskId}-${Date.now()}`,
+        from: 'System',
+        user: userName,
+        text: `🌌 Cosmic channels aligning—welcome, ${userName === 'Guest' ? 'Guest' : userName}! Carve your legacy in the stars!`,
+        type: 'question',
+        taskId,
+        options: userName === 'Guest' ? ['Type your name below!'] : ['Chat', 'Build-Something-Epic'],
+        timestamp: new Date().toLocaleTimeString(),
+        bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
+      };
+      setMessages([welcomeMsg]);
+      setMessageIds(new Set([welcomeMsg.id]));
+      setCurrentTask({ taskId, step: userName === 'Guest' ? 'name' : 'choice', taskStatus: 'pending' });
+      setTaskPending({ taskId, question: welcomeMsg.text, options: welcomeMsg.options });
+      scrollToBottom();
+    }
+  }, [frontendId, scrollToBottom, isConnected, messages.length, userName]);
 
-    /**
-     * Handles WebSocket disconnection.
-     * @event onDisconnect
-     * @param {string} reason - Reason for disconnection
-     */
-    socketRef.current.callbacks.onDisconnect = (reason) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}-disconnect`,
-          from: 'System',
-          user: userName,
-          text: `Cosmic link severed: ${reason}—realigning soon! 💥`,
-          type: 'error',
-          timestamp: new Date().toLocaleTimeString(),
-          bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-        },
-      ]);
-      setIsConnected(false);
-    };
+  /**
+   * Handles warp reconnect to reset user state and prompt for a new name.
+   */
+  const handleWarpReconnect = useCallback(() => {
+    if (isSending) return;
+    const confirmReset = window.confirm(
+      '⚠️ Warning: This will reset your username to "Guest" and clear all completed tasks from the cosmic archives. Ready to warp anew?'
+    );
+    if (!confirmReset) return;
 
-    /**
-     * Handles typing indicators from the server.
-     * @event onTyping
-     * @param {Object} data - Typing event data
-     */
-    socketRef.current.callbacks.onTyping = (data) => {
-      if (data.frontendId && data.frontendId !== frontendId) return;
-      setIsTyping((prev) => ({ ...prev, 'CrackerBot Prime': true }));
-      setTimeout(() => setIsTyping((prev) => ({ ...prev, 'CrackerBot Prime': false })), 2000);
-    };
-  }, [taskProgress, userName, persistentMessages, frontendId]);
+    const newSessionId = crypto.randomUUID();
+    const taskId = `initial:${frontendId}`;
+    setIsSending(true);
+    if (wsRef.current) {
+      wsRef.current.unlockSessionId();
+      wsRef.current.emit('message', {
+        text: '/warp_reconnect',
+        type: 'command',
+        commandFlag: true,
+        frontendId,
+        ip: window.location.hostname,
+        target: 'bot_lead',
+        user: userName,
+        sessionId: newSessionId,
+        taskId,
+      });
+    }
+
+    setMessages([]);
+    setTaskPending(null);
+    setCurrentTask({ taskId, step: 'name', taskStatus: 'pending' });
+    setEditMode(null);
+    setTaskProgress({});
+    setUserName('Guest');
+    localStorage.setItem('crackerBotUserName', 'Guest');
+    setMessageIds(new Set());
+    setPersistentMessages([]);
+    setSessionId(newSessionId);
+    localStorage.setItem('sessionId', newSessionId);
+    setError(null);
+    setWelcomeCount(0);
+
+    setMessages([{
+      id: `welcome-${taskId}-${Date.now()}`,
+      from: 'System',
+      user: 'Guest',
+      text: '🌌 Cosmic channels realigned—welcome, Guest! Carve your legacy in the stars!',
+      type: 'question',
+      taskId,
+      options: ['Type your name below!'],
+      timestamp: new Date().toLocaleTimeString(),
+      bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
+    }]);
+    setMessageIds(new Set([`welcome-${taskId}-${Date.now()}`]));
+    initialLoadRef.current = true;
+    scrollToBottom();
+    setIsSending(false);
+  }, [frontendId, userName, sessionId, scrollToBottom, isSending]);
 
   useEffect(() => {
-    initializeSocketListeners();
-    socketRef.current.connect();
+    localStorage.setItem('frontendId', frontendId);
+    localStorage.setItem('sessionId', sessionId);
+    initializeWebSocket();
+    initializeLocalWelcome();
+
+    const reconnectInterval = setInterval(() => {
+      if (!wsRef.current?.isConnected() && !connectionLock) {
+        console.log(`[${new Date().toISOString()}] 🔄 ChatRoom: Triggering reconnect attempt ${reconnectAttempts + 1}`);
+        setReconnectAttempts((prev) => prev + 1);
+        initializeWebSocket();
+      }
+    }, 5000);
+
     return () => {
-      if (recognitionRef.current) recognitionRef.current.stop();
+      if (wsRef.current) {
+        wsRef.current.disconnect();
+        wsRef.current = null;
+      }
+      clearInterval(reconnectInterval);
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setConnectionLock(false);
     };
-  }, [initializeSocketListeners]);
+  }, [initializeWebSocket, initializeLocalWelcome, frontendId, sessionId, connectionLock, reconnectAttempts]);
 
   useEffect(() => {
     try {
@@ -389,7 +528,8 @@ export function ChatRoom() {
         }
       }
     } catch (err) {
-      console.log(`⚠️ Error updating color scheme: ${err.message}`);
+      console.error(`[${new Date().toISOString()}] ⚠️ ChatRoom: Error updating color scheme: ${err.message}`);
+      setError(`Color scheme update failed: ${err.message}`);
     }
     return () => {
       if (canvasRef.current) {
@@ -405,10 +545,10 @@ export function ChatRoom() {
         chatContainerRef.current.scrollTop = 0;
         initialLoadRef.current = false;
       } else {
-        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        scrollToBottom();
       }
     }
-  }, [messages, isTyping]);
+  }, [messages, isTyping, scrollToBottom]);
 
   const initMatrixRain = useCallback(() => {
     if (colorScheme !== 'matrix' || !canvasRef.current) return;
@@ -457,36 +597,50 @@ export function ChatRoom() {
   }, [colorScheme]);
 
   const sendMessage = useCallback((messageText) => {
-    if (!socketRef.current || !messageText.trim() || !isConnected || isSending) return;
+    if (!messageText.trim() || isSending || !frontendId) {
+      setError(!frontendId ? 'Missing frontend ID. Please reconnect.' : 'Sending in progress. Please wait.');
+      return;
+    }
 
     setIsSending(true);
-    const sessionId = localStorage.getItem('sessionId') || crypto.randomUUID();
-    const messageData = {
-      text: messageText.trim(),
-      type: messageText.startsWith('/') ? 'command' : 'task_response',
-      frontendId: frontendId,
-      ip: window.location.hostname,
-      target: 'bot_lead',
-      user: userName,
-      sessionId,
-      taskId: currentTask ? currentTask.taskId : undefined,
-    };
-    localStorage.setItem('sessionId', sessionId);
-
-    const userMessage = {
-      id: `${Date.now()}-${messageText.slice(0, 50)}`,
-      from: 'You',
-      user: userName,
-      text: messageText.trim(),
-      type: messageText.startsWith('/') ? 'command' : 'task_response',
-      timestamp: new Date().toLocaleTimeString(),
-      bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #00ccff)', color: '#000' },
-      taskId: currentTask ? currentTask.taskId : undefined,
-    };
 
     try {
-      setMessages((prev) => [...prev, userMessage]);
-      setPersistentMessages((prevPersistent) => [...prevPersistent, userMessage]);
+      const taskId = currentTask ? currentTask.taskId : `initial:${frontendId}`;
+      const messageData = {
+        text: messageText.trim(),
+        type: messageText.startsWith('/') ? 'command' : 'task_response',
+        frontendId,
+        ip: window.location.hostname,
+        target: 'bot_lead',
+        user: userName,
+        sessionId,
+        taskId,
+        commandFlag: messageText.startsWith('/') ? true : undefined,
+      };
+
+      const userMessage = {
+        id: `${taskId}-${messageText.slice(0, 50)}-${Date.now()}`,
+        from: 'You',
+        user: userName,
+        text: messageText.trim(),
+        type: messageText.startsWith('/') ? 'command' : 'task_response',
+        timestamp: new Date().toLocaleTimeString(),
+        bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #00ccff)', color: '#000' },
+        taskId,
+      };
+
+      setMessages((prev) => {
+        if (messageIds.has(userMessage.id)) {
+          console.log(`[${new Date().toISOString()}] 🔄 ChatRoom: Duplicate user message ignored: ${userMessage.id}`);
+          return prev;
+        }
+        return [...prev, userMessage];
+      });
+      setPersistentMessages((prevPersistent) => {
+        if (messageIds.has(userMessage.id)) return prevPersistent;
+        const newPersistent = [...prevPersistent, userMessage];
+        return newPersistent.length > 50 ? newPersistent.slice(-50) : newPersistent;
+      });
       setMessageIds((prevIds) => new Set(prevIds).add(userMessage.id));
 
       if (messageText.startsWith('/')) {
@@ -496,29 +650,26 @@ export function ChatRoom() {
 
         if (command === '/commands') {
           const commandList = commands.map((cmd) => `${cmd.command}: ${cmd.description}`).join('\n');
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `${Date.now()}-commands`,
+          setMessages((prev) => {
+            const commandMsg = {
+              id: `${taskId}-commands-${Date.now()}`,
               from: 'System',
               user: userName,
               text: `🌟 Cosmic Command Codex:\n${commandList}`,
               type: 'system',
+              taskId,
               timestamp: new Date().toLocaleTimeString(),
               bubbleStyle: { background: 'linear-gradient(135deg, #ffcc00, #ff6600)', color: '#333' },
-            },
-          ]);
-        } else if (command === '/reset_name') {
-          socketRef.current.emit('message', messageData);
-          setCurrentTask({ taskId: `initial:${frontendId}`, step: 'name', taskStatus: 'pending' });
-          setUserName('Guest');
-          localStorage.setItem('crackerBotUserName', 'Guest');
-          setPersistentMessages([]);
-          localStorage.removeItem('sessionId');
-        } else if (command === '/projects') {
-          socketRef.current.emit('message', messageData);
+            };
+            if (messageIds.has(commandMsg.id)) return prev;
+            return [...prev, commandMsg];
+          });
+          setMessageIds((prevIds) => new Set(prevIds).add(`${taskId}-commands-${Date.now()}`));
+        } else if (wsRef.current) {
+          wsRef.current.emit('message', messageData);
+          console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued command message: ${messageText}`);
         } else {
-          socketRef.current.emit('message', messageData);
+          console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, command queued: ${messageText}`);
         }
       } else {
         if (currentTask) {
@@ -526,356 +677,411 @@ export function ChatRoom() {
             const newUserName = messageText.trim();
             setUserName(newUserName);
             localStorage.setItem('crackerBotUserName', newUserName);
-            messageData.user = newUserName;
-            setCurrentTask((prev) => ({
-              ...prev,
-              step: 'choice',
-              taskStatus: 'pending',
-            }));
-            socketRef.current.emit('message', messageData);
-          } else if (currentTask.step === 'choice' && messageText.toLowerCase() === 'build-something-epic') {
-            setCurrentTask((prev) => ({
-              ...prev,
-              step: 'project_name',
-              taskId: `task:${Date.now()}`,
-              taskStatus: 'pending',
-            }));
-            socketRef.current.emit('message', messageData);
-          } else if (currentTask.step === 'project_name') {
-            const projectName = messageText.trim();
-            setCurrentTask((prev) => ({
-              ...prev,
-              name: projectName,
-              step: 'type',
-              taskStatus: 'pending',
-            }));
-            messageData.taskName = projectName;
-            socketRef.current.emit('message', messageData);
-          } else if (currentTask.step === 'type') {
-            setCurrentTask((prev) => ({
-              ...prev,
-              type: messageText.trim(),
-              step: 'pending_features',
-              taskStatus: 'pending',
-            }));
-            messageData.taskType = messageText.trim();
-            socketRef.current.emit('message', messageData);
-          } else if (currentTask.step === 'pending_features') {
-            setCurrentTask((prev) => ({
-              ...prev,
-              features: messageText.trim(),
-              step: 'building',
-              taskStatus: 'building',
-            }));
-            messageData.taskFeatures = messageText.trim();
-            socketRef.current.emit('message', messageData);
+            if (wsRef.current) {
+              wsRef.current.setUserName(newUserName);
+              messageData.user = newUserName;
+              setCurrentTask((prev) => ({
+                ...prev,
+                step: 'choice',
+                taskStatus: 'pending',
+              }));
+              wsRef.current.emit('message', messageData);
+              console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued name submission: ${newUserName}`);
+              if (!isConnected) {
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `choice-${taskId}-${Date.now()}`,
+                    from: 'System',
+                    user: newUserName,
+                    text: `🌟 Welcome, ${newUserName}! Choose your galactic path!`,
+                    type: 'question',
+                    taskId,
+                    options: ['Chat', 'Build-Something-Epic'],
+                    timestamp: new Date().toLocaleTimeString(),
+                    bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
+                  },
+                ]);
+                setTaskPending({
+                  taskId,
+                  question: `Choose your galactic path!`,
+                  options: ['Chat', 'Build-Something-Epic'],
+                });
+              }
+            } else {
+              console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, name queued: ${newUserName}`);
+              setCurrentTask((prev) => ({
+                ...prev,
+                step: 'choice',
+                taskStatus: 'pending',
+              }));
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `choice-${taskId}-${Date.now()}`,
+                  from: 'System',
+                  user: newUserName,
+                  text: `🌟 Welcome, ${newUserName}! Choose your galactic path!`,
+                  type: 'question',
+                  taskId,
+                  options: ['Chat', 'Build-Something-Epic'],
+                  timestamp: new Date().toLocaleTimeString(),
+                  bubbleStyle: { background: 'linear-gradient(135deg, #ff00cc, #3333ff)', color: '#fff' },
+                  },
+                ]);
+                setTaskPending({
+                  taskId,
+                  question: `Choose your galactic path!`,
+                  options: ['Chat', 'Build-Something-Epic'],
+                });
+              }
+            } else if (currentTask.step === 'choice' && messageText.toLowerCase() === 'build-something-epic') {
+              setCurrentTask((prev) => ({
+                ...prev,
+                step: 'project_name',
+                taskId: `task:${Date.now()}`,
+                taskStatus: 'pending',
+              }));
+              if (wsRef.current) {
+                wsRef.current.emit('message', messageData);
+                console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued build-something-epic message`);
+              } else {
+                console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, build-something-epic message queued`);
+              }
+            } else if (currentTask.step === 'project_name') {
+              const projectName = messageText.trim();
+              setCurrentTask((prev) => ({
+                ...prev,
+                name: projectName,
+                step: 'type',
+                taskStatus: 'pending',
+              }));
+              messageData.taskName = projectName;
+              if (wsRef.current) {
+                wsRef.current.emit('message', messageData);
+                console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued project name: ${projectName}`);
+              } else {
+                console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, project name queued: ${projectName}`);
+              }
+            } else if (currentTask.step === 'type') {
+              setCurrentTask((prev) => ({
+                ...prev,
+                type: messageText.trim(),
+                step: 'pending_features',
+                taskStatus: 'pending',
+              }));
+              messageData.taskType = messageText.trim();
+              if (wsRef.current) {
+                wsRef.current.emit('message', messageData);
+                console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued project type: ${messageText}`);
+              } else {
+                console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, project type queued: ${messageText}`);
+              }
+            } else if (currentTask.step === 'pending_features') {
+              setCurrentTask((prev) => ({
+                ...prev,
+                features: messageText.trim(),
+                step: 'building',
+                taskStatus: 'building',
+              }));
+              messageData.taskFeatures = messageText.trim();
+              if (wsRef.current) {
+                wsRef.current.emit('message', messageData);
+                console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued features: ${messageText}`);
+              } else {
+                console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, features queued: ${messageText}`);
+              }
+            } else if (wsRef.current) {
+              wsRef.current.emit('message', messageData);
+              console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued message: ${messageText}`);
+            } else {
+              console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, message queued: ${messageText}`);
+            }
           } else {
-            socketRef.current.emit('message', messageData);
+            setCurrentTask({ taskId: `initial:${frontendId}`, step: 'name', taskStatus: 'pending' });
+            if (wsRef.current) {
+              wsRef.current.emit('message', messageData);
+              console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued initial message: ${messageText}`);
+            } else {
+              console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, initial message queued: ${messageText}`);
+            }
           }
-        } else {
-          socketRef.current.emit('message', messageData);
         }
-      }
 
-      setInput('');
-      setShowCommands(false);
-      setCommandIndex(-1);
-    } catch (err) {
-      console.log(`⚠️ Error sending message "${messageText}": ${err.message}`);
-    } finally {
-      setTimeout(() => {
-        setIsSending(false);
-        inputRef.current?.focus();
-      }, 100);
-    }
-  }, [isConnected, isSending, currentTask, userName, frontendId]);
-
-  const handleInputChange = useCallback((e) => {
-    const value = e.target.value;
-    setInput(value);
-    if (value.startsWith('/')) {
-      const query = value.slice(1).toLowerCase();
-      const filtered = commands.filter((cmd) => cmd.command.toLowerCase().startsWith(query));
-      setFilteredCommands(filtered);
-      setShowCommands(true);
-      setCommandIndex(filtered.length > 0 ? 0 : -1);
-    } else {
-      setShowCommands(false);
-      setCommandIndex(-1);
-    }
-  }, []);
-
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && input.trim()) {
-      e.preventDefault();
-      if (showCommands && commandIndex >= 0) {
-        const selectedCommand = filteredCommands[commandIndex].command;
-        setInput(selectedCommand + ' ');
+        setInput('');
         setShowCommands(false);
         setCommandIndex(-1);
-        inputRef.current?.focus();
-      } else {
-        sendMessage(input);
+        scrollToBottom();
+      } catch (err) {
+        console.error(`[${new Date().toISOString()}] 💥 ChatRoom: Send message error: ${err.message}`);
+        setError(`Message queued, awaiting cosmic relay reconnection: ${err.message}`);
+      } finally {
+        setIsSending(false);
       }
-    } else if (showCommands && filteredCommands.length > 0) {
-      if (e.key === 'ArrowUp') {
+    }, [currentTask, userName, frontendId, sessionId, scrollToBottom, messageIds, isConnected]);
+
+    const handleInputChange = useCallback((e) => {
+      const value = e.target.value;
+      setInput(value);
+      if (value.startsWith('/')) {
+        const query = value.slice(1).toLowerCase();
+        const filtered = commands.filter((cmd) => cmd.command.toLowerCase().startsWith(query));
+        setFilteredCommands(filtered);
+        setShowCommands(true);
+        setCommandIndex(filtered.length > 0 ? 0 : -1);
+        if (wsRef.current?.isConnected()) {
+          const now = Date.now();
+          if (now - lastHeartbeat > 1000) {
+            wsRef.current.emit('typing', { frontendId, ip: window.location.hostname, sessionId });
+            setLastHeartbeat(now);
+          }
+        }
+      } else {
+        setShowCommands(false);
+        setCommandIndex(-1);
+        if (wsRef.current?.isConnected()) {
+          const now = Date.now();
+          if (now - lastHeartbeat > 1000) {
+            wsRef.current.emit('typing', { frontendId, ip: window.location.hostname, sessionId });
+            setLastHeartbeat(now);
+          }
+        }
+      }
+    }, [frontendId, lastHeartbeat, sessionId]);
+
+    const handleKeyDown = useCallback((e) => {
+      if (e.key === 'Enter' && input.trim() && !isSending) {
         e.preventDefault();
-        setCommandIndex((prev) => Math.max(prev - 1, 0));
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setCommandIndex((prev) => Math.min(prev + 1, filteredCommands.length - 1));
-      } else if (e.key === 'Tab') {
-        e.preventDefault();
-        if (commandIndex >= 0) {
+        if (showCommands && commandIndex >= 0) {
           const selectedCommand = filteredCommands[commandIndex].command;
           setInput(selectedCommand + ' ');
           setShowCommands(false);
           setCommandIndex(-1);
           inputRef.current?.focus();
+        } else {
+          sendMessage(input);
+        }
+      } else if (showCommands && filteredCommands.length > 0) {
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setCommandIndex((prev) => Math.max(prev - 1, 0));
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setCommandIndex((prev) => Math.min(prev + 1, filteredCommands.length - 1));
+        } else if (e.key === 'Tab') {
+          e.preventDefault();
+          if (commandIndex >= 0) {
+            const selectedCommand = filteredCommands[commandIndex].command;
+            setInput(selectedCommand + ' ');
+            setShowCommands(false);
+            setCommandIndex(-1);
+            inputRef.current?.focus();
+          }
         }
       }
-    }
-  }, [input, showCommands, commandIndex, filteredCommands, sendMessage]);
+    }, [input, showCommands, commandIndex, filteredCommands, sendMessage, isSending]);
 
-  const handleCommandSelect = useCallback((command) => {
-    setInput(command + ' ');
-    setShowCommands(false);
-    setCommandIndex(-1);
-    inputRef.current?.focus();
-  }, []);
+    const handleCommandSelect = useCallback((command) => {
+      setInput(command + ' ');
+      setShowCommands(false);
+      setCommandIndex(-1);
+      inputRef.current?.focus();
+    }, []);
 
-  const toggleRecording = useCallback(() => {
-    if (!isRecording) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-mic-error`,
-            from: 'System',
-            user: userName,
-            text: '🎤 Mic’s offline—type your cosmic will, star voyager!',
-            type: 'error',
-            timestamp: new Date().toLocaleTimeString(),
-            bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-          },
-        ]);
-        return;
+    const toggleRecording = useCallback(() => {
+      if (!isRecording) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          setError('🎤 Mic’s offline—type your cosmic will, star voyager!');
+          return;
+        }
+        const recognition = new SpeechRecognition();
+        recognitionRef.current = recognition;
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          setInput(transcript);
+          setIsRecording(false);
+          sendMessage(transcript);
+        };
+        recognition.onerror = (event) => {
+          setError(`🎤 Mic malfunction: ${event.error === 'no-speech' ? 'Silence detected!' : event.error}. Type it out, cosmic creator!`);
+          setIsRecording(false);
+        };
+        recognition.onend = () => setIsRecording(false);
+        recognition.start();
+        setIsRecording(true);
+      } else {
+        recognitionRef.current?.stop();
+        setIsRecording(false);
       }
-      const recognition = new SpeechRecognition();
-      recognitionRef.current = recognition;
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setInput(transcript);
-        setIsRecording(false);
-        sendMessage(transcript);
-      };
-      recognition.onerror = (event) => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-mic-fail`,
-            from: 'System',
-            user: userName,
-            text: `🎤 Mic malfunction: ${event.error === 'no-speech' ? 'Silence detected!' : event.error}. Type it out, cosmic creator!`,
-            type: 'error',
-            timestamp: new Date().toLocaleTimeString(),
-            bubbleStyle: { background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' },
-          },
-        ]);
-        setIsRecording(false);
-      };
-      recognition.onend = () => setIsRecording(false);
-      recognition.start();
-      setIsRecording(true);
-    } else {
-      recognitionRef.current?.stop();
-      setIsRecording(false);
-    }
-  }, [isRecording, sendMessage, userName]);
+    }, [isRecording, sendMessage]);
 
-  /**
-   * Handles manual reconnection and full reset via Warp Reconnect button.
-   * Clears username and all completed tasks from Redis, then restarts with welcome message.
-   * @function manualReconnect
-   */
-  const manualReconnect = useCallback(() => {
-    if (!socketRef.current) return;
-    const confirmReset = window.confirm(
-      '⚠️ Warning: This will reset your username to "Guest" and erase all completed tasks from the cosmic archives. Ready to warp anew?'
-    );
-    if (!confirmReset) return;
+    const handleColorChange = useCallback((scheme) => {
+      setColorScheme(scheme);
+      localStorage.setItem('colorScheme', scheme);
+    }, []);
 
-    // Emit custom reset_all command to clear username and projects in Redis
-    const sessionId = localStorage.getItem('sessionId') || crypto.randomUUID();
-    socketRef.current.emit('message', {
-      text: '/reset_all',
-      type: 'command',
-      commandFlag: true,
-      frontendId: frontendId,
-      ip: window.location.hostname,
-      target: 'bot_lead',
-      user: userName,
-      sessionId,
-    });
+    const handleOptionClick = useCallback((option, projectData) => {
+      if (projectData) {
+        const { taskId, content, fileName, user } = projectData.projectData || {};
+        if (!taskId) return;
 
-    // Reset frontend state
-    setMessages([]);
-    setTaskPending(null);
-    setCurrentTask(null);
-    setEditMode(null);
-    setTaskProgress({});
-    setUserName('Guest');
-    localStorage.setItem('crackerBotUserName', 'Guest');
-    setMessageIds(new Set());
-    setPersistentMessages([]);
-    localStorage.removeItem('sessionId');
-    setFrontendId(null);
-
-    // Disconnect and reconnect to trigger welcome message
-    socketRef.current.disconnect();
-    setTimeout(() => {
-      socketRef.current.connect();
-      setMessages([{
-        id: `reconnect-${Date.now()}`,
-        from: 'System',
-        user: 'Guest',
-        text: '🌌 Cosmic channels realigned—welcome back, Guest! Carve your legacy in the stars!',
-        type: 'system',
-        timestamp: new Date().toLocaleTimeString(),
-        bubbleStyle: { background: 'linear-gradient(135deg, #00ffcc, #00ccff)', color: '#000' },
-      }]);
-      // Set initial task state to prompt for new name
-      setCurrentTask({ taskId: `initial:${frontendId || 'pending'}`, step: 'name', taskStatus: 'pending' });
-    }, 500);
-  }, [frontendId, userName]);
-
-  const handleColorChange = useCallback((scheme) => {
-    setColorScheme(scheme);
-    localStorage.setItem('colorScheme', scheme);
-  }, []);
-
-  const handleOptionClick = useCallback((option, projectData) => {
-    if (projectData) {
-      const { taskId, content, fileName, user } = projectData.projectData || {};
-      if (!taskId) return;
-
-      if (option === 'Refine Project') {
-        setCurrentTask({ taskId, step: 'pending_features', taskStatus: 'pending' });
-        setTaskPending({ taskId, question: `Amplify "${projectData.text}" with supernova features!`, options: [] });
-        socketRef.current.emit('message', {
-          text: 'Refine Project',
-          type: 'task_response',
-          taskId,
-          frontendId: frontendId,
-          ip: window.location.hostname,
-          target: 'bot_lead',
-          user: user || userName,
-          sessionId: localStorage.getItem('sessionId'),
-        });
-      } else if (option === 'Download') {
-        if (content && fileName) {
-          const link = document.createElement('a');
-          link.href = `data:application/zip;base64,${content}`;
-          link.download = fileName;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `${Date.now()}-download`,
-              from: 'System',
+        if (option === 'Refine Project') {
+          setCurrentTask({ taskId, step: 'pending_features', taskStatus: 'pending' });
+          setTaskPending({ taskId, question: `Amplify "${projectData.text}" with supernova features!`, options: [] });
+          if (wsRef.current) {
+            wsRef.current.emit('message', {
+              text: 'Refine Project',
+              type: 'task_response',
+              taskId,
+              frontendId,
+              ip: window.location.hostname,
+              target: 'bot_lead',
               user: user || userName,
-              text: `🌌 Beaming "${projectData.text}" to your starship—cosmic loot secured! 📡`,
-              type: 'system',
-              timestamp: new Date().toLocaleTimeString(),
-              bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
-            },
-          ]);
+              sessionId,
+            });
+            console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued refine project message for taskId: ${taskId}`);
+          } else {
+            console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, refine project message queued for taskId: ${taskId}`);
+          }
+        } else if (option === 'Download') {
+          if (content && fileName) {
+            const link = document.createElement('a');
+            link.href = `data:application/zip;base64,${content}`;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `${taskId}-download-${Date.now()}`,
+                from: 'System',
+                user: user || userName,
+                text: `🌌 Beaming "${projectData.text}" to your starship—cosmic loot secured! 📡`,
+                type: 'system',
+                taskId,
+                timestamp: new Date().toLocaleTimeString(),
+                bubbleStyle: { background: 'linear-gradient(135deg, #00ff99, #0066ff)', color: '#fff' },
+              },
+            ]);
+          }
+        } else if (option === 'Delete') {
+          if (wsRef.current) {
+            wsRef.current.emit('message', {
+              text: `/delete ${taskId}`,
+              type: 'command',
+              taskId,
+              frontendId,
+              ip: window.location.hostname,
+              target: 'bot_lead',
+              user: user || userName,
+              sessionId,
+            });
+            console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued delete command for taskId: ${taskId}`);
+          } else {
+            console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, delete command queued for taskId: ${taskId}`);
+          }
         }
-      } else if (option === 'Delete') {
-        socketRef.current.emit('message', {
-          text: `/delete ${taskId}`,
-          type: 'command',
-          taskId,
-          frontendId: frontendId,
-          ip: window.location.hostname,
-          target: 'bot_lead',
-          user: user || userName,
-          sessionId: localStorage.getItem('sessionId'),
-        });
+      } else {
+        sendMessage(option);
+        if (option === 'Restart' && currentTask) {
+          if (wsRef.current) {
+            wsRef.current.emit('message', {
+              text: `/restart ${currentTask.taskId}`,
+              type: 'command',
+              taskId: currentTask.taskId,
+              frontendId,
+              ip: window.location.hostname,
+              target: 'bot_lead',
+              user: userName,
+              sessionId,
+            });
+            console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued restart command for taskId: ${currentTask.taskId}`);
+          } else {
+            console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, restart command queued for taskId: ${currentTask.taskId}`);
+          }
+          setEditMode(currentTask.taskId);
+        } else if (option === 'Refine Project' && currentTask) {
+          setCurrentTask((prev) => ({ ...prev, step: 'pending_features', taskStatus: 'pending' }));
+          setTaskPending({ taskId: currentTask.taskId, question: `Enhance "${currentTask.name}" with galactic features!`, options: [] });
+          if (wsRef.current) {
+            wsRef.current.emit('message', {
+              text: 'Refine Project',
+              type: 'task_response',
+              taskId: currentTask.taskId,
+              frontendId,
+              ip: window.location.hostname,
+              target: 'bot_lead',
+              user: userName,
+              sessionId,
+            });
+            console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued refine project message for taskId: ${currentTask.taskId}`);
+          } else {
+            console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, refine project message queued for taskId: ${currentTask.taskId}`);
+          }
+        } else if (option === 'Done' && currentTask) {
+          const taskResult = messages.find((m) => m.taskId === currentTask.taskId && m.type === 'taskResult');
+          if (wsRef.current) {
+            wsRef.current.emit('message', {
+              text: 'store_project',
+              type: 'command',
+              taskId: currentTask.taskId,
+              frontendId,
+              ip: window.location.hostname,
+              target: 'bot_lead',
+              user: userName,
+              taskName: currentTask.name,
+              taskType: currentTask.type,
+              taskFeatures: currentTask.features,
+              finalContent: taskResult?.finalContent,
+              sessionId,
+            });
+            console.log(`[${new Date().toISOString()}] 📡 ChatRoom: Queued store_project command for taskId: ${currentTask.taskId}`);
+          } else {
+            console.warn(`[${new Date().toISOString()}] ⚠️ ChatRoom: WebSocket not initialized, store_project command queued for taskId: ${currentTask.taskId}`);
+          }
+          setCurrentTask(null);
+          setTaskPending(null);
+          setEditMode(null);
+          setTaskProgress((prev) => {
+            const newProgress = { ...prev };
+            delete newProgress[currentTask.taskId];
+            return newProgress;
+          });
+        }
       }
-    } else {
-      sendMessage(option);
-      if (option === 'Restart' && currentTask) {
-        socketRef.current.emit('message', {
-          text: `/restart ${currentTask.taskId}`,
-          type: 'command',
-          taskId: currentTask.taskId,
-          frontendId: frontendId,
-          ip: window.location.hostname,
-          target: 'bot_lead',
-          user: userName,
-          sessionId: localStorage.getItem('sessionId'),
-        });
-        setEditMode(currentTask.taskId);
-      } else if (option === 'Refine Project' && currentTask) {
-        setCurrentTask((prev) => ({ ...prev, step: 'pending_features', taskStatus: 'pending' }));
-        setTaskPending({ taskId: currentTask.taskId, question: `Enhance "${currentTask.name}" with galactic features!`, options: [] });
-        socketRef.current.emit('message', {
-          text: 'Refine Project',
-          type: 'task_response',
-          taskId: currentTask.taskId,
-          frontendId: frontendId,
-          ip: window.location.hostname,
-          target: 'bot_lead',
-          user: userName,
-          sessionId: localStorage.getItem('sessionId'),
-        });
-      } else if (option === 'Done' && currentTask) {
-        const taskResult = messages.find((m) => m.taskId === currentTask.taskId && m.type === 'taskResult');
-        socketRef.current.emit('message', {
-          text: 'store_project',
-          type: 'command',
-          taskId: currentTask.taskId,
-          frontendId: frontendId,
-          ip: window.location.hostname,
-          target: 'bot_lead',
-          user: userName,
-          taskName: currentTask.name,
-          taskType: currentTask.type,
-          taskFeatures: currentTask.features,
-          finalContent: taskResult?.finalContent,
-          sessionId: localStorage.getItem('sessionId'),
-        });
-        setCurrentTask(null);
-        setTaskPending(null);
-        setEditMode(null);
-        setTaskProgress((prev) => {
-          const newProgress = { ...prev };
-          delete newProgress[currentTask.taskId];
-          return newProgress;
-        });
-      }
-    }
-  }, [currentTask, messages, sendMessage, userName, frontendId]);
+      scrollToBottom();
+    }, [currentTask, messages, sendMessage, userName, frontendId, sessionId, scrollToBottom]);
 
-  const handlePreviewClick = useCallback((msg) => {
-    setPreviewData({ fileContent: msg.finalContent, fileName: msg.fileName || `${msg.taskName || 'cosmic_download'}.zip`, taskId: msg.taskId });
-  }, []);
+    const handlePreviewClick = useCallback((msg) => {
+      setPreviewData({ fileContent: msg.finalContent, fileName: msg.fileName || `${msg.taskName || 'cosmic_download'}.zip`, taskId: msg.taskId });
+    }, []);
 
-  const closePreview = useCallback(() => {
-    setPreviewData(null);
-  }, []);
+    const closePreview = useCallback(() => {
+      setPreviewData(null);
+    }, []);
 
-  const currentScheme = colorSchemes[colorScheme] || colorSchemes['neon'];
+    const currentScheme = colorSchemes[colorScheme] || colorSchemes['neon'];
 
-  try {
     return (
-      <div className={`flex flex-col h-full ${currentScheme.bg} ${currentScheme.text} overflow-hidden relative`}>
+      <div className={`flex flex-col h-screen ${currentScheme.bg} ${currentScheme.text} overflow-hidden relative`}>
+        <div className="connection-status fixed top-0 right-0 p-2 z-30" style={{ background: isConnected ? 'linear-gradient(135deg, #00ff99, #0066ff)' : 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff' }}>
+          {connectionStatus}
+        </div>
+        {error && (
+          <div className="error-message fixed top-8 left-0 w-full z-20" style={{ background: 'linear-gradient(135deg, #ff3333, #660000)', color: '#fff', padding: '10px', textAlign: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+            {error}
+            <button onClick={() => initializeWebSocket()} className="ml-4 p-1 bg-gradient-to-r from-[#ff66ff] to-[#66ffff] text-white rounded hover:scale-105 transition-transform">
+              Retry Connection
+            </button>
+            <button onClick={handleWarpReconnect} className="ml-2 p-1 bg-gradient-to-r from-[#ff66ff] to-[#66ffff] text-white rounded hover:scale-105 transition-transform">
+              Warp Reconnect
+            </button>
+          </div>
+        )}
         {colorScheme === 'matrix' && (
           <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none z-0" />
         )}
@@ -884,7 +1090,7 @@ export function ChatRoom() {
             fileContent={previewData.fileContent}
             fileName={previewData.fileName}
             onClose={closePreview}
-            socket={socketRef.current}
+            socket={wsRef.current}
             postTaskOptions={{
               taskId: previewData.taskId,
               taskName: currentTask?.name,
@@ -912,12 +1118,18 @@ export function ChatRoom() {
             </select>
             <button
               onClick={toggleRecording}
-              className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
+              className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform ${isRecording ? 'scale-110' : ''}`}
             >
               {isRecording ? '🎙️' : '🎤'}
             </button>
             <button
-              onClick={manualReconnect}
+              onClick={() => initializeWebSocket()}
+              className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
+            >
+              Retry Connection
+            </button>
+            <button
+              onClick={handleWarpReconnect}
               className={`p-1 rounded ${currentScheme.button} ${currentScheme.buttonText} hover:scale-105 transition-transform`}
             >
               Warp Reconnect
@@ -943,12 +1155,16 @@ export function ChatRoom() {
         </div>
 
         <div className="flex-1 flex items-center justify-center relative z-10">
-          {/* Increased width by 400px (200px per side) using chatroom-container class */}
           <div className={`chatroom-container ${editMode ? 'border-2 border-[#00ff9f] shadow-[0_0_15px_#00ff9f]' : ''}`}>
             <div
               ref={chatContainerRef}
-              className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto`}
+              className={`flex-1 ${currentScheme.chatBg} border border-gray-700 rounded-lg p-4 overflow-y-auto max-h-[calc(100vh-200px)]`}
             >
+              {messages.length === 0 && (
+                <div className="text-gray-500 italic mb-2">
+                  Awaiting cosmic grid connection...
+                </div>
+              )}
               {messages.map((msg) => (
                 <div key={msg.id} className="message-wrapper mb-2">
                   <ErrorBoundary>
@@ -959,7 +1175,7 @@ export function ChatRoom() {
                       colorScheme={currentScheme}
                       progress={taskProgress[msg.taskId]}
                       setMessages={setMessages}
-                      socket={socketRef.current}
+                      socket={wsRef.current}
                       onPreviewClick={msg.finalContent ? () => handlePreviewClick(msg) : null}
                     />
                   </ErrorBoundary>
@@ -1007,7 +1223,7 @@ export function ChatRoom() {
                     <div
                       key={cmd.command}
                       onClick={() => handleCommandSelect(cmd.command)}
-                      className={`cursor-pointer p-2 rounded-md ${idx === commandIndex ? 'bg-gray-600' : 'hover:bg-gray-700'} transition-colors`}
+                      className={`cursor-pointer p-2 rounded-lg ${idx === commandIndex ? 'bg-gray-600' : 'hover:bg-gray-700'} transition-colors`}
                     >
                       <span className={`${currentScheme.accent} font-bold`}>{cmd.command}</span> - {cmd.description}
                     </div>
@@ -1049,15 +1265,15 @@ export function ChatRoom() {
               />
               <button
                 onClick={toggleRecording}
-                className={`p-2 bg-gradient-to-r from-[#ff00ff] to-[#00ffff] hover:from-[#ff66ff] hover:to-[#66ffff] text-white rounded-md shadow-lg transform transition-all duration-200 ${isRecording ? 'scale-110' : ''}`}
+                className={`p-2 bg-gradient-to-r from-[#ff00ff] to-[#00ffff] hover:from-[#ff66ff] to-[#66ffff] text-white rounded-md shadow-lg transform transition-all duration-200 ${isRecording ? 'scale-110' : ''}`}
               >
-                🎙️
+                {isRecording ? '🎙️' : '🎤'}
               </button>
               <button
                 onClick={() => sendMessage(input)}
-                disabled={!isConnected || !input.trim() || isSending || (currentTask?.step === 'building' && !taskPending)}
+                disabled={!input.trim() || isSending || (currentTask?.step === 'building' && !taskPending)}
                 className={`px-4 py-2 rounded-r-md transition ${
-                  isConnected && input.trim() && !isSending && !(currentTask?.step === 'building' && !taskPending)
+                  input.trim() && !isSending && !(currentTask?.step === 'building' && !taskPending)
                     ? `${currentScheme.button} ${currentScheme.buttonText} hover:shadow-neon`
                     : 'bg-gray-500 text-gray-300 cursor-not-allowed'
                 }`}
@@ -1069,15 +1285,6 @@ export function ChatRoom() {
         </div>
       </div>
     );
-  } catch (err) {
-    return (
-      <div className="flex flex-col h-full bg-black text-white p-4">
-        <h2>⚠️ Cosmic Render Failure</h2>
-        <p>Error: ${err.message}</p>
-        <button onClick={manualReconnect}>Reconnect</button>
-      </div>
-    );
-  }
 }
 
 export default ChatRoom;

@@ -1,5 +1,15 @@
-// ai_coders/bot_backend/src/contentUtils.js
-// Version: v2025-03-28-12
+// bot_backend/src/contentUtils.js
+// Version: v2025-07-26-01
+/**
+ * Content Utils Module
+ * Zips files with AI-generated README and optional run.bat, with progress updates.
+ * Enhanced by xAI for robust validation, fallback mechanisms, and high-quality README with extra flair.
+ *
+ * @version 2025-07-26-01
+ * @author CrackerBot Team, enhanced by xAI
+ * @module contentUtils
+ */
+
 import JSZip from 'jszip';
 import { log, error } from './logger.js';
 import { generateResponse } from './aiHelper.js';
@@ -67,12 +77,12 @@ export async function zipFilesWithReadme(files, task) {
   // Add cosmic README
   const readmePrompt = `
     Craft a vibrant README.md for "${name}" (${type}) with features "${features || 'basic functionality'}", tailored for ${userName}. Use a cosmic tone with MAXIMUM flair:
-    - Intro: "Welcome to ${name}, ${userName}’s cosmic odyssey!"
-    - Overview: Neon-drenched details of ${features}.
-    - Launch: "Unzip, ignite with 'run.bat' (if included) or open index.html, and surf the galaxy!"
-    - Features: Pulsating highlights (e.g., "Buttons supernova on click!").
-    - Tips: "Remix with /refine_project to amplify the cosmic vibes!"
-    300+ words, unforgettable, and bursting with personality!
+    - Intro: "Welcome to ${name}, ${userName}’s cosmic odyssey!"—detailed paragraph (100+ words).
+    - Overview: Neon-drenched details of ${features} with subheadings and examples (200+ words).
+    - Launch: "Unzip, ignite with 'run.bat' (if included) or open index.html, and surf the galaxy!"—step-by-step with code snippets.
+    - Features: Pulsating highlights (e.g., "Interactive widgets supernova on click!") with 5+ bullet points and descriptions.
+    - Tips: "Remix with /refine_project to amplify the cosmic vibes!" and customization ideas (100+ words).
+    300+ words total, unforgettable, and bursting with personality!
   `;
   const readmeContent = await generateResponse(readmePrompt, userName, 'cosmic');
   zip.file('README.md', readmeContent);
@@ -85,7 +95,7 @@ export async function zipFilesWithReadme(files, task) {
     const runBatPrompt = `
       Generate a Windows batch script (.bat) for "${name}" with features "${features || 'basic functionality'}". 
       Ensure it launches the project (e.g., opens "index.html" for HTML tasks) and adds cosmic flair with comments like "REM CrackerBot’s cosmic flair for ${userName}!". 
-      Make it functional, vibrant, and tailored for ${userName}. Return plain text content.
+      Make it functional, vibrant, and tailored for ${userName}. Return plain text content with at least 10 lines of detailed script and comments.
     `;
     const runBatContent = await generateResponse(runBatPrompt, userName, 'cosmic');
     zip.file('run.bat', runBatContent);
